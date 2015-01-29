@@ -17,6 +17,8 @@
 """Tests for google.apphosting.tools.devappserver2.module."""
 
 
+
+import functools
 import httplib
 import logging
 import os
@@ -25,6 +27,7 @@ import time
 import unittest
 
 import google
+from concurrent import futures
 import mox
 
 from google.appengine.api import appinfo
@@ -33,13 +36,16 @@ from google.appengine.tools.devappserver2 import api_server
 from google.appengine.tools.devappserver2 import application_configuration
 from google.appengine.tools.devappserver2 import constants
 from google.appengine.tools.devappserver2 import dispatcher
+from google.appengine.tools.devappserver2 import health_check_service
 from google.appengine.tools.devappserver2 import instance
 from google.appengine.tools.devappserver2 import module
+from google.appengine.tools.devappserver2 import runtime_config_pb2
 from google.appengine.tools.devappserver2 import start_response_utils
 from google.appengine.tools.devappserver2 import wsgi_server
 
 
 class ModuleConfigurationStub(object):
+
   def __init__(self,
                application_root='/root',
                application='app',
@@ -55,7 +61,9 @@ class ModuleConfigurationStub(object):
                normalized_libraries=None,
                env_variables=None,
                manual_scaling=None,
-               basic_scaling=None):
+               basic_scaling=None,
+               vm_health_check=None,
+               application_external_name='app'):
     self.application_root = application_root
     self.application = application
     self.module_name = module_name
@@ -72,12 +80,15 @@ class ModuleConfigurationStub(object):
     self.env_variables = env_variables or []
     self.version_id = '%s:%s.%s' % (module_name, version, '12345')
     self.is_backend = False
+    self.vm_health_check = vm_health_check
+    self.application_external_name = application_external_name
 
   def check_for_updates(self):
     return set()
 
 
 class ModuleFacade(module.Module):
+
   def __init__(self,
                module_configuration=ModuleConfigurationStub(),
                instance_factory=None,
@@ -94,6 +105,7 @@ class ModuleFacade(module.Module):
         runtime_stderr_loglevel=1,
         php_config=None,
         python_config=None,
+        java_config=None,
         cloud_sql_config=None,
         vm_config=None,
         default_version_port=8080,
@@ -119,6 +131,7 @@ class ModuleFacade(module.Module):
 
 
 class AutoScalingModuleFacade(module.AutoScalingModule):
+
   def __init__(self,
                module_configuration=ModuleConfigurationStub(),
                balanced_port=0,
@@ -135,6 +148,7 @@ class AutoScalingModuleFacade(module.AutoScalingModule):
         runtime_stderr_loglevel=1,
         php_config=None,
         python_config=None,
+        java_config=None,
         cloud_sql_config=None,
         unused_vm_config=None,
         default_version_port=8080,
@@ -160,11 +174,15 @@ class AutoScalingModuleFacade(module.AutoScalingModule):
 
 
 class ManualScalingModuleFacade(module.ManualScalingModule):
+
   def __init__(self,
-               module_configuration=ModuleConfigurationStub(),
+               module_configuration=None,
                balanced_port=0,
                instance_factory=None,
-               ready=True):
+               ready=True,
+               vm_config=None):
+    if module_configuration is None:
+      module_configuration = ModuleConfigurationStub()
     super(ManualScalingModuleFacade, self).__init__(
         module_configuration,
         host='fakehost',
@@ -175,8 +193,9 @@ class ManualScalingModuleFacade(module.ManualScalingModule):
         runtime_stderr_loglevel=1,
         php_config=None,
         python_config=None,
+        java_config=None,
         cloud_sql_config=None,
-        vm_config=None,
+        vm_config=vm_config,
         default_version_port=8080,
         port_registry=dispatcher.PortRegistry(),
         request_data=None,
@@ -200,6 +219,7 @@ class ManualScalingModuleFacade(module.ManualScalingModule):
 
 
 class BasicScalingModuleFacade(module.BasicScalingModule):
+
   def __init__(self,
                host='fakehost',
                module_configuration=ModuleConfigurationStub(),
@@ -216,6 +236,7 @@ class BasicScalingModuleFacade(module.BasicScalingModule):
         runtime_stderr_loglevel=1,
         php_config=None,
         python_config=None,
+        java_config=None,
         cloud_sql_config=None,
         vm_config=None,
         default_version_port=8080,
@@ -419,7 +440,7 @@ class TestModuleGetRuntimeConfig(unittest.TestCase):
                        static_files=r'app_readable_static_images/\\1',
                        upload=r'app_readable_static_images/*.png',
                        application_readable=True),
-        ]
+    ]
     self.instance_factory = instance.InstanceFactory(None, 1)
 
   def test_static_files_regex(self):
@@ -508,6 +529,91 @@ class TestModuleShutdownInstance(unittest.TestCase):
     self.inst.quit(force=True)
     self.mox.ReplayAll()
     self.servr._shutdown_instance(self.inst, 9000)
+    self.mox.VerifyAll()
+
+
+class TestModuleRuntime(unittest.TestCase):
+  """Tests for module.Module.runtime."""
+
+  def setUp(self):
+    api_server.test_setup_stubs()
+    self.mox = mox.Mox()
+    self.mox.StubOutWithMock(application_configuration.ModuleConfiguration,
+                             '_parse_configuration')
+    self.mox.StubOutWithMock(os.path, 'getmtime')
+
+  def tearDown(self):
+    self.mox.UnsetStubs()
+
+  class ModuleStubRuntime(module.Module):
+
+    def __init__(self, module_configuration):
+      self._module_configuration = module_configuration
+
+  def test_vm_false(self):
+    automatic_scaling = appinfo.AutomaticScaling(min_pending_latency='1.0s',
+                                                 max_pending_latency='2.0s',
+                                                 min_idle_instances=1,
+                                                 max_idle_instances=2)
+    error_handlers = [appinfo.ErrorHandlers(file='error.html')]
+    handlers = [appinfo.URLMap(url=r'/python-(.*)',
+                               script=r'\1.py')]
+    info = appinfo.AppInfoExternal(
+        application='app',
+        module='module1',
+        version='1',
+        runtime='python27',
+        threadsafe=False,
+        automatic_scaling=automatic_scaling,
+        skip_files=r'\*.gif',
+        error_handlers=error_handlers,
+        handlers=handlers,
+        inbound_services=['warmup'],
+        env_variables=appinfo.EnvironmentVariables(),
+    )
+    config_path = '/appdir/app.yaml'
+    application_configuration.ModuleConfiguration._parse_configuration(
+        config_path).AndReturn((info, [config_path]))
+    os.path.getmtime(config_path).AndReturn(10)
+
+    self.mox.ReplayAll()
+    config = application_configuration.ModuleConfiguration(
+        '/appdir/app.yaml')
+    servr = TestModuleRuntime.ModuleStubRuntime(
+        module_configuration=config)
+    self.assertEqual(servr.runtime, 'python27')
+    self.assertEqual(servr.effective_runtime, 'python27')
+    self.mox.VerifyAll()
+
+  def test_vm_true(self):
+    manual_scaling = appinfo.ManualScaling()
+    vm_settings = appinfo.VmSettings()
+    vm_settings['vm_runtime'] = 'python27'
+    handlers = [appinfo.URLMap(url=r'/*', script=r'\1.py')]
+    info = appinfo.AppInfoExternal(
+        application='app',
+        module='module1',
+        version='1',
+        runtime='vm',
+        vm_settings=vm_settings,
+        threadsafe=False,
+        manual_scaling=manual_scaling,
+        handlers=handlers,
+    )
+    config_path = '/appdir/app.yaml'
+    application_configuration.ModuleConfiguration._parse_configuration(
+        config_path).AndReturn((info, [config_path]))
+    os.path.getmtime(config_path).AndReturn(10)
+
+    self.mox.ReplayAll()
+
+    module_configuration = application_configuration.ModuleConfiguration(
+        config_path)
+    servr = TestModuleRuntime.ModuleStubRuntime(
+        module_configuration=module_configuration)
+    self.assertEqual(servr.runtime, 'vm')
+    self.assertEqual(servr.effective_runtime, 'python27')
+
     self.mox.VerifyAll()
 
 
@@ -781,6 +887,7 @@ class TestAutoScalingInstancePoolSplitInstances(unittest.TestCase):
   """Tests for module.AutoScalingModule._split_instances."""
 
   class Instance(object):
+
     def __init__(self, num_outstanding_requests, can_accept_requests=True):
       self.num_outstanding_requests = num_outstanding_requests
       self.can_accept_requests = can_accept_requests
@@ -873,6 +980,7 @@ class TestAutoScalingInstancePoolChooseInstances(unittest.TestCase):
   """Tests for module.AutoScalingModule._choose_instance."""
 
   class Instance(object):
+
     def __init__(self, num_outstanding_requests, can_accept_requests=True):
       self.num_outstanding_requests = num_outstanding_requests
       self.remaining_request_capacity = 10 - num_outstanding_requests
@@ -957,6 +1065,7 @@ class TestAutoScalingInstancePoolAdjustInstances(unittest.TestCase):
   """Tests for module.AutoScalingModule._adjust_instances."""
 
   class Instance(object):
+
     def __init__(self, num_outstanding_requests):
       self.num_outstanding_requests = num_outstanding_requests
 
@@ -1050,14 +1159,14 @@ class TestAutoScalingInstancePoolHandleChanges(unittest.TestCase):
     self.mox.StubOutWithMock(self.servr, '_create_url_handlers')
     self.mox.StubOutWithMock(self.servr._module_configuration,
                              'check_for_updates')
-    self.mox.StubOutWithMock(self.servr._watcher, 'has_changes')
+    self.mox.StubOutWithMock(self.servr._watcher, 'changes')
 
   def tearDown(self):
     self.mox.UnsetStubs()
 
   def test_no_changes(self):
     self.servr._module_configuration.check_for_updates().AndReturn(frozenset())
-    self.servr._watcher.has_changes().AndReturn(False)
+    self.servr._watcher.changes(0).AndReturn(set())
     self.servr._maybe_restart_instances(config_changed=False,
                                         file_changed=False)
     self.mox.ReplayAll()
@@ -1066,7 +1175,7 @@ class TestAutoScalingInstancePoolHandleChanges(unittest.TestCase):
 
   def test_irrelevant_config_change(self):
     self.servr._module_configuration.check_for_updates().AndReturn(frozenset())
-    self.servr._watcher.has_changes().AndReturn(False)
+    self.servr._watcher.changes(0).AndReturn(set())
     self.servr._maybe_restart_instances(config_changed=False,
                                         file_changed=False)
 
@@ -1077,7 +1186,7 @@ class TestAutoScalingInstancePoolHandleChanges(unittest.TestCase):
   def test_restart_config_change(self):
     conf_change = frozenset([application_configuration.ENV_VARIABLES_CHANGED])
     self.servr._module_configuration.check_for_updates().AndReturn(conf_change)
-    self.servr._watcher.has_changes().AndReturn(False)
+    self.servr._watcher.changes(0).AndReturn(set())
     self.instance_factory.configuration_changed(conf_change)
     self.servr._maybe_restart_instances(config_changed=True, file_changed=False)
 
@@ -1088,7 +1197,7 @@ class TestAutoScalingInstancePoolHandleChanges(unittest.TestCase):
   def test_handler_change(self):
     conf_change = frozenset([application_configuration.HANDLERS_CHANGED])
     self.servr._module_configuration.check_for_updates().AndReturn(conf_change)
-    self.servr._watcher.has_changes().AndReturn(False)
+    self.servr._watcher.changes(0).AndReturn(set())
     self.servr._create_url_handlers()
     self.instance_factory.configuration_changed(conf_change)
     self.servr._maybe_restart_instances(config_changed=True, file_changed=False)
@@ -1099,7 +1208,7 @@ class TestAutoScalingInstancePoolHandleChanges(unittest.TestCase):
 
   def test_file_change(self):
     self.servr._module_configuration.check_for_updates().AndReturn(frozenset())
-    self.servr._watcher.has_changes().AndReturn(True)
+    self.servr._watcher.changes(0).AndReturn({'-'})
     self.instance_factory.files_changed()
     self.servr._maybe_restart_instances(config_changed=False, file_changed=True)
 
@@ -1207,7 +1316,7 @@ class TestAutoScalingInstancePoolLoopAdjustingInstances(unittest.TestCase):
     self.servr._instances.add(inst2)
     self.servr._instances.add(inst3)
 
-    self.servr._handle_changes()
+    self.servr._handle_changes(1000)
 
     def do_quit(*unused_args):
       self.servr._quit_event.set()
@@ -1318,6 +1427,7 @@ class TestManualScalingModuleAddInstance(unittest.TestCase):
   """Tests for module.ManualScalingModule._add_instance."""
 
   class WsgiServer(object):
+
     def __init__(self, port):
       self.port = port
 
@@ -1349,6 +1459,31 @@ class TestManualScalingModuleAddInstance(unittest.TestCase):
     self.assertIn(inst, servr._instances)
     self.assertEqual((servr, inst), servr._port_registry.get(12345))
 
+  def test_add_with_health_checks(self):
+    servr = ManualScalingModuleFacade(instance_factory=self.factory)
+    servr.vm_config = runtime_config_pb2.VMConfig()
+    servr.module_configuration.runtime = 'vm'
+    servr.module_configuration.vm_health_check = appinfo.VmHealthCheck(
+        enable_health_check=True)
+
+    inst = self.mox.CreateMock(instance.Instance)
+    self.mox.StubOutWithMock(module._THREAD_POOL, 'submit')
+    self.mox.StubOutWithMock(wsgi_server.WsgiServer, 'start')
+    self.mox.StubOutWithMock(wsgi_server.WsgiServer, 'port')
+    self.mox.StubOutWithMock(health_check_service.HealthChecker, 'start')
+    wsgi_server.WsgiServer.port = 12345
+    self.factory.new_instance(0, expect_ready_request=True).AndReturn(inst)
+    wsgi_server.WsgiServer.start()
+    health_check_service.HealthChecker.start()
+    module._THREAD_POOL.submit(servr._start_instance,
+                               mox.IsA(wsgi_server.WsgiServer), inst)
+
+    self.mox.ReplayAll()
+    servr._add_instance()
+    self.mox.VerifyAll()
+    self.assertIn(inst, servr._instances)
+    self.assertEqual((servr, inst), servr._port_registry.get(12345))
+
   def test_add_while_stopped(self):
     servr = ManualScalingModuleFacade(instance_factory=self.factory)
     servr._suspended = True
@@ -1367,6 +1502,112 @@ class TestManualScalingModuleAddInstance(unittest.TestCase):
 
     self.assertIn(inst, servr._instances)
     self.assertEqual((servr, inst), servr._port_registry.get(12345))
+
+  def test_add_health_checks(self):
+    inst = self.mox.CreateMock(instance.Instance)
+    wsgi_servr = self.mox.CreateMock(wsgi_server.WsgiServer)
+    config = appinfo.VmHealthCheck()
+    self.mox.StubOutWithMock(health_check_service.HealthChecker, 'start')
+    health_check_service.HealthChecker.start()
+    servr = ManualScalingModuleFacade(instance_factory=self.factory)
+
+    self.mox.ReplayAll()
+    servr._add_health_checks(inst, wsgi_servr, config)
+    self.mox.VerifyAll()
+
+  def test_do_health_check_last_successful(self):
+    servr = ManualScalingModuleFacade(instance_factory=self.factory)
+    wsgi_servr = self.mox.CreateMock(wsgi_server.WsgiServer)
+    wsgi_servr.port = 3
+    inst = self.mox.CreateMock(instance.Instance)
+    start_response = start_response_utils.CapturingStartResponse()
+    self.mox.StubOutWithMock(module.ManualScalingModule, '_handle_request')
+    servr._handle_request(
+        mox.And(
+            mox.ContainsKeyValue('PATH_INFO', '/_ah/health'),
+            mox.ContainsKeyValue('QUERY_STRING', 'IsLastSuccessful=yes')),
+        start_response, inst=inst, request_type=instance.NORMAL_REQUEST)
+    self.mox.ReplayAll()
+    servr._do_health_check(wsgi_servr, inst, start_response, True)
+    self.mox.VerifyAll()
+
+  def test_do_health_check_last_unsuccessful(self):
+    servr = ManualScalingModuleFacade(instance_factory=self.factory)
+    wsgi_servr = self.mox.CreateMock(wsgi_server.WsgiServer)
+    wsgi_servr.port = 3
+    inst = self.mox.CreateMock(instance.Instance)
+    start_response = start_response_utils.CapturingStartResponse()
+    self.mox.StubOutWithMock(module.ManualScalingModule, '_handle_request')
+    servr._handle_request(
+        mox.And(
+            mox.ContainsKeyValue('PATH_INFO', '/_ah/health'),
+            mox.ContainsKeyValue('QUERY_STRING', 'IsLastSuccessful=no')),
+        start_response, inst=inst, request_type=instance.NORMAL_REQUEST)
+    self.mox.ReplayAll()
+    servr._do_health_check(wsgi_servr, inst, start_response, False)
+    self.mox.VerifyAll()
+
+  def test_restart_instance(self):
+    inst = self.mox.CreateMock(instance.Instance)
+    new_inst = self.mox.CreateMock(instance.Instance)
+    inst.instance_id = 0
+    new_inst.instance_id = 0
+
+    self.mox.StubOutWithMock(inst, 'quit')
+    self.mox.StubOutWithMock(new_inst, 'start')
+    self.mox.StubOutWithMock(
+        self.factory, 'new_instance')
+    self.mox.StubOutWithMock(module.ManualScalingModule, '_add_health_checks')
+
+    servr = ManualScalingModuleFacade(instance_factory=self.factory)
+    servr.module_configuration.runtime = 'vm'
+    servr.module_configuration.vm_health_check = appinfo.VmHealthCheck(
+        enable_health_check=True)
+    wsgi_servr = self.mox.CreateMock(wsgi_server.WsgiServer)
+    self.mox.StubOutWithMock(wsgi_servr, 'set_app')
+    wsgi_servr.port = 3
+    servr._wsgi_servers = [wsgi_servr]
+    servr._instances = [inst]
+
+    inst.quit(force=True)
+    wsgi_servr.set_app(mox.IsA(functools.partial))
+    self.factory.new_instance(0).AndReturn(new_inst)
+    module.ManualScalingModule._add_health_checks(
+        new_inst, wsgi_servr, mox.IsA(appinfo.VmHealthCheck))
+    new_inst.start()
+
+    self.mox.ReplayAll()
+    servr._restart_instance(inst)
+    self.mox.VerifyAll()
+
+  def test_restart_instance_no_health_checks(self):
+    inst = self.mox.CreateMock(instance.Instance)
+    new_inst = self.mox.CreateMock(instance.Instance)
+    inst.instance_id = 0
+    new_inst.instance_id = 0
+
+    self.mox.StubOutWithMock(inst, 'quit')
+    self.mox.StubOutWithMock(new_inst, 'start')
+    self.mox.StubOutWithMock(
+        self.factory, 'new_instance')
+
+    servr = ManualScalingModuleFacade(instance_factory=self.factory)
+    servr.module_configuration.vm_health_check = appinfo.VmHealthCheck(
+        enable_health_check=False)
+    wsgi_servr = self.mox.CreateMock(wsgi_server.WsgiServer)
+    self.mox.StubOutWithMock(wsgi_servr, 'set_app')
+    wsgi_servr.port = 3
+    servr._wsgi_servers = [wsgi_servr]
+    servr._instances = [inst]
+
+    inst.quit(force=True)
+    wsgi_servr.set_app(mox.IsA(functools.partial))
+    self.factory.new_instance(0).AndReturn(new_inst)
+    new_inst.start()
+
+    self.mox.ReplayAll()
+    servr._restart_instance(inst)
+    self.mox.VerifyAll()
 
 
 class TestManualScalingInstancePoolHandleScriptRequest(unittest.TestCase):
@@ -1468,8 +1709,9 @@ class TestManualScalingInstancePoolHandleScriptRequest(unittest.TestCase):
     self.mox.StubOutWithMock(self.manual_module, '_error_response')
 
     self.manual_module._choose_instance(10.0).WithSideEffects(advance_time)
-    self.manual_module._error_response(self.environ, self.start_response,
-                                       503).AndReturn(self.response)
+    self.manual_module._error_response(
+        self.environ, self.start_response, 503, mox.IgnoreArg()).AndReturn(
+            self.response)
     self.mox.ReplayAll()
     self.assertEqual(
         self.response,
@@ -1485,6 +1727,7 @@ class TestManualScalingInstancePoolChooseInstances(unittest.TestCase):
   """Tests for module.ManualScalingModule._choose_instance."""
 
   class Instance(object):
+
     def __init__(self, can_accept_requests):
       self.can_accept_requests = can_accept_requests
 
@@ -1647,16 +1890,15 @@ class TestManualScalingInstancePoolSuspendAndResume(unittest.TestCase):
     self._new_instance = self.mox.CreateMock(instance.Instance)
     self.factory.new_instance(0, expect_ready_request=True).AndReturn(
         self._new_instance)
-    module._THREAD_POOL.submit(self.module._suspend_instance, self._instance,
-                               self._wsgi_server.port)
+
+    f = futures.Future()
+    f.set_result(True)
     module._THREAD_POOL.submit(self.module._start_instance, self._wsgi_server,
-                               self._new_instance)
-    self._instance.quit(expect_shutdown=True)
+                               self._new_instance).AndReturn(f)
+    self._instance.quit(force=True)
     port = object()
-    self.module._shutdown_instance(self._instance, port)
     self.mox.ReplayAll()
     self.module.restart()
-    self.module._suspend_instance(self._instance, port)
     self.mox.VerifyAll()
     self.assertEqual(self.module._handle_request,
                      self._wsgi_server._app.func)
@@ -1681,14 +1923,14 @@ class TestManualScalingInstancePoolHandleChanges(unittest.TestCase):
     self.mox.StubOutWithMock(self.servr, '_create_url_handlers')
     self.mox.StubOutWithMock(self.servr._module_configuration,
                              'check_for_updates')
-    self.mox.StubOutWithMock(self.servr._watcher, 'has_changes')
+    self.mox.StubOutWithMock(self.servr._watcher, 'changes')
 
   def tearDown(self):
     self.mox.UnsetStubs()
 
   def test_no_changes(self):
     self.servr._module_configuration.check_for_updates().AndReturn(frozenset())
-    self.servr._watcher.has_changes().AndReturn(False)
+    self.servr._watcher.changes(0).AndReturn(set())
 
     self.mox.ReplayAll()
     self.servr._handle_changes()
@@ -1696,7 +1938,7 @@ class TestManualScalingInstancePoolHandleChanges(unittest.TestCase):
 
   def test_irrelevant_config_change(self):
     self.servr._module_configuration.check_for_updates().AndReturn(frozenset())
-    self.servr._watcher.has_changes().AndReturn(False)
+    self.servr._watcher.changes(0).AndReturn(set())
 
     self.mox.ReplayAll()
     self.servr._handle_changes()
@@ -1705,7 +1947,7 @@ class TestManualScalingInstancePoolHandleChanges(unittest.TestCase):
   def test_restart_config_change(self):
     conf_change = frozenset([application_configuration.ENV_VARIABLES_CHANGED])
     self.servr._module_configuration.check_for_updates().AndReturn(conf_change)
-    self.servr._watcher.has_changes().AndReturn(False)
+    self.servr._watcher.changes(0).AndReturn(set())
     self.instance_factory.configuration_changed(conf_change)
     self.servr.restart()
 
@@ -1716,7 +1958,7 @@ class TestManualScalingInstancePoolHandleChanges(unittest.TestCase):
   def test_handler_change(self):
     conf_change = frozenset([application_configuration.HANDLERS_CHANGED])
     self.servr._module_configuration.check_for_updates().AndReturn(conf_change)
-    self.servr._watcher.has_changes().AndReturn(False)
+    self.servr._watcher.changes(0).AndReturn(set())
     self.servr._create_url_handlers()
     self.instance_factory.configuration_changed(conf_change)
 
@@ -1728,7 +1970,7 @@ class TestManualScalingInstancePoolHandleChanges(unittest.TestCase):
 
   def test_file_change(self):
     self.servr._module_configuration.check_for_updates().AndReturn(frozenset())
-    self.servr._watcher.has_changes().AndReturn(True)
+    self.servr._watcher.changes(0).AndReturn({'-'})
     self.instance_factory.files_changed()
     self.servr.restart()
 
@@ -1740,7 +1982,7 @@ class TestManualScalingInstancePoolHandleChanges(unittest.TestCase):
     self.servr._suspended = True
     conf_change = frozenset([application_configuration.ENV_VARIABLES_CHANGED])
     self.servr._module_configuration.check_for_updates().AndReturn(conf_change)
-    self.servr._watcher.has_changes().AndReturn(False)
+    self.servr._watcher.changes(0).AndReturn(set())
     self.instance_factory.configuration_changed(conf_change)
 
     self.mox.ReplayAll()
@@ -1751,7 +1993,7 @@ class TestManualScalingInstancePoolHandleChanges(unittest.TestCase):
     self.servr._suspended = True
     conf_change = frozenset([application_configuration.HANDLERS_CHANGED])
     self.servr._module_configuration.check_for_updates().AndReturn(conf_change)
-    self.servr._watcher.has_changes().AndReturn(False)
+    self.servr._watcher.changes(0).AndReturn(set())
     self.servr._create_url_handlers()
     self.instance_factory.configuration_changed(conf_change)
 
@@ -1762,7 +2004,7 @@ class TestManualScalingInstancePoolHandleChanges(unittest.TestCase):
   def test_file_change_suspended(self):
     self.servr._suspended = True
     self.servr._module_configuration.check_for_updates().AndReturn(frozenset())
-    self.servr._watcher.has_changes().AndReturn(True)
+    self.servr._watcher.changes(0).AndReturn({'-'})
     self.instance_factory.files_changed()
 
     self.mox.ReplayAll()
@@ -1925,8 +2167,9 @@ class TestBasicScalingInstancePoolHandleScriptRequest(unittest.TestCase):
     self.mox.StubOutWithMock(self.basic_module, '_error_response')
 
     self.basic_module._choose_instance(20).WithSideEffects(self.advance_time)
-    self.basic_module._error_response(self.environ, self.start_response,
-                                      503).AndReturn(self.response)
+    self.basic_module._error_response(
+        self.environ, self.start_response, 503, mox.IgnoreArg()).AndReturn(
+            self.response)
 
     self.mox.ReplayAll()
     self.assertEqual(
@@ -2044,6 +2287,7 @@ class TestBasicScalingInstancePoolChooseInstances(unittest.TestCase):
   """Tests for module.BasicScalingModule._choose_instance."""
 
   class Instance(object):
+
     def __init__(self, can_accept_requests):
       self.can_accept_requests = can_accept_requests
 
@@ -2194,14 +2438,14 @@ class TestBasicScalingInstancePoolHandleChanges(unittest.TestCase):
     self.mox.StubOutWithMock(self.servr, '_create_url_handlers')
     self.mox.StubOutWithMock(self.servr._module_configuration,
                              'check_for_updates')
-    self.mox.StubOutWithMock(self.servr._watcher, 'has_changes')
+    self.mox.StubOutWithMock(self.servr._watcher.__class__, 'changes')
 
   def tearDown(self):
     self.mox.UnsetStubs()
 
   def test_no_changes(self):
     self.servr._module_configuration.check_for_updates().AndReturn(frozenset())
-    self.servr._watcher.has_changes().AndReturn(False)
+    self.servr._watcher.changes(0).AndReturn(set())
 
     self.mox.ReplayAll()
     self.servr._handle_changes()
@@ -2209,7 +2453,7 @@ class TestBasicScalingInstancePoolHandleChanges(unittest.TestCase):
 
   def test_irrelevant_config_change(self):
     self.servr._module_configuration.check_for_updates().AndReturn(frozenset())
-    self.servr._watcher.has_changes().AndReturn(False)
+    self.servr._watcher.changes(0).AndReturn(set())
 
     self.mox.ReplayAll()
     self.servr._handle_changes()
@@ -2218,7 +2462,7 @@ class TestBasicScalingInstancePoolHandleChanges(unittest.TestCase):
   def test_restart_config_change(self):
     conf_change = frozenset([application_configuration.ENV_VARIABLES_CHANGED])
     self.servr._module_configuration.check_for_updates().AndReturn(conf_change)
-    self.servr._watcher.has_changes().AndReturn(False)
+    self.servr._watcher.changes(0).AndReturn(set())
     self.instance_factory.configuration_changed(conf_change)
     self.servr.restart()
 
@@ -2229,7 +2473,7 @@ class TestBasicScalingInstancePoolHandleChanges(unittest.TestCase):
   def test_handler_change(self):
     conf_change = frozenset([application_configuration.HANDLERS_CHANGED])
     self.servr._module_configuration.check_for_updates().AndReturn(conf_change)
-    self.servr._watcher.has_changes().AndReturn(False)
+    self.servr._watcher.changes(0).AndReturn(set())
     self.servr._create_url_handlers()
     self.instance_factory.configuration_changed(conf_change)
     self.servr.restart()
@@ -2240,7 +2484,7 @@ class TestBasicScalingInstancePoolHandleChanges(unittest.TestCase):
 
   def test_file_change(self):
     self.servr._module_configuration.check_for_updates().AndReturn(frozenset())
-    self.servr._watcher.has_changes().AndReturn(True)
+    self.servr._watcher.changes(0).AndReturn({'-'})
     self.instance_factory.files_changed().AndReturn(True)
     self.servr.restart()
 
@@ -2250,6 +2494,7 @@ class TestBasicScalingInstancePoolHandleChanges(unittest.TestCase):
 
 
 class TestInteractiveCommandModule(unittest.TestCase):
+
   def setUp(self):
     api_server.test_setup_stubs()
 
@@ -2273,6 +2518,7 @@ class TestInteractiveCommandModule(unittest.TestCase):
         runtime_stderr_loglevel=1,
         php_config=None,
         python_config=None,
+        java_config=None,
         cloud_sql_config=None,
         vm_config=None,
         default_version_port=8080,
@@ -2394,20 +2640,24 @@ class TestInteractiveCommandModule(unittest.TestCase):
     self.mox.VerifyAll()
 
   def test_handle_script_request_timeout(self):
-    self.servr._MAX_REQUEST_WAIT_TIME = 0
-    start_response = start_response_utils.CapturingStartResponse()
+    old_timeout = self.servr._MAX_REQUEST_WAIT_TIME
+    try:
+      self.servr._MAX_REQUEST_WAIT_TIME = 0
+      start_response = start_response_utils.CapturingStartResponse()
 
-    self.mox.ReplayAll()
-    self.assertEqual(
-        ['The command timed-out while waiting for another one to complete'],
-        self.servr._handle_script_request(self.environ,
-                                          start_response,
-                                          self.url_map,
-                                          self.match,
-                                          self.request_id))
-    self.mox.VerifyAll()
-    self.assertEqual('503 Service Unavailable',
-                     start_response.status)
+      self.mox.ReplayAll()
+      self.assertEqual(
+          ['The command timed-out while waiting for another one to complete'],
+          self.servr._handle_script_request(self.environ,
+                                            start_response,
+                                            self.url_map,
+                                            self.match,
+                                            self.request_id))
+      self.mox.VerifyAll()
+      self.assertEqual('503 Service Unavailable',
+                       start_response.status)
+    finally:
+      self.servr._MAX_REQUEST_WAIT_TIME = old_timeout
 
   def test_handle_script_request_restart(self):
     def restart_and_raise(*args):

@@ -18,7 +18,12 @@
 
 
 
-"""Google Storage specific Files API calls."""
+"""Files API.
+
+.. deprecated:: 1.8.1
+   Use Google Cloud Storage Client library instead.
+
+Google Storage specific Files API calls."""
 
 
 
@@ -26,6 +31,7 @@
 
 
 from __future__ import with_statement
+
 
 
 __all__ = ['create']

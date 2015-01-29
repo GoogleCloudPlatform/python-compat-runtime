@@ -14,10 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-
-
-
-
 """Tool for deploying apps to an app server.
 
 Currently, the application only uploads new appversions. To do this, it first
@@ -31,6 +27,7 @@ methods to add to the list of files, fetch a list of modified files, upload
 files, and commit or rollback the transaction.
 """
 from __future__ import with_statement
+
 
 
 import calendar
@@ -87,6 +84,7 @@ if sys.version_info[:2] >= (2, 7):
 else:
   appcfg_java = None
 
+from google.appengine.tools import augment_mimetypes
 from google.appengine.tools import bulkloader
 from google.appengine.tools import sdk_update_checker
 
@@ -127,9 +125,6 @@ SDK_PRODUCT = 'appcfg_py'
 
 DAY = 24*3600
 SUNDAY = 6
-
-SUPPORTED_RUNTIMES = (
-    'dart', 'go', 'php', 'python', 'python27', 'java', 'java7', 'vm', 'custom')
 
 
 
@@ -173,6 +168,9 @@ APP_YAML_FILENAME = 'app.yaml'
 GO_APP_BUILDER = os.path.join('goroot', 'bin', 'go-app-builder')
 if sys.platform.startswith('win'):
   GO_APP_BUILDER += '.exe'
+
+
+augment_mimetypes.init()
 
 
 class Error(Exception):
@@ -239,6 +237,14 @@ def _PrintErrorAndExit(stream, msg, exit_code=2):
   """
   stream.write(msg)
   sys.exit(exit_code)
+
+
+def JavaSupported():
+  """True if Java is supported by this SDK."""
+
+
+  tools_java_dir = os.path.join(os.path.dirname(appcfg_java.__file__), 'java')
+  return os.path.isdir(tools_java_dir)
 
 
 @contextlib.contextmanager
@@ -2360,12 +2366,17 @@ class AppVersionUpload(object):
                        else EndpointsState.PENDING)
     return updated_state != EndpointsState.PENDING, updated_state
 
-  def Rollback(self):
+  def Rollback(self, force_rollback=False):
     """Rolls back the transaction if one is in progress."""
     if not self.in_transaction:
       return
-    StatusUpdate('Rolling back the update.', self.error_fh)
-    self.logging_context.Send('/api/appversion/rollback')
+    msg = 'Rolling back the update.'
+    if self.config.vm and not force_rollback:
+      msg += ('  This can sometimes take a while since a VM version is being '
+              'rolled back.')
+    StatusUpdate(msg, self.error_fh)
+    self.logging_context.Send('/api/appversion/rollback',
+                              force_rollback='1' if force_rollback else '0')
     self.in_transaction = False
     self.files = {}
 
@@ -2497,9 +2508,12 @@ class AppVersionUpload(object):
 
 
         if file_length > max_size:
+          extra_msg = (' Consider --enable_jar_splitting.'
+                       if JavaSupported() and path.endswith('jar')
+                       else '')
           logging.error('Ignoring file \'%s\': Too long '
-                        '(max %d bytes, file is %d bytes)',
-                        path, max_size, file_length)
+                        '(max %d bytes, file is %d bytes).%s',
+                        path, max_size, file_length, extra_msg)
         else:
           logging.info('Processing file \'%s\'', path)
           self.AddFile(path, file_handle)
@@ -2544,7 +2558,7 @@ class AppVersionUpload(object):
     self.file_batcher.Flush()
     self.blob_batcher.Flush()
     self.errorblob_batcher.Flush()
-    StatusUpdate('Uploaded %d files and blobs' % num_files, self.error_fh)
+    StatusUpdate('Uploaded %d files and blobs.' % num_files, self.error_fh)
 
   @staticmethod
   def _LogDoUploadException(exception):
@@ -2766,8 +2780,6 @@ class AppCfgApp(object):
       OptionsParser will exit the program when there is a parse failure, it
       is nice to subclass OptionsParser and catch the error before exiting.
     read_url_contents: A function to read the contents of a URL.
-    override_java_supported: If not None, forces the code to assume that Java
-      support is (True) or is not (False) present.
   """
 
   def __init__(self, argv, parser_class=optparse.OptionParser,
@@ -2784,8 +2796,7 @@ class AppCfgApp(object):
                wrap_server_error_message=True,
                oauth_client_id=APPCFG_CLIENT_ID,
                oauth_client_secret=APPCFG_CLIENT_NOTSOSECRET,
-               oauth_scopes=APPCFG_SCOPES,
-               override_java_supported=None):
+               oauth_scopes=APPCFG_SCOPES):
     """Initializer.  Parses the cmdline and selects the Action to use.
 
     Initializes all of the attributes described in the class docstring.
@@ -2822,8 +2833,6 @@ class AppCfgApp(object):
       oauth_scopes: The scope or set of scopes to be accessed by the OAuth2
           token retrieved. Defaults to APPCFG_SCOPES. Can be a string or
           iterable of strings, representing the scope(s) to request.
-      override_java_supported: If not None, forces the code to assume that Java
-        support is (True) or is not (False) present.
     """
     self.parser_class = parser_class
     self.argv = argv
@@ -2839,7 +2848,6 @@ class AppCfgApp(object):
     self.oauth_client_id = oauth_client_id
     self.oauth_client_secret = oauth_client_secret
     self.oauth_scopes = oauth_scopes
-    self.override_java_supported = override_java_supported
 
     self.read_url_contents = _ReadUrlContents
 
@@ -2859,13 +2867,13 @@ class AppCfgApp(object):
 
     if not self.options.allow_any_runtime:
       if self.options.runtime:
-        if self.options.runtime not in SUPPORTED_RUNTIMES:
+        if self.options.runtime not in appinfo.GetAllRuntimes():
           _PrintErrorAndExit(self.error_fh,
                              '"%s" is not a supported runtime\n' %
                              self.options.runtime)
       else:
         appinfo.AppInfoExternal.ATTRIBUTES[appinfo.RUNTIME] = (
-            '|'.join(SUPPORTED_RUNTIMES))
+            '|'.join(appinfo.GetAllRuntimes()))
 
     action = self.args.pop(0)
 
@@ -2985,15 +2993,6 @@ class AppCfgApp(object):
       print >>self.error_fh, 'Could not start serving the given version.'
       return 1
     return 0
-
-  def _JavaSupported(self):
-    """True if this SDK supports uploading Java apps."""
-    if self.override_java_supported is not None:
-      return self.override_java_supported
-    if appcfg_java is None:
-      return False
-    tools_java_dir = os.path.join(os.path.dirname(appcfg_java.__file__), 'java')
-    return os.path.isdir(tools_java_dir)
 
   def _GetActionDescriptions(self):
     """Returns a formatted string containing the short_descs for all actions."""
@@ -3142,6 +3141,9 @@ class AppCfgApp(object):
                       dest='auth_local_webserver', default=True,
                       help='Do not run a local web server to handle redirects '
                       'during OAuth authorization.')
+    parser.add_option('--called_by_gcloud',
+                      action='store_true', default=False,
+                      help=optparse.SUPPRESS_HELP)
     return parser
 
   def _MakeSpecificParser(self, action):
@@ -3341,7 +3343,7 @@ class AppCfgApp(object):
       self.parser.error('Error parsing %s.yaml: %s.' % (
           os.path.join(basepath, basename), e))
     if not appyaml:
-      if self._JavaSupported():
+      if JavaSupported():
         if appcfg_java.IsWarFileWithoutYaml(basepath):
           java_app_update = appcfg_java.JavaAppUpdate(basepath, self.options)
           appyaml_string = java_app_update.GenerateAppYamlString([])
@@ -3617,13 +3619,31 @@ class AppCfgApp(object):
       paths to absolute paths, its stderr is raised.
     """
 
-    if (not self.options.precompilation and
-        appyaml.GetEffectiveRuntime() == 'go'):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    runtime = appyaml.GetEffectiveRuntime()
+    if appyaml.vm and (self.options.called_by_gcloud or runtime != 'go'):
+      self.options.precompilation = False
+    elif runtime == 'dart':
+      self.options.precompilation = False
+    elif runtime == 'go' and not self.options.precompilation:
       logging.warning('Precompilation is required for Go apps; '
                       'ignoring --no_precompilation')
       self.options.precompilation = True
-
-    if appyaml.runtime.startswith('java'):
+    elif (runtime.startswith('java') and
+          appinfo.JAVA_PRECOMPILED not in (appyaml.derived_file_type or [])):
       self.options.precompilation = False
 
     if self.options.precompilation:
@@ -3741,8 +3761,7 @@ class AppCfgApp(object):
       self.UpdateUsingSpecificFiles()
       return
 
-    if (self._JavaSupported() and
-        appcfg_java.IsWarFileWithoutYaml(self.basepath)):
+    if JavaSupported() and appcfg_java.IsWarFileWithoutYaml(self.basepath):
       java_app_update = appcfg_java.JavaAppUpdate(self.basepath, self.options)
       self.options.compile_jsps = not java_app_update.app_engine_web_xml.vm
 
@@ -3900,7 +3919,7 @@ class AppCfgApp(object):
     parser.add_option('--no_usage_reporting', action='store_false',
                       dest='usage_reporting', default=True,
                       help='Disable usage reporting.')
-    if self._JavaSupported():
+    if JavaSupported():
       appcfg_java.AddUpdateOptions(parser)
 
   def VacuumIndexes(self):
@@ -4071,8 +4090,7 @@ class AppCfgApp(object):
       self.backend = self.args[0]
     elif len(self.args) > 1:
       self.parser.error('Expected an optional <backend> argument.')
-    if (self._JavaSupported() and
-        appcfg_java.IsWarFileWithoutYaml(self.basepath)):
+    if JavaSupported() and appcfg_java.IsWarFileWithoutYaml(self.basepath):
       java_app_update = appcfg_java.JavaAppUpdate(self.basepath, self.options)
       self.options.compile_jsps = True
       sdk_root = os.path.dirname(appcfg_java.__file__)
@@ -4264,6 +4282,15 @@ class AppCfgApp(object):
     parser.add_option('-I', '--instance', type='string', dest='instance',
                       help='Instance to lock/unlock.')
 
+  def PrepareVmRuntimeAction(self):
+    """Prepare the application for vm runtimes and return state."""
+    if not self.options.app_id:
+      self.parser.error('Expected an --application argument')
+    rpcserver = self._GetRpcServer()
+    response = rpcserver.Send('/api/vms/prepare',
+                              app_id=self.options.app_id)
+    print >> self.out_fh, response
+
   def _ParseAndValidateModuleYamls(self, yaml_paths):
     """Validates given yaml paths and returns the parsed yaml objects.
 
@@ -4373,9 +4400,17 @@ class AppCfgApp(object):
 
   def Rollback(self):
     """Does a rollback of an existing transaction for this app version."""
-    if self.args:
-      self.parser.error('Expected a single <directory> or <file> argument.')
     self._Rollback()
+
+  def _RollbackOptions(self, parser):
+    """Adds rollback-specific options to parser.
+
+    Args:
+      parser: An instance of OptionsParser.
+    """
+    parser.add_option('--force_rollback', action='store_true',
+                      dest='force_rollback', default=False,
+                      help='Force rollback.')
 
   def _Rollback(self, backend=None):
     """Does a rollback of an existing transaction.
@@ -4402,7 +4437,15 @@ class AppCfgApp(object):
                                   backend=backend)
 
     appversion.in_transaction = True
-    appversion.Rollback()
+
+
+
+
+    force_rollback = False
+    if hasattr(self.options, 'force_rollback'):
+      force_rollback = self.options.force_rollback
+
+    appversion.Rollback(force_rollback)
 
   def SetDefaultVersion(self):
     """Sets the default version."""
@@ -5157,6 +5200,7 @@ option to delete them."""),
       'rollback': Action(
           function='Rollback',
           usage='%prog [options] rollback <directory> | <file>',
+          options=_RollbackOptions,
           short_desc='Rollback an in-progress update.',
           long_desc="""
 The 'update' command requires a server-side transaction.
@@ -5325,6 +5369,15 @@ for debugging."""),
           uses_basepath=False,
           long_desc="""
 The 'lock' command relocks a debugged vm runtime application."""),
+
+      'prepare_vm_runtime': Action(
+          function='PrepareVmRuntimeAction',
+          usage='%prog [options] prepare_vm_runtime -A app_id',
+          short_desc='Prepare an application for the VM runtime.',
+          hidden=True,
+          uses_basepath=False,
+          long_desc="""
+The 'prepare_vm_runtime' prepares an application for the VM runtime."""),
   }
 
 

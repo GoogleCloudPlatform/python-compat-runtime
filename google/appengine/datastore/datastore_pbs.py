@@ -38,8 +38,9 @@ This module is internal and should not be used by client applications.
 
 
 
-from google.appengine.datastore import entity_pb
 
+from google.appengine.datastore import entity_pb
+from google.appengine.datastore import datastore_v4_pb
 from google.appengine.datastore import entity_v4_pb
 
 
@@ -242,12 +243,13 @@ class _EntityConverter(object):
       v4_keys.append(v4_key)
     return v4_keys
 
-  def v4_to_v3_entity(self, v4_entity, v3_entity):
+  def v4_to_v3_entity(self, v4_entity, v3_entity, is_projection=False):
     """Converts a v4 Entity to a v3 EntityProto.
 
     Args:
       v4_entity: an entity_v4_pb.Entity
       v3_entity: an entity_pb.EntityProto to populate
+      is_projection: True if the v4_entity is from a projection query.
     """
     v3_entity.Clear()
     for v4_property in v4_entity.property_list():
@@ -255,9 +257,11 @@ class _EntityConverter(object):
       v4_value = v4_property.value()
       if v4_value.list_value_list():
         for v4_sub_value in v4_value.list_value_list():
-          self.__add_v3_property(property_name, True, v4_sub_value, v3_entity)
+          self.__add_v3_property(
+              property_name, True, is_projection, v4_sub_value, v3_entity)
       else:
-        self.__add_v3_property(property_name, False, v4_value, v3_entity)
+        self.__add_v3_property(
+            property_name, False, is_projection, v4_value, v3_entity)
     if v4_entity.has_key():
       v4_key = v4_entity.key()
       self.v4_to_v3_reference(v4_key, v3_entity.mutable_key())
@@ -326,12 +330,16 @@ class _EntityConverter(object):
         self.__v4_to_v3_point_value(v4_entity_value,
                                     v3_value.mutable_pointvalue())
       elif v4_meaning == MEANING_PREDEFINED_ENTITY_USER:
-        self.__v4_to_v3_user_value(v4_entity_value,
-                                   v3_value.mutable_uservalue())
+        self.v4_entity_to_v3_user_value(v4_entity_value,
+                                        v3_value.mutable_uservalue())
       else:
         v3_entity_value = entity_pb.EntityProto()
         self.v4_to_v3_entity(v4_entity_value, v3_entity_value)
         v3_value.set_stringvalue(v3_entity_value.SerializePartialToString())
+    elif v4_value.has_geo_point_value():
+      point_value = v3_value.mutable_pointvalue()
+      point_value.set_x(v4_value.geo_point_value().latitude())
+      point_value.set_y(v4_value.geo_point_value().longitude())
     else:
 
       pass
@@ -425,15 +433,21 @@ class _EntityConverter(object):
 
 
     elif v3_property_value.has_pointvalue():
-      self.__v3_to_v4_point_entity(v3_property_value.pointvalue(),
-                                   v4_value.mutable_entity_value())
-      if v3_meaning != entity_pb.Property.GEORSS_POINT:
+      if v3_meaning == MEANING_GEORSS_POINT:
+        point_value = v3_property_value.pointvalue()
+        v4_value.mutable_geo_point_value().set_latitude(point_value.x())
+        v4_value.mutable_geo_point_value().set_longitude(point_value.y())
+      else:
+        self.__v3_to_v4_point_entity(v3_property_value.pointvalue(),
+                                     v4_value.mutable_entity_value())
         v4_value.set_meaning(MEANING_PREDEFINED_ENTITY_POINT)
-        v3_meaning = None
+
+      v3_meaning = None
     elif v3_property_value.has_uservalue():
-      self.__v3_to_v4_user_entity(v3_property_value.uservalue(),
-                                  v4_value.mutable_entity_value())
+      self.v3_user_value_to_v4_entity(v3_property_value.uservalue(),
+                                v4_value.mutable_entity_value())
       v4_value.set_meaning(MEANING_PREDEFINED_ENTITY_USER)
+      v3_meaning = None
     else:
       pass
 
@@ -446,7 +460,8 @@ class _EntityConverter(object):
     if indexed != v4_value.indexed():
       v4_value.set_indexed(indexed)
 
-  def __v4_to_v3_property(self, property_name, is_multi, v4_value, v3_property):
+  def v4_to_v3_property(self, property_name, is_multi, is_projection,
+                        v4_value, v3_property):
     """Converts info from a v4 Property to a v3 Property.
 
     v4_value must not have a list_value.
@@ -454,6 +469,7 @@ class _EntityConverter(object):
     Args:
       property_name: the name of the property
       is_multi: whether the property contains multiple values
+      is_projection: whether the property is projected
       v4_value: an entity_v4_pb.Value
       v3_property: an entity_pb.Property to populate
     """
@@ -466,7 +482,6 @@ class _EntityConverter(object):
     v4_meaning = None
     if v4_value.has_meaning():
       v4_meaning = v4_value.meaning()
-
     if v4_value.has_timestamp_microseconds_value():
       v3_property.set_meaning(entity_pb.Property.GD_WHEN)
     elif v4_value.has_blob_key_value():
@@ -491,27 +506,35 @@ class _EntityConverter(object):
             and v4_meaning != MEANING_PREDEFINED_ENTITY_USER):
           v3_property.set_meaning(entity_pb.Property.ENTITY_PROTO)
         v4_meaning = None
+    elif v4_value.has_geo_point_value():
+      v3_property.set_meaning(MEANING_GEORSS_POINT)
     else:
 
       pass
     if v4_meaning is not None:
       v3_property.set_meaning(v4_meaning)
 
-  def __add_v3_property(self, property_name, is_multi, v4_value, v3_entity):
+    if is_projection:
+      v3_property.set_meaning(entity_pb.Property.INDEX_VALUE)
+
+
+  def __add_v3_property(self, property_name, is_multi, is_projection,
+                        v4_value, v3_entity):
     """Adds a v3 Property to an Entity based on information from a v4 Property.
 
     Args:
       property_name: the name of the property
       is_multi: whether the property contains multiple values
+      is_projection: whether the property is a projection
       v4_value: an entity_v4_pb.Value
       v3_entity: an entity_pb.EntityProto
     """
     if v4_value.indexed():
-      self.__v4_to_v3_property(property_name, is_multi, v4_value,
-                               v3_entity.add_property())
+      self.v4_to_v3_property(property_name, is_multi, is_projection,
+                             v4_value, v3_entity.add_property())
     else:
-      self.__v4_to_v3_property(property_name, is_multi, v4_value,
-                               v3_entity.add_raw_property())
+      self.v4_to_v3_property(property_name, is_multi, is_projection,
+                             v4_value, v3_entity.add_raw_property())
 
   def __build_name_to_v4_property_map(self, v4_entity):
     property_map = {}
@@ -675,7 +698,7 @@ class _EntityConverter(object):
     v4_entity.property_list().append(
         self.__v4_double_property(PROPERTY_NAME_Y, v3_point_value.y(), False))
 
-  def __v4_to_v3_user_value(self, v4_user_entity, v3_user_value):
+  def v4_entity_to_v3_user_value(self, v4_user_entity, v3_user_value):
     """Converts a v4 user Entity to a v3 UserValue.
 
     Args:
@@ -708,7 +731,7 @@ class _EntityConverter(object):
           self.__get_v4_string_value(name_to_v4_property[
               PROPERTY_NAME_FEDERATED_PROVIDER]))
 
-  def __v3_to_v4_user_entity(self, v3_user_value, v4_entity):
+  def v3_user_value_to_v4_entity(self, v3_user_value, v4_entity):
     """Converts a v3 UserValue to a v4 user Entity.
 
     Args:
@@ -788,7 +811,7 @@ class _EntityConverter(object):
         entity_pb.Property.GD_WHEN: HasInt64Value,
         entity_pb.Property.GD_RATING: HasInt64Value,
         entity_pb.Property.GEORSS_POINT: HasPointValue,
-        }
+    }
     default = ReturnFalse
     return value_checkers.get(v3_meaning, default)()
 
@@ -864,6 +887,59 @@ class _EntityConverter(object):
       if v3_ref_value_path_element.has_name():
         v3_path_element.set_name(v3_ref_value_path_element.name())
 
+
+class _QueryConverter(object):
+  """Base converter for v3 and v4 queries."""
+
+  def __init__(self, entity_converter):
+    self._entity_converter = entity_converter
+
+  def _v3_filter_to_v4_property_filter(self, v3_filter, v4_property_filter):
+    """Converts a v3 Filter to a v4 PropertyFilter.
+
+    Args:
+      v3_filter: a datastore_pb.Filter
+      v4_property_filter: a datastore_v4_pb.PropertyFilter to populate
+
+    Raises:
+      InvalidConversionError if the filter cannot be converted
+    """
+    check_conversion(v3_filter.property_size() == 1,
+                     'invalid filter')
+    check_conversion(v3_filter.op() <= 5,
+                     'unsupported filter op: %d' % v3_filter.op())
+    v4_property_filter.Clear()
+    v4_property_filter.set_operator(v3_filter.op())
+    v4_property_filter.mutable_property().set_name(v3_filter.property(0).name())
+    self._entity_converter.v3_property_to_v4_value(
+        v3_filter.property(0), True, v4_property_filter.mutable_value())
+
+  def _v3_query_to_v4_ancestor_filter(self, v3_query, v4_property_filter):
+    """Converts a v3 Query to a v4 ancestor PropertyFilter.
+
+    Args:
+      v3_query: a datastore_pb.Query
+      v4_property_filter: a datastore_v4_pb.PropertyFilter to populate
+    """
+    v4_property_filter.Clear()
+    v4_property_filter.set_operator(
+        datastore_v4_pb.PropertyFilter.HAS_ANCESTOR)
+    prop = v4_property_filter.mutable_property()
+    prop.set_name(PROPERTY_NAME_KEY)
+    self._entity_converter.v3_to_v4_key(
+        v3_query.ancestor(),
+        v4_property_filter.mutable_value().mutable_key_value())
+
+  def v3_order_to_v4_order(self, v3_order, v4_order):
+    """Converts a v3 Query order to a v4 PropertyOrder.
+
+    Args:
+      v3_order: a datastore_pb.Query.Order
+      v4_order: a datastore_v4_pb.PropertyOrder to populate
+    """
+    v4_order.mutable_property().set_name(v3_order.property())
+    if v3_order.has_direction():
+      v4_order.set_direction(v3_order.direction())
 
 
 __entity_converter = _EntityConverter()

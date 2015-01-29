@@ -31,6 +31,7 @@
 """Defines input readers for MapReduce."""
 
 
+
 __all__ = [
     "AbstractDatastoreInputReader",
     "ALLOW_CHECKPOINT",
@@ -44,6 +45,8 @@ __all__ = [
     "DatastoreInputReader",
     "DatastoreKeyInputReader",
     "FileInputReader",
+    "GoogleCloudStorageInputReader",
+    "GoogleCloudStorageRecordInputReader",
     "RandomStringInputReader",
     "RawDatastoreInputReader",
     "Error",
@@ -96,11 +99,19 @@ from google.appengine.ext.mapreduce import util
 
 try:
 
+  cloudstorage = None
   from google.appengine.ext import cloudstorage
   if hasattr(cloudstorage, "_STUB"):
     cloudstorage = None
 except ImportError:
   pass
+
+
+if cloudstorage is None:
+  try:
+    import cloudstorage
+  except ImportError:
+    pass
 
 
 
@@ -2554,6 +2565,16 @@ class _GoogleCloudStorageInputReader(InputReader):
       self._bucket_iter = iter(self._bucket)
 
   @classmethod
+  def get_params(cls, mapper_spec, allowed_keys=None, allow_old=True):
+    params = _get_params(mapper_spec, allowed_keys, allow_old)
+
+
+    if (mapper_spec.params.get(cls.BUCKET_NAME_PARAM) is not None and
+        params.get(cls.BUCKET_NAME_PARAM) is None):
+      params[cls.BUCKET_NAME_PARAM] = mapper_spec.params[cls.BUCKET_NAME_PARAM]
+    return params
+
+  @classmethod
   def validate(cls, mapper_spec):
     """Validate mapper specification.
 
@@ -2564,7 +2585,7 @@ class _GoogleCloudStorageInputReader(InputReader):
       BadReaderParamsError: if the specification is invalid for any reason such
         as missing the bucket name or providing an invalid bucket name.
     """
-    reader_spec = _get_params(mapper_spec, allow_old=False)
+    reader_spec = cls.get_params(mapper_spec, allow_old=False)
 
 
     if cls.BUCKET_NAME_PARAM not in reader_spec:
@@ -2614,7 +2635,7 @@ class _GoogleCloudStorageInputReader(InputReader):
     Returns:
       A list of InputReaders. None when no input data can be found.
     """
-    reader_spec = _get_params(mapper_spec, allow_old=False)
+    reader_spec = cls.get_params(mapper_spec, allow_old=False)
     bucket = reader_spec[cls.BUCKET_NAME_PARAM]
     filenames = reader_spec[cls.OBJECT_NAMES_PARAM]
     delimiter = reader_spec.get(cls.DELIMITER_PARAM)
@@ -2715,6 +2736,9 @@ class _GoogleCloudStorageInputReader(InputReader):
     return "CloudStorage [%s, %s]" % (status, names)
 
 
+GoogleCloudStorageInputReader = _GoogleCloudStorageInputReader
+
+
 class _GoogleCloudStorageRecordInputReader(_GoogleCloudStorageInputReader):
   """Read data from a Google Cloud Storage file using LevelDB format.
 
@@ -2764,14 +2788,18 @@ class _GoogleCloudStorageRecordInputReader(_GoogleCloudStorageInputReader):
         self._record_reader = None
 
 
+GoogleCloudStorageRecordInputReader = _GoogleCloudStorageRecordInputReader
 
-class _ReducerReader(RecordsReader):
-  """Reader to read KeyValues records files from Files API."""
+
+class _ReducerReader(_GoogleCloudStorageRecordInputReader):
+  """Reader to read KeyValues records from GCS."""
 
   expand_parameters = True
 
-  def __init__(self, filenames, position):
-    super(_ReducerReader, self).__init__(filenames, position)
+  def __init__(self, filenames, index=0, buffer_size=None, _account_id=None,
+               delimiter=None):
+    super(_ReducerReader, self).__init__(filenames, index, buffer_size,
+                                         _account_id, delimiter)
     self.current_key = None
     self.current_values = None
 
@@ -2784,50 +2812,54 @@ class _ReducerReader(RecordsReader):
       if combiner_spec:
         combiner = util.handler_for_name(combiner_spec)
 
-    for binary_record in super(_ReducerReader, self).__iter__():
-      proto = file_service_pb.KeyValues()
-      proto.ParseFromString(binary_record)
+    try:
+      while True:
+        binary_record = super(_ReducerReader, self).next()
+        proto = file_service_pb.KeyValues()
+        proto.ParseFromString(binary_record)
 
-      to_yield = None
-      if self.current_key is not None and self.current_key != proto.key():
-        to_yield = (self.current_key, self.current_values)
-        self.current_key = None
-        self.current_values = None
+        to_yield = None
+        if self.current_key is not None and self.current_key != proto.key():
+          to_yield = (self.current_key, self.current_values)
+          self.current_key = None
+          self.current_values = None
 
-      if self.current_key is None:
-        self.current_key = proto.key()
-        self.current_values = []
+        if self.current_key is None:
+          self.current_key = proto.key()
+          self.current_values = []
 
-      if combiner:
-        combiner_result = combiner(
-            self.current_key, proto.value_list(), self.current_values)
+        if combiner:
+          combiner_result = combiner(
+              self.current_key, proto.value_list(), self.current_values)
 
-        if not util.is_generator(combiner_result):
-          raise errors.BadCombinerOutputError(
-              "Combiner %s should yield values instead of returning them (%s)" %
-              (combiner, combiner_result))
+          if not util.is_generator(combiner_result):
+            raise errors.BadCombinerOutputError(
+                "Combiner %s should yield values instead of returning them "
+                "(%s)" % (combiner, combiner_result))
 
-        self.current_values = []
-        for value in combiner_result:
-          if isinstance(value, operation.Operation):
-            value(ctx)
-          else:
+          self.current_values = []
+          for value in combiner_result:
+            if isinstance(value, operation.Operation):
+              value(ctx)
+            else:
 
-            self.current_values.append(value)
-
-
+              self.current_values.append(value)
 
 
-        if not to_yield:
+
+
+          if not to_yield:
+            yield ALLOW_CHECKPOINT
+        else:
+
+          self.current_values.extend(proto.value_list())
+
+        if to_yield:
+          yield to_yield
+
           yield ALLOW_CHECKPOINT
-      else:
-
-        self.current_values.extend(proto.value_list())
-
-      if to_yield:
-        yield to_yield
-
-        yield ALLOW_CHECKPOINT
+    except StopIteration:
+      pass
 
 
 

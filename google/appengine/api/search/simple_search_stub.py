@@ -29,6 +29,7 @@
 
 
 
+
 import base64
 import bisect
 import copy
@@ -56,6 +57,7 @@ from google.appengine.api.search import search_service_pb
 from google.appengine.api.search import search_util
 from google.appengine.api.search.stub import document_matcher
 from google.appengine.api.search.stub import expression_evaluator
+from google.appengine.api.search.stub import simple_facet
 from google.appengine.api.search.stub import simple_tokenizer
 from google.appengine.api.search.stub import tokens
 from google.appengine.runtime import apiproxy_errors
@@ -418,12 +420,18 @@ class SimpleIndex(object):
   def DeleteDocuments(self, document_ids, response):
     """Deletes documents for the given document_ids."""
     for document_id in document_ids:
-      if document_id in self._documents:
-        document = self._documents[document_id]
-        self._inverted_index.RemoveDocument(document)
-        del self._documents[document_id]
-      delete_status = response.add_status()
+      self.DeleteDocument(document_id, response.add_status())
+
+  def DeleteDocument(self, document_id, delete_status):
+    """Deletes the document, if any, with the given document_id."""
+    if document_id in self._documents:
+      document = self._documents[document_id]
+      self._inverted_index.RemoveDocument(document)
+      del self._documents[document_id]
       delete_status.set_code(search_service_pb.SearchServiceError.OK)
+    else:
+      delete_status.set_code(search_service_pb.SearchServiceError.OK)
+      delete_status.set_error_detail('Not found')
 
   def Documents(self):
     """Returns the documents in the index."""
@@ -652,7 +660,9 @@ class SearchServiceStub(apiproxy_stub.APIProxyStub):
 
   def _UnknownIndex(self, status, index_spec):
     status.set_code(search_service_pb.SearchServiceError.OK)
-    status.set_error_detail('no index for %r' % index_spec)
+    status.set_error_detail(
+        "Index '%s' in namespace '%s' does not exist" %
+        (index_spec.name(), index_spec.namespace()))
 
   def _GetNamespace(self, namespace):
     """Get namespace name.
@@ -672,12 +682,9 @@ class SearchServiceStub(apiproxy_stub.APIProxyStub):
     namespace = self._GetNamespace(index_spec.namespace())
 
     index = self.__indexes.setdefault(namespace, {}).get(index_spec.name())
-    if index is None:
-      if create:
-        index = SimpleIndex(index_spec)
-        self.__indexes[namespace][index_spec.name()] = index
-      else:
-        return None
+    if index is None and create:
+      index = SimpleIndex(index_spec)
+      self.__indexes[namespace][index_spec.name()] = index
     return index
 
   def _Dynamic_IndexDocument(self, request, response):
@@ -703,10 +710,13 @@ class SearchServiceStub(apiproxy_stub.APIProxyStub):
     params = request.params()
     index_spec = params.index_spec()
     index = self._GetIndex(index_spec)
-    if index is None:
-      self._UnknownIndex(response.add_status(), index_spec)
-      return
-    index.DeleteDocuments(params.doc_id_list(), response)
+    for document_id in params.doc_id_list():
+      delete_status = response.add_status()
+      if index is None:
+        delete_status.set_code(search_service_pb.SearchServiceError.OK)
+        delete_status.set_error_detail('Not found')
+      else:
+        index.DeleteDocument(document_id, delete_status)
 
   def _Dynamic_ListIndexes(self, request, response):
     """A local implementation of SearchService.ListIndexes RPC.
@@ -772,6 +782,18 @@ class SearchServiceStub(apiproxy_stub.APIProxyStub):
         self._AddSchemaInformation(index, metadata)
       self._AddStorageInformation(index, metadata)
 
+  def _Dynamic_DeleteSchema(self, request, response):
+    """A local implementation of SearchService.DeleteSchema RPC.
+
+    Args:
+      request: A search_service_pb.DeleteSchemaRequest.
+      response: An search_service_pb.DeleteSchemaResponse.
+    """
+
+    params = request.params()
+    for index_spec in params.index_spec_list():
+      response.add_status().set_code(search_service_pb.SearchServiceError.OK)
+
   def _AddSchemaInformation(self, index, metadata_pb):
     schema = index.GetSchema()
     for name in schema:
@@ -807,9 +829,10 @@ class SearchServiceStub(apiproxy_stub.APIProxyStub):
       response: An search_service_pb.ListDocumentsResponse.
     """
     params = request.params()
-    index = self._GetIndex(params.index_spec(), create=True)
+    index = self._GetIndex(params.index_spec())
     if index is None:
-      self._UnknownIndex(response.mutable_status(), params.index_spec())
+      response.mutable_status().set_code(
+          search_service_pb.SearchServiceError.OK)
       return
 
     num_docs = 0
@@ -936,7 +959,7 @@ class SearchServiceStub(apiproxy_stub.APIProxyStub):
         if (isinstance(expression, float) or
             isinstance(expression, long) or
             isinstance(expression, int)):
-          expr.mutable_value().set_string_value(str(expression))
+          expr.mutable_value().set_string_value(repr(float(expression)))
           expr.mutable_value().set_type(document_pb.FieldValue.NUMBER)
         else:
           expr.mutable_value().set_string_value(expression)
@@ -953,7 +976,6 @@ class SearchServiceStub(apiproxy_stub.APIProxyStub):
       self._RandomSearchResponse(request, response)
       return
 
-    index = None
     index = self._GetIndex(request.params().index_spec())
     if index is None:
       self._UnknownIndex(response.mutable_status(),
@@ -976,8 +998,10 @@ class SearchServiceStub(apiproxy_stub.APIProxyStub):
       self._InvalidRequest(response.mutable_status(), e)
       response.set_matched_count(0)
       return
-    response.set_matched_count(len(results))
 
+    facet_analyzer = simple_facet.SimpleFacet(params)
+    results = facet_analyzer.RefineResults(results)
+    response.set_matched_count(len(results))
     offset = 0
     if params.has_cursor():
       try:
@@ -1018,6 +1042,7 @@ class SearchServiceStub(apiproxy_stub.APIProxyStub):
     self._FillSearchResponse(results, result_range, params.cursor_type(),
                              _ScoreRequested(params), response, field_names,
                              params.keys_only())
+    facet_analyzer.FillFacetResponse(results, response)
 
     response.mutable_status().set_code(search_service_pb.SearchServiceError.OK)
 

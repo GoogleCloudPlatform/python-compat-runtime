@@ -69,6 +69,7 @@ we repeatedly read a tag, look up the corresponding decoder, and invoke it.
 """
 
 
+
 import struct
 import sys
 _PY2 = sys.version_info[0] < 3

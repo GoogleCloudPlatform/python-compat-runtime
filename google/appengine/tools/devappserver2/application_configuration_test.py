@@ -17,8 +17,11 @@
 """Tests for google.apphosting.tools.devappserver2.application_configuration."""
 
 
+
 import collections
 from contextlib import contextmanager
+import datetime
+import io
 import os.path
 import shutil
 import tempfile
@@ -28,6 +31,7 @@ import google
 import mox
 
 from google.appengine.api import appinfo
+from google.appengine.api import appinfo_includes
 from google.appengine.api import backendinfo
 from google.appengine.api import dispatchinfo
 from google.appengine.tools.devappserver2 import application_configuration
@@ -48,18 +52,32 @@ def _java_temporarily_supported():
   application_configuration.java_supported = old_java_supported
 
 
+_DEFAULT_HEALTH_CHECK = appinfo.VmHealthCheck(
+    enable_health_check=True,
+    check_interval_sec=5,
+    timeout_sec=4,
+    unhealthy_threshold=2,
+    healthy_threshold=2,
+    restart_threshold=60,
+    host='127.0.0.1')
+
+
 class TestModuleConfiguration(unittest.TestCase):
   """Tests for application_configuration.ModuleConfiguration."""
 
   def setUp(self):
     self.mox = mox.Mox()
-    self.mox.StubOutWithMock(
-        application_configuration.ModuleConfiguration,
-        '_parse_configuration')
+    self.mox.StubOutWithMock(appinfo_includes, 'ParseAndReturnIncludePaths')
     self.mox.StubOutWithMock(os.path, 'getmtime')
+    application_configuration.open = self._fake_open
 
   def tearDown(self):
     self.mox.UnsetStubs()
+    del application_configuration.open
+
+  @staticmethod
+  def _fake_open(unused_filename):
+    return io.BytesIO()
 
   def test_good_app_yaml_configuration(self):
     automatic_scaling = appinfo.AutomaticScaling(min_pending_latency='1.0s',
@@ -82,13 +100,12 @@ class TestModuleConfiguration(unittest.TestCase):
         inbound_services=['warmup'],
         env_variables=env_variables,
         )
-    application_configuration.ModuleConfiguration._parse_configuration(
-        '/appdir/app.yaml').AndReturn((info, ['/appdir/app.yaml']))
+    appinfo_includes.ParseAndReturnIncludePaths(mox.IgnoreArg()).AndReturn(
+        (info, []))
     os.path.getmtime('/appdir/app.yaml').AndReturn(10)
 
     self.mox.ReplayAll()
-    config = application_configuration.ModuleConfiguration(
-        '/appdir/app.yaml')
+    config = application_configuration.ModuleConfiguration('/appdir/app.yaml')
     self.mox.VerifyAll()
 
     self.assertEqual(os.path.realpath('/appdir'), config.application_root)
@@ -110,11 +127,15 @@ class TestModuleConfiguration(unittest.TestCase):
     self.assertEqual(['warmup'], config.inbound_services)
     self.assertEqual(env_variables, config.env_variables)
     self.assertEqual({'/appdir/app.yaml': 10}, config._mtimes)
+    self.assertEqual(_DEFAULT_HEALTH_CHECK, config.vm_health_check)
 
   def test_vm_app_yaml_configuration(self):
     manual_scaling = appinfo.ManualScaling()
     vm_settings = appinfo.VmSettings()
     vm_settings['vm_runtime'] = 'myawesomeruntime'
+    vm_settings['forwarded_ports'] = '49111:49111,5002:49112,8000'
+    health_check = appinfo.VmHealthCheck()
+    health_check.enable_health_check = False
     info = appinfo.AppInfoExternal(
         application='app',
         module='module1',
@@ -123,9 +144,11 @@ class TestModuleConfiguration(unittest.TestCase):
         vm_settings=vm_settings,
         threadsafe=False,
         manual_scaling=manual_scaling,
+        vm_health_check=health_check
     )
-    application_configuration.ModuleConfiguration._parse_configuration(
-        '/appdir/app.yaml').AndReturn((info, ['/appdir/app.yaml']))
+
+    appinfo_includes.ParseAndReturnIncludePaths(mox.IgnoreArg()).AndReturn(
+        (info, []))
     os.path.getmtime('/appdir/app.yaml').AndReturn(10)
 
     self.mox.ReplayAll()
@@ -142,9 +165,138 @@ class TestModuleConfiguration(unittest.TestCase):
     self.assertRegexpMatches(config.version_id, r'module1:1\.\d+')
     self.assertEqual('vm', config.runtime)
     self.assertEqual(vm_settings['vm_runtime'], config.effective_runtime)
+    self.assertItemsEqual(
+        {49111: 49111, 5002: 49112, 8000: 8000},
+        config.forwarded_ports)
     self.assertFalse(config.threadsafe)
     self.assertEqual(manual_scaling, config.manual_scaling)
     self.assertEqual({'/appdir/app.yaml': 10}, config._mtimes)
+    self.assertEqual(info.vm_health_check, config.vm_health_check)
+
+  def test_vm_app_yaml_configuration_network(self):
+    manual_scaling = appinfo.ManualScaling()
+    vm_settings = appinfo.VmSettings()
+    vm_settings['vm_runtime'] = 'myawesomeruntime'
+    network = appinfo.Network()
+    network.forwarded_ports = ['49111:49111', '5002:49112', '8000']
+    health_check = appinfo.VmHealthCheck()
+    health_check.enable_health_check = False
+    info = appinfo.AppInfoExternal(
+        application='app',
+        module='module1',
+        version='1',
+        runtime='vm',
+        vm_settings=vm_settings,
+        threadsafe=False,
+        manual_scaling=manual_scaling,
+        vm_health_check=health_check,
+        network=network
+    )
+
+    appinfo_includes.ParseAndReturnIncludePaths(mox.IgnoreArg()).AndReturn(
+        (info, []))
+    os.path.getmtime('/appdir/app.yaml').AndReturn(10)
+
+    self.mox.ReplayAll()
+    config = application_configuration.ModuleConfiguration('/appdir/app.yaml')
+
+    self.mox.VerifyAll()
+    self.assertEqual(os.path.realpath('/appdir'), config.application_root)
+    self.assertEqual(os.path.realpath('/appdir/app.yaml'), config.config_path)
+    self.assertEqual('dev~app', config.application)
+    self.assertEqual('app', config.application_external_name)
+    self.assertEqual('dev', config.partition)
+    self.assertEqual('module1', config.module_name)
+    self.assertEqual('1', config.major_version)
+    self.assertRegexpMatches(config.version_id, r'module1:1\.\d+')
+    self.assertEqual('vm', config.runtime)
+    self.assertEqual(vm_settings['vm_runtime'], config.effective_runtime)
+    self.assertItemsEqual(
+        {49111: 49111, 5002: 49112, 8000: 8000},
+        config.forwarded_ports)
+    self.assertFalse(config.threadsafe)
+    self.assertEqual(manual_scaling, config.manual_scaling)
+    self.assertEqual({'/appdir/app.yaml': 10}, config._mtimes)
+    self.assertEqual(info.vm_health_check, config.vm_health_check)
+
+  def test_vm_no_version(self):
+    manual_scaling = appinfo.ManualScaling()
+    info = appinfo.AppInfoExternal(
+        application='app',
+        module='module1',
+        runtime='vm',
+        threadsafe=False,
+        manual_scaling=manual_scaling,
+    )
+
+    appinfo_includes.ParseAndReturnIncludePaths(mox.IgnoreArg()).AndReturn(
+        (info, []))
+    os.path.getmtime('/appdir/app.yaml').AndReturn(10)
+
+    self.mox.StubOutWithMock(application_configuration, 'generate_version_id')
+    application_configuration.generate_version_id().AndReturn(
+        'generated-version')
+    self.mox.ReplayAll()
+    config = application_configuration.ModuleConfiguration('/appdir/app.yaml')
+
+    self.mox.VerifyAll()
+    self.assertEqual(config.major_version, 'generated-version')
+
+  def test_set_health_check_defaults(self):
+    # Pass nothing in.
+    self.assertEqual(
+        _DEFAULT_HEALTH_CHECK,
+        application_configuration._set_health_check_defaults(None))
+
+    # Pass in an empty object.
+    self.assertEqual(
+        _DEFAULT_HEALTH_CHECK,
+        application_configuration._set_health_check_defaults(
+            appinfo.VmHealthCheck()))
+
+    # Override some.
+    health_check = appinfo.VmHealthCheck(restart_threshold=7,
+                                         healthy_threshold=4)
+    defaults_set = application_configuration._set_health_check_defaults(
+        health_check)
+
+    self.assertEqual(defaults_set.enable_health_check,
+                     _DEFAULT_HEALTH_CHECK.enable_health_check)
+    self.assertEqual(defaults_set.check_interval_sec,
+                     _DEFAULT_HEALTH_CHECK.check_interval_sec)
+    self.assertEqual(defaults_set.timeout_sec,
+                     _DEFAULT_HEALTH_CHECK.timeout_sec)
+    self.assertEqual(defaults_set.unhealthy_threshold,
+                     _DEFAULT_HEALTH_CHECK.unhealthy_threshold)
+    self.assertEqual(defaults_set.healthy_threshold, 4)
+    self.assertEqual(defaults_set.restart_threshold, 7)
+    self.assertEqual(defaults_set.host,
+                     _DEFAULT_HEALTH_CHECK.host)
+
+  def test_override_app_id(self):
+    info = appinfo.AppInfoExternal(
+        application='ignored-app',
+        module='default',
+        version='version',
+        runtime='python27',
+        threadsafe=False)
+    appinfo_includes.ParseAndReturnIncludePaths(mox.IgnoreArg()).AndReturn(
+        (info, []))
+    os.path.getmtime('/appdir/app.yaml').AndReturn(10)
+    os.path.getmtime('/appdir/app.yaml').AndReturn(20)
+    os.path.getmtime('/appdir/app.yaml').AndReturn(20)
+    appinfo_includes.ParseAndReturnIncludePaths(mox.IgnoreArg()).AndReturn(
+        (info, []))
+
+    self.mox.ReplayAll()
+    config = application_configuration.ModuleConfiguration(
+        '/appdir/app.yaml', 'overriding-app')
+    self.assertEqual('overriding-app', config.application_external_name)
+    self.assertEqual('dev~overriding-app', config.application)
+    config.check_for_updates()
+    self.assertEqual('overriding-app', config.application_external_name)
+    self.assertEqual('dev~overriding-app', config.application)
+    self.mox.VerifyAll()
 
   def test_check_for_updates_unchanged_mtime(self):
     info = appinfo.AppInfoExternal(
@@ -153,8 +305,8 @@ class TestModuleConfiguration(unittest.TestCase):
         version='version',
         runtime='python27',
         threadsafe=False)
-    application_configuration.ModuleConfiguration._parse_configuration(
-        '/appdir/app.yaml').AndReturn((info, ['/appdir/app.yaml']))
+    appinfo_includes.ParseAndReturnIncludePaths(mox.IgnoreArg()).AndReturn(
+        (info, []))
     os.path.getmtime('/appdir/app.yaml').AndReturn(10)
     os.path.getmtime('/appdir/app.yaml').AndReturn(10)
 
@@ -171,17 +323,15 @@ class TestModuleConfiguration(unittest.TestCase):
         runtime='python27',
         includes=['/appdir/include.yaml'],
         threadsafe=False)
-    application_configuration.ModuleConfiguration._parse_configuration(
-        '/appdir/app.yaml').AndReturn(
-            (info, ['/appdir/app.yaml', '/appdir/include.yaml']))
+    appinfo_includes.ParseAndReturnIncludePaths(mox.IgnoreArg()).AndReturn(
+        (info, ['/appdir/include.yaml']))
     os.path.getmtime('/appdir/app.yaml').InAnyOrder().AndReturn(10)
     os.path.getmtime('/appdir/include.yaml').InAnyOrder().AndReturn(10)
     os.path.getmtime('/appdir/app.yaml').AndReturn(10)
     os.path.getmtime('/appdir/include.yaml').AndReturn(11)
 
-    application_configuration.ModuleConfiguration._parse_configuration(
-        '/appdir/app.yaml').AndReturn(
-            (info, ['/appdir/app.yaml', '/appdir/include.yaml']))
+    appinfo_includes.ParseAndReturnIncludePaths(mox.IgnoreArg()).AndReturn(
+        (info, ['/appdir/include.yaml']))
     os.path.getmtime('/appdir/app.yaml').InAnyOrder().AndReturn(10)
     os.path.getmtime('/appdir/include.yaml').InAnyOrder().AndReturn(11)
 
@@ -203,12 +353,12 @@ class TestModuleConfiguration(unittest.TestCase):
         version='version',
         runtime='python27',
         threadsafe=False)
-    application_configuration.ModuleConfiguration._parse_configuration(
-        '/appdir/app.yaml').AndReturn((info, ['/appdir/app.yaml']))
+    appinfo_includes.ParseAndReturnIncludePaths(mox.IgnoreArg()).AndReturn(
+        (info, []))
     os.path.getmtime('/appdir/app.yaml').AndReturn(10)
     os.path.getmtime('/appdir/app.yaml').AndReturn(11)
-    application_configuration.ModuleConfiguration._parse_configuration(
-        '/appdir/app.yaml').AndReturn((info, ['/appdir/app.yaml']))
+    appinfo_includes.ParseAndReturnIncludePaths(mox.IgnoreArg()).AndReturn(
+        (info, []))
     os.path.getmtime('/appdir/app.yaml').AndReturn(11)
 
     self.mox.ReplayAll()
@@ -243,12 +393,12 @@ class TestModuleConfiguration(unittest.TestCase):
             min_idle_instances=1,
             max_idle_instances=2))
 
-    application_configuration.ModuleConfiguration._parse_configuration(
-        '/appdir/app.yaml').AndReturn((info1, ['/appdir/app.yaml']))
+    appinfo_includes.ParseAndReturnIncludePaths(mox.IgnoreArg()).AndReturn(
+        (info1, []))
     os.path.getmtime('/appdir/app.yaml').AndReturn(10)
     os.path.getmtime('/appdir/app.yaml').AndReturn(11)
-    application_configuration.ModuleConfiguration._parse_configuration(
-        '/appdir/app.yaml').AndReturn((info2, ['/appdir/app.yaml']))
+    appinfo_includes.ParseAndReturnIncludePaths(mox.IgnoreArg()).AndReturn(
+        (info2, []))
     os.path.getmtime('/appdir/app.yaml').AndReturn(11)
 
     self.mox.ReplayAll()
@@ -264,7 +414,7 @@ class TestModuleConfiguration(unittest.TestCase):
     self.assertFalse(config.threadsafe)
     self.assertEqual(automatic_scaling1, config.automatic_scaling)
 
-  def test_check_for_mutable_changes(self):
+  def test_check_for_updates_mutable_changes(self):
     info1 = appinfo.AppInfoExternal(
         application='app',
         module='default',
@@ -290,12 +440,12 @@ class TestModuleConfiguration(unittest.TestCase):
         inbound_services=[],
         )
 
-    application_configuration.ModuleConfiguration._parse_configuration(
-        '/appdir/app.yaml').AndReturn((info1, ['/appdir/app.yaml']))
+    appinfo_includes.ParseAndReturnIncludePaths(mox.IgnoreArg()).AndReturn(
+        (info1, []))
     os.path.getmtime('/appdir/app.yaml').AndReturn(10)
     os.path.getmtime('/appdir/app.yaml').AndReturn(11)
-    application_configuration.ModuleConfiguration._parse_configuration(
-        '/appdir/app.yaml').AndReturn((info2, ['/appdir/app.yaml']))
+    appinfo_includes.ParseAndReturnIncludePaths(mox.IgnoreArg()).AndReturn(
+        (info2, []))
     os.path.getmtime('/appdir/app.yaml').AndReturn(11)
 
     self.mox.ReplayAll()
@@ -339,7 +489,7 @@ class TestBackendsConfiguration(unittest.TestCase):
         backends=[static_backend_entry, dynamic_backend_entry])
     module_config = object()
     application_configuration.ModuleConfiguration(
-        '/appdir/app.yaml').AndReturn(module_config)
+        '/appdir/app.yaml', None).AndReturn(module_config)
     application_configuration.BackendsConfiguration._parse_configuration(
         '/appdir/backends.yaml').AndReturn(backend_info)
     static_configuration = object()
@@ -366,7 +516,7 @@ class TestBackendsConfiguration(unittest.TestCase):
     backend_info = backendinfo.BackendInfoExternal()
     module_config = object()
     application_configuration.ModuleConfiguration(
-        '/appdir/app.yaml').AndReturn(module_config)
+        '/appdir/app.yaml', None).AndReturn(module_config)
     application_configuration.BackendsConfiguration._parse_configuration(
         '/appdir/backends.yaml').AndReturn(backend_info)
 
@@ -386,7 +536,7 @@ class TestBackendsConfiguration(unittest.TestCase):
         application_configuration.ModuleConfiguration)
     self.mox.StubOutWithMock(application_configuration, 'ModuleConfiguration')
     application_configuration.ModuleConfiguration(
-        '/appdir/app.yaml').AndReturn(module_config)
+        '/appdir/app.yaml', None).AndReturn(module_config)
     application_configuration.BackendsConfiguration._parse_configuration(
         '/appdir/backends.yaml').AndReturn(backend_info)
     module_config.check_for_updates().AndReturn(set())
@@ -599,14 +749,14 @@ class TestBackendConfiguration(unittest.TestCase):
                                                  max_pending_latency='2.0s',
                                                  min_idle_instances=1,
                                                  max_idle_instances=2)
-    vm_settings = appinfo.VmSettings()
-    vm_settings['vm_runtime'] = 'myawesomeruntime'
+    beta_settings = appinfo.BetaSettings()
+    beta_settings['vm_runtime'] = 'myawesomeruntime'
     info = appinfo.AppInfoExternal(
         application='app',
         module='module1',
         version='1',
         runtime='vm',
-        vm_settings=vm_settings,
+        beta_settings=beta_settings,
         threadsafe=False,
         automatic_scaling=automatic_scaling,
     )
@@ -633,7 +783,7 @@ class TestBackendConfiguration(unittest.TestCase):
     self.assertEqual('1', config.major_version)
     self.assertRegexpMatches(config.version_id, r'static:1\.\d+')
     self.assertEqual('vm', config.runtime)
-    self.assertEqual(vm_settings['vm_runtime'], config.effective_runtime)
+    self.assertEqual(beta_settings['vm_runtime'], config.effective_runtime)
     self.assertFalse(config.threadsafe)
     # Resident backends are assigned manual scaling.
     self.assertEqual(None, config.automatic_scaling)
@@ -760,11 +910,11 @@ class TestApplicationConfiguration(unittest.TestCase):
 
     module_config1 = ModuleConfigurationStub()
     application_configuration.ModuleConfiguration(
-        absnames[0]).AndReturn(module_config1)
+        absnames[0], None).AndReturn(module_config1)
 
     module_config2 = ModuleConfigurationStub(module_name='other')
     application_configuration.ModuleConfiguration(
-        absnames[1]).AndReturn(module_config2)
+        absnames[1], None).AndReturn(module_config2)
 
     self.mox.ReplayAll()
     config = application_configuration.ApplicationConfiguration(
@@ -779,12 +929,12 @@ class TestApplicationConfiguration(unittest.TestCase):
 
     module_config1 = ModuleConfigurationStub()
     application_configuration.ModuleConfiguration(
-        absnames[0]).AndReturn(module_config1)
+        absnames[0], None).AndReturn(module_config1)
 
     module_config2 = ModuleConfigurationStub(application='other_app',
                                              module_name='other')
     application_configuration.ModuleConfiguration(
-        absnames[1]).AndReturn(module_config2)
+        absnames[1], None).AndReturn(module_config2)
 
     self.mox.ReplayAll()
     self.assertRaises(errors.InvalidAppConfigError,
@@ -797,10 +947,10 @@ class TestApplicationConfiguration(unittest.TestCase):
         ['appdir/app.yaml', 'appdir/other.yaml'])
 
     application_configuration.ModuleConfiguration(
-        absnames[0]).AndReturn(ModuleConfigurationStub())
+        absnames[0], None).AndReturn(ModuleConfigurationStub())
 
     application_configuration.ModuleConfiguration(
-        absnames[1]).AndReturn(ModuleConfigurationStub())
+        absnames[1], None).AndReturn(ModuleConfigurationStub())
 
     self.mox.ReplayAll()
     self.assertRaises(errors.InvalidAppConfigError,
@@ -813,7 +963,7 @@ class TestApplicationConfiguration(unittest.TestCase):
 
     module_config = ModuleConfigurationStub()
     application_configuration.ModuleConfiguration(
-        absnames[0]).AndReturn(module_config)
+        absnames[0], None).AndReturn(module_config)
 
     self.mox.ReplayAll()
     config = application_configuration.ApplicationConfiguration(
@@ -828,10 +978,10 @@ class TestApplicationConfiguration(unittest.TestCase):
 
     app_yaml_config = ModuleConfigurationStub()
     application_configuration.ModuleConfiguration(
-        absnames[0]).AndReturn(app_yaml_config)
+        absnames[0], None).AndReturn(app_yaml_config)
     my_module_config = ModuleConfigurationStub(module_name='my_module')
     application_configuration.ModuleConfiguration(
-        absnames[1]).AndReturn(my_module_config)
+        absnames[1], None).AndReturn(my_module_config)
     self.mox.ReplayAll()
     config = application_configuration.ApplicationConfiguration(
         [os.path.dirname(absnames[0]), absnames[1]])
@@ -844,7 +994,7 @@ class TestApplicationConfiguration(unittest.TestCase):
 
     module_config = ModuleConfigurationStub()
     application_configuration.ModuleConfiguration(
-        absnames[0]).AndReturn(module_config)
+        absnames[0], None).AndReturn(module_config)
 
     self.mox.ReplayAll()
     config = application_configuration.ApplicationConfiguration(
@@ -885,7 +1035,7 @@ class TestApplicationConfiguration(unittest.TestCase):
 
     module_config = ModuleConfigurationStub()
     application_configuration.ModuleConfiguration(
-        absnames[0]).AndReturn(module_config)
+        absnames[0], None).AndReturn(module_config)
 
     self.mox.ReplayAll()
     config = application_configuration.ApplicationConfiguration(absnames)
@@ -899,13 +1049,13 @@ class TestApplicationConfiguration(unittest.TestCase):
 
     module_config = ModuleConfigurationStub()
     application_configuration.ModuleConfiguration(
-        absnames[0]).AndReturn(module_config)
+        absnames[0], None).AndReturn(module_config)
     backend_config = ModuleConfigurationStub(module_name='backend')
     backends_config = self.mox.CreateMock(
         application_configuration.BackendsConfiguration)
     backends_config.get_backend_configurations().AndReturn([backend_config])
     application_configuration.BackendsConfiguration(
-        absnames[0], absnames[1]).AndReturn(backends_config)
+        absnames[0], absnames[1], None).AndReturn(backends_config)
 
     self.mox.ReplayAll()
     config = application_configuration.ApplicationConfiguration(
@@ -920,14 +1070,14 @@ class TestApplicationConfiguration(unittest.TestCase):
 
     module_config = ModuleConfigurationStub()
     application_configuration.ModuleConfiguration(
-        absnames[0]).AndReturn(module_config)
+        absnames[0], None).AndReturn(module_config)
 
     backend_config = ModuleConfigurationStub(module_name='backend')
     backends_config = self.mox.CreateMock(
         application_configuration.BackendsConfiguration)
     backends_config.get_backend_configurations().AndReturn([backend_config])
     application_configuration.BackendsConfiguration(
-        absnames[0], absnames[1]).AndReturn(backends_config)
+        absnames[0], absnames[1], None).AndReturn(backends_config)
 
     self.mox.ReplayAll()
     config = application_configuration.ApplicationConfiguration(absnames)
@@ -941,14 +1091,14 @@ class TestApplicationConfiguration(unittest.TestCase):
 
     module_config = ModuleConfigurationStub(module_name='default')
     application_configuration.ModuleConfiguration(
-        absnames[0]).AndReturn(module_config)
+        absnames[0], None).AndReturn(module_config)
 
     backend_config = ModuleConfigurationStub(module_name='backend')
     backends_config = self.mox.CreateMock(
         application_configuration.BackendsConfiguration)
     backends_config.get_backend_configurations().AndReturn([backend_config])
     application_configuration.BackendsConfiguration(
-        absnames[0], absnames[1]).AndReturn(backends_config)
+        absnames[0], absnames[1], None).AndReturn(backends_config)
     dispatch_config = DispatchConfigurationStub(
         [(None, 'default'), (None, 'backend')])
     application_configuration.DispatchConfiguration(
@@ -967,7 +1117,7 @@ class TestApplicationConfiguration(unittest.TestCase):
 
     module_config = ModuleConfigurationStub(module_name='not-default')
     application_configuration.ModuleConfiguration(
-        absnames[0]).AndReturn(module_config)
+        absnames[0], None).AndReturn(module_config)
 
     dispatch_config = DispatchConfigurationStub([(None, 'default')])
     application_configuration.DispatchConfiguration(
@@ -985,7 +1135,7 @@ class TestApplicationConfiguration(unittest.TestCase):
 
     module_config = ModuleConfigurationStub(module_name='default')
     application_configuration.ModuleConfiguration(
-        absnames[0]).AndReturn(module_config)
+        absnames[0], None).AndReturn(module_config)
 
     dispatch_config = DispatchConfigurationStub(
         [(None, 'default'), (None, 'fake-module')])
@@ -1005,7 +1155,7 @@ class TestApplicationConfiguration(unittest.TestCase):
 
     module_config = ModuleConfigurationStub(module_name='default')
     application_configuration.ModuleConfiguration(
-        absnames[0]).AndReturn(module_config)
+        absnames[0], None).AndReturn(module_config)
 
     self.mox.ReplayAll()
     with _java_temporarily_supported():
@@ -1048,14 +1198,14 @@ class TestApplicationConfiguration(unittest.TestCase):
 
     module1_config = ModuleConfigurationStub(module_name='default')
     application_configuration.ModuleConfiguration(
-        app_yaml).AndReturn(module1_config)
+        app_yaml, None).AndReturn(module1_config)
     dispatch_config = DispatchConfigurationStub(
         [(None, 'default'), (None, 'module2')])
     application_configuration.DispatchConfiguration(
         dispatch_yaml).AndReturn(dispatch_config)
     module2_config = ModuleConfigurationStub(module_name='module2')
     application_configuration.ModuleConfiguration(
-        appengine_web_xml).AndReturn(module2_config)
+        appengine_web_xml, None).AndReturn(module2_config)
 
     self.mox.ReplayAll()
     with _java_temporarily_supported():
@@ -1067,6 +1217,16 @@ class TestApplicationConfiguration(unittest.TestCase):
     self.assertSequenceEqual(
         [module1_config, module2_config], config.modules)
     self.assertEqual(dispatch_config, config.dispatch)
+
+
+class GenerateVersionIdTest(unittest.TestCase):
+  """Tests the GenerateVersionId function."""
+
+  def test_generate_version_id(self):
+    datetime_getter = lambda: datetime.datetime(2014, 9, 18, 17, 31, 45, 92949)
+    generated_version = application_configuration.generate_version_id(
+        datetime_getter)
+    self.assertEqual(generated_version, '20140918t173145')
 
 
 if __name__ == '__main__':

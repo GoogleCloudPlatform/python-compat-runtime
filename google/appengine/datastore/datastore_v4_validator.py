@@ -38,6 +38,7 @@ This module is internal and should not be used by client applications.
 
 
 
+
 import re
 
 from google.appengine.datastore import datastore_pbs
@@ -882,7 +883,9 @@ class _QueryValidator(object):
       ValidationError: if the filter is invalid
     """
     _assert_condition((filt.has_composite_filter()
-                       + filt.has_property_filter() == 1),
+                       + filt.has_property_filter()
+                       + filt.has_bounding_circle_filter()
+                       + filt.has_bounding_box_filter() == 1),
                       'A filter must have exactly one of its fields set.')
     if filt.has_composite_filter():
       comp_filter = filt.composite_filter()

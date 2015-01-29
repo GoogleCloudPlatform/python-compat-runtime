@@ -17,6 +17,7 @@
 """Serves content for "script" handlers using the PHP runtime."""
 
 
+
 import cgi
 import logging
 import os
@@ -33,8 +34,7 @@ from google.appengine.tools.devappserver2 import safe_subprocess
 
 
 _RUNTIME_PATH = os.path.abspath(
-    os.path.join(os.path.dirname(sys.argv[0]), '_php_runtime.py')
-    )
+    os.path.join(os.path.dirname(sys.argv[0]), '_php_runtime.py'))
 _CHECK_ENVIRONMENT_SCRIPT_PATH = os.path.join(
     os.path.dirname(__file__), 'php', 'check_environment.php')
 _RUNTIME_ARGS = [sys.executable, _RUNTIME_PATH]

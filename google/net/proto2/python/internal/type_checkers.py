@@ -34,6 +34,7 @@ TYPE_TO_DESERIALIZE_METHOD: A dictionary with field types and deserialization
 """
 
 
+
 import sys
 if sys.version < '2.6': bytes = str
 from google.net.proto2.python.internal import api_implementation
@@ -140,13 +141,12 @@ class UnicodeValueChecker(object):
       raise TypeError(message)
 
 
-
     if isinstance(proposed_value, bytes):
       try:
-        proposed_value = proposed_value.decode('ascii')
+        proposed_value = proposed_value.decode('utf-8')
       except UnicodeDecodeError:
-        raise ValueError('%.1024r has type bytes, but isn\'t in 7-bit ASCII '
-                         'encoding. Non-ASCII strings must be converted to '
+        raise ValueError('%.1024r has type bytes, but isn\'t valid UTF-8 '
+                         'encoding. Non-UTF-8 strings must be converted to '
                          'unicode objects before being added.' %
                          (proposed_value))
     return proposed_value

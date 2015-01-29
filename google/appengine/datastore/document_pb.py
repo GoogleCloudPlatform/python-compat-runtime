@@ -669,6 +669,101 @@ class FieldTypes(ProtocolBuffer.ProtocolMessage):
   _STYLE = """"""
   _STYLE_CONTENT_TYPE = """"""
   _PROTO_DESCRIPTOR_NAME = 'storage_onestore_v3.FieldTypes'
+class IndexMetadata(ProtocolBuffer.ProtocolMessage):
+  has_is_over_field_number_threshold_ = 0
+  is_over_field_number_threshold_ = 0
+
+  def __init__(self, contents=None):
+    if contents is not None: self.MergeFromString(contents)
+
+  def is_over_field_number_threshold(self): return self.is_over_field_number_threshold_
+
+  def set_is_over_field_number_threshold(self, x):
+    self.has_is_over_field_number_threshold_ = 1
+    self.is_over_field_number_threshold_ = x
+
+  def clear_is_over_field_number_threshold(self):
+    if self.has_is_over_field_number_threshold_:
+      self.has_is_over_field_number_threshold_ = 0
+      self.is_over_field_number_threshold_ = 0
+
+  def has_is_over_field_number_threshold(self): return self.has_is_over_field_number_threshold_
+
+
+  def MergeFrom(self, x):
+    assert x is not self
+    if (x.has_is_over_field_number_threshold()): self.set_is_over_field_number_threshold(x.is_over_field_number_threshold())
+
+  def Equals(self, x):
+    if x is self: return 1
+    if self.has_is_over_field_number_threshold_ != x.has_is_over_field_number_threshold_: return 0
+    if self.has_is_over_field_number_threshold_ and self.is_over_field_number_threshold_ != x.is_over_field_number_threshold_: return 0
+    return 1
+
+  def IsInitialized(self, debug_strs=None):
+    initialized = 1
+    return initialized
+
+  def ByteSize(self):
+    n = 0
+    if (self.has_is_over_field_number_threshold_): n += 2
+    return n
+
+  def ByteSizePartial(self):
+    n = 0
+    if (self.has_is_over_field_number_threshold_): n += 2
+    return n
+
+  def Clear(self):
+    self.clear_is_over_field_number_threshold()
+
+  def OutputUnchecked(self, out):
+    if (self.has_is_over_field_number_threshold_):
+      out.putVarInt32(8)
+      out.putBoolean(self.is_over_field_number_threshold_)
+
+  def OutputPartial(self, out):
+    if (self.has_is_over_field_number_threshold_):
+      out.putVarInt32(8)
+      out.putBoolean(self.is_over_field_number_threshold_)
+
+  def TryMerge(self, d):
+    while d.avail() > 0:
+      tt = d.getVarInt32()
+      if tt == 8:
+        self.set_is_over_field_number_threshold(d.getBoolean())
+        continue
+
+
+      if (tt == 0): raise ProtocolBuffer.ProtocolBufferDecodeError
+      d.skipData(tt)
+
+
+  def __str__(self, prefix="", printElemNumber=0):
+    res=""
+    if self.has_is_over_field_number_threshold_: res+=prefix+("is_over_field_number_threshold: %s\n" % self.DebugFormatBool(self.is_over_field_number_threshold_))
+    return res
+
+
+  def _BuildTagLookupTable(sparse, maxtag, default=None):
+    return tuple([sparse.get(i, default) for i in xrange(0, 1+maxtag)])
+
+  kis_over_field_number_threshold = 1
+
+  _TEXT = _BuildTagLookupTable({
+    0: "ErrorCode",
+    1: "is_over_field_number_threshold",
+  }, 1)
+
+  _TYPES = _BuildTagLookupTable({
+    0: ProtocolBuffer.Encoder.NUMERIC,
+    1: ProtocolBuffer.Encoder.NUMERIC,
+  }, 1, ProtocolBuffer.Encoder.MAX_TYPE)
+
+
+  _STYLE = """"""
+  _STYLE_CONTENT_TYPE = """"""
+  _PROTO_DESCRIPTOR_NAME = 'storage_onestore_v3.IndexMetadata'
 class FacetValue(ProtocolBuffer.ProtocolMessage):
 
 
@@ -1416,4 +1511,4 @@ class Document(ProtocolBuffer.ProtocolMessage):
 if _extension_runtime:
   pass
 
-__all__ = ['FieldValue','FieldValue_Geo','Field','FieldTypes','FacetValue','Facet','DocumentMetadata','Document']
+__all__ = ['FieldValue','FieldValue_Geo','Field','FieldTypes','IndexMetadata','FacetValue','Facet','DocumentMetadata','Document']

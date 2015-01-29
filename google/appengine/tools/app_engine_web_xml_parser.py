@@ -77,8 +77,8 @@ class AppEngineWebXmlParser(object):
 
         raise AppEngineConfigException('\n'.join(self.errors))
       return self.app_engine_web_xml
-    except ElementTree.ParseError:
-      raise AppEngineConfigException('Bad input -- not valid XML')
+    except ElementTree.ParseError as e:
+      raise AppEngineConfigException('Bad input -- not valid XML: %s' % e)
 
   def ProcessChildNode(self, child_node):
     """Processes second-level nodes one by one.
@@ -105,6 +105,12 @@ class AppEngineWebXmlParser(object):
       prop_name = xml_parser_utils.GetAttribute(sub_node, 'name')
       prop_value = xml_parser_utils.GetAttribute(sub_node, 'value')
       self.app_engine_web_xml.system_properties[prop_name] = prop_value
+
+  def ProcessBetaSettingsNode(self, node):
+    for sub_node in xml_parser_utils.GetNodes(node, 'setting'):
+      prop_name = xml_parser_utils.GetAttribute(sub_node, 'name')
+      prop_value = xml_parser_utils.GetAttribute(sub_node, 'value')
+      self.app_engine_web_xml.beta_settings[prop_name] = prop_value
 
   def ProcessVmSettingsNode(self, node):
     for sub_node in xml_parser_utils.GetNodes(node, 'setting'):
@@ -309,7 +315,7 @@ class AppEngineWebXmlParser(object):
             node, 'disabled-rewriter')]
     self.app_engine_web_xml.pagespeed = pagespeed
 
-  def ProcessClassLoaderConfig(self, node):
+  def ProcessClassLoaderConfigNode(self, node):
     for node in xml_parser_utils.GetNodes(node, 'priority-specifier'):
       entry = PrioritySpecifierEntry()
       entry.filename = xml_parser_utils.GetAttribute(node, 'filename')
@@ -353,6 +359,60 @@ class AppEngineWebXmlParser(object):
         return
       self.app_engine_web_xml.auto_id_policy = policy
 
+  def ProcessHealthCheckNode(self, node):
+    health_check = HealthCheck()
+    for child in node:
+      tag = xml_parser_utils.GetTag(child)
+      if tag == 'enable-health-check':
+        health_check.enable_health_check = (
+            xml_parser_utils.BooleanValue(child.text))
+      elif tag == 'host':
+        health_check.host = child.text
+      elif tag in ('check-interval-sec', 'healthy-threshold',
+                   'restart-threshold', 'timeout-sec', 'unhealthy-threshold'):
+        text = child.text or ''
+        try:
+          value = self._PositiveInt(text)
+          setattr(health_check, tag.replace('-', '_'), value)
+        except ValueError:
+          self.errors.append('value for %s must be a positive integer: "%s"' %
+                             (tag, text))
+      else:
+        self.errors.append(
+            'unrecognized element within <health-check>: <%s>' % tag)
+    self.app_engine_web_xml.health_check = health_check
+
+  def ProcessVmHealthCheckNode(self, node):
+    self.ProcessHealthCheckNode(node)
+
+  def ProcessResourcesNode(self, node):
+    resources = Resources()
+    for child in node:
+      tag = xml_parser_utils.GetTag(child)
+      if tag in ('cpu', 'memory-gb', 'disk-size-gb'):
+        text = child.text or ''
+        setattr(resources, tag.replace('-', '_'), text)
+      else:
+        self.errors.append(
+            'unrecognized element within <resources>: <%s>' % tag)
+    self.app_engine_web_xml.resources = resources
+
+  def ProcessNetworkNode(self, node):
+    network = Network()
+    for child in node:
+      tag = xml_parser_utils.GetTag(child)
+      if tag == 'instance-tag':
+        text = child.text or ''
+        setattr(network, tag.replace('-', '_'), text)
+      elif tag == 'forwarded-port':
+        if not hasattr(network, 'forwarded_ports'):
+          network.forwarded_ports = []
+        network.forwarded_ports.append(child.text or '')
+      else:
+        self.errors.append(
+            'unrecognized element within <network>: <%s>' % tag)
+    self.app_engine_web_xml.network = network
+
   def CheckScalingConstraints(self):
     """Checks that at most one type of scaling is enabled."""
     scaling_num = sum([x is not None for x in [
@@ -362,6 +422,25 @@ class AppEngineWebXmlParser(object):
         ]])
     if scaling_num > 1:
       self.errors.append('Cannot enable more than one type of scaling')
+
+  @staticmethod
+  def _PositiveInt(text):
+    """Parse the given text as a positive integer.
+
+    Args:
+      text: a string that should contain the decimal representation of a
+        positive integer.
+
+    Returns:
+      An int that is the parsed value.
+
+    Raises:
+      ValueError: if text cannot be parsed as a positive integer.
+    """
+    value = int(text)
+    if value > 0:
+      return value
+    raise ValueError('Not a positive integer: %s' % text)
 
 
 class AppEngineWebXml(ValueMixin):
@@ -379,7 +458,11 @@ class AppEngineWebXml(ValueMixin):
     self.source_language = None
     self.module = None
     self.system_properties = {}
+    self.beta_settings = {}
     self.vm_settings = {}
+    self.health_check = None
+    self.resources = None
+    self.network = None
     self.env_variables = {}
     self.instance_class = None
     self.automatic_scaling = None
@@ -558,3 +641,22 @@ class StaticFileInclude(ValueMixin):
     self.pattern = pattern
     self.expiration = expiration
     self.http_headers = http_headers
+
+
+class HealthCheck(ValueMixin):
+  """Instances contain information about health check settings."""
+  pass
+
+
+class Resources(ValueMixin):
+  """Instances contain information about resources settings."""
+  pass
+
+
+class BetaSettings(ValueMixin):
+  """Instances contain information about beta settings."""
+  pass
+
+
+class Network(ValueMixin):
+  """Instances contain information about network settings."""

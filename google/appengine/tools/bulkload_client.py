@@ -14,9 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-
-
-
 """Imports CSV data over HTTP.
 
 Usage:
@@ -38,6 +35,7 @@ The exit status will be 0 on success, non-zero on import failure.
 Works with the bulkload mix-in library for google.appengine.ext.bulkload.
 Please look there for documentation about how to setup the server side.
 """
+
 
 
 import StringIO

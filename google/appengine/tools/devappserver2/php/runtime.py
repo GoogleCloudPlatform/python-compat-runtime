@@ -17,6 +17,7 @@
 """A PHP devappserver2 runtime."""
 
 
+
 import base64
 import cStringIO
 import httplib
@@ -39,7 +40,18 @@ from google.appengine.tools.devappserver2 import safe_subprocess
 from google.appengine.tools.devappserver2 import wsgi_server
 
 SDK_PATH = os.path.abspath(
-    os.path.join(os.path.dirname(os.path.realpath(sys.argv[0])), 'php/sdk'))
+
+
+
+
+
+
+
+os.path.join(os.path.dirname(os.path.realpath(sys.argv[0])), 'php/sdk'))
+
+
+
+
 
 
 if not os.path.exists(SDK_PATH):
@@ -109,7 +121,7 @@ class PHPRuntime(object):
     # PHP environment. Put the user script in REAL_SCRIPT_FILENAME.
     user_environ['REAL_SCRIPT_FILENAME'] = os.path.normpath(
         os.path.join(self.config.application_root,
-                     environ[http_runtime_constants.SCRIPT_HEADER]))
+                     environ[http_runtime_constants.SCRIPT_HEADER].lstrip('/')))
     user_environ['SCRIPT_FILENAME'] = SETUP_PHP_PATH
     user_environ['REMOTE_REQUEST_ID'] = environ[
         http_runtime_constants.REQUEST_ID_ENVIRON]

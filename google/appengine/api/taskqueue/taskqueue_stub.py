@@ -40,6 +40,7 @@ from __future__ import with_statement
 
 
 
+
 __all__ = []
 
 import base64
@@ -2024,7 +2025,7 @@ class TaskQueueServiceStub(apiproxy_stub.APIProxyStub):
                auto_task_running=False,
                task_retry_seconds=30,
                _all_queues_valid=False,
-               default_http_server=None,
+               default_http_server='localhost',
                _testing_validate_state=False,
                request_data=None):
     """Constructor.
@@ -2105,7 +2106,9 @@ class TaskQueueServiceStub(apiproxy_stub.APIProxyStub):
 
     if self._root_path is None:
       return None
-    for queueyaml in ('queue.yaml', 'queue.yml'):
+    for queueyaml in (
+        'queue.yaml', 'queue.yml',
+        os.path.join('WEB-INF', 'appengine-generated', 'queue.yaml')):
       try:
         path = os.path.join(self._root_path, queueyaml)
         modified = os.stat(path).st_mtime

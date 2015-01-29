@@ -43,6 +43,7 @@ The namespace schemas are:
 
 
 
+
 import base64
 import calendar
 import datetime
@@ -671,8 +672,6 @@ class Key(object):
     """
     pb = entity_pb.Reference()
     pb.CopyFrom(self.__reference)
-    if not self.has_id_or_name():
-      pb.mutable_path().element_list()[-1].set_id(0)
 
 
 

@@ -665,6 +665,8 @@ class CreateSocketRequest(ProtocolBuffer.ProtocolMessage):
   remote_ip_ = None
   has_app_id_ = 0
   app_id_ = ""
+  has_project_id_ = 0
+  project_id_ = 0
 
   def __init__(self, contents=None):
     self.socket_options_ = []
@@ -777,6 +779,19 @@ class CreateSocketRequest(ProtocolBuffer.ProtocolMessage):
 
   def has_app_id(self): return self.has_app_id_
 
+  def project_id(self): return self.project_id_
+
+  def set_project_id(self, x):
+    self.has_project_id_ = 1
+    self.project_id_ = x
+
+  def clear_project_id(self):
+    if self.has_project_id_:
+      self.has_project_id_ = 0
+      self.project_id_ = 0
+
+  def has_project_id(self): return self.has_project_id_
+
 
   def MergeFrom(self, x):
     assert x is not self
@@ -787,6 +802,7 @@ class CreateSocketRequest(ProtocolBuffer.ProtocolMessage):
     if (x.has_listen_backlog()): self.set_listen_backlog(x.listen_backlog())
     if (x.has_remote_ip()): self.mutable_remote_ip().MergeFrom(x.remote_ip())
     if (x.has_app_id()): self.set_app_id(x.app_id())
+    if (x.has_project_id()): self.set_project_id(x.project_id())
 
   def Equals(self, x):
     if x is self: return 1
@@ -805,6 +821,8 @@ class CreateSocketRequest(ProtocolBuffer.ProtocolMessage):
     if self.has_remote_ip_ and self.remote_ip_ != x.remote_ip_: return 0
     if self.has_app_id_ != x.has_app_id_: return 0
     if self.has_app_id_ and self.app_id_ != x.app_id_: return 0
+    if self.has_project_id_ != x.has_project_id_: return 0
+    if self.has_project_id_ and self.project_id_ != x.project_id_: return 0
     return 1
 
   def IsInitialized(self, debug_strs=None):
@@ -833,6 +851,7 @@ class CreateSocketRequest(ProtocolBuffer.ProtocolMessage):
     if (self.has_listen_backlog_): n += 1 + self.lengthVarInt64(self.listen_backlog_)
     if (self.has_remote_ip_): n += 1 + self.lengthString(self.remote_ip_.ByteSize())
     if (self.has_app_id_): n += 1 + self.lengthString(len(self.app_id_))
+    if (self.has_project_id_): n += 1 + self.lengthVarInt64(self.project_id_)
     return n + 2
 
   def ByteSizePartial(self):
@@ -849,6 +868,7 @@ class CreateSocketRequest(ProtocolBuffer.ProtocolMessage):
     if (self.has_listen_backlog_): n += 1 + self.lengthVarInt64(self.listen_backlog_)
     if (self.has_remote_ip_): n += 1 + self.lengthString(self.remote_ip_.ByteSizePartial())
     if (self.has_app_id_): n += 1 + self.lengthString(len(self.app_id_))
+    if (self.has_project_id_): n += 1 + self.lengthVarInt64(self.project_id_)
     return n
 
   def Clear(self):
@@ -859,6 +879,7 @@ class CreateSocketRequest(ProtocolBuffer.ProtocolMessage):
     self.clear_listen_backlog()
     self.clear_remote_ip()
     self.clear_app_id()
+    self.clear_project_id()
 
   def OutputUnchecked(self, out):
     out.putVarInt32(8)
@@ -883,6 +904,9 @@ class CreateSocketRequest(ProtocolBuffer.ProtocolMessage):
     if (self.has_app_id_):
       out.putVarInt32(74)
       out.putPrefixedString(self.app_id_)
+    if (self.has_project_id_):
+      out.putVarInt32(80)
+      out.putVarInt64(self.project_id_)
 
   def OutputPartial(self, out):
     if (self.has_family_):
@@ -909,6 +933,9 @@ class CreateSocketRequest(ProtocolBuffer.ProtocolMessage):
     if (self.has_app_id_):
       out.putVarInt32(74)
       out.putPrefixedString(self.app_id_)
+    if (self.has_project_id_):
+      out.putVarInt32(80)
+      out.putVarInt64(self.project_id_)
 
   def TryMerge(self, d):
     while d.avail() > 0:
@@ -943,6 +970,9 @@ class CreateSocketRequest(ProtocolBuffer.ProtocolMessage):
       if tt == 74:
         self.set_app_id(d.getPrefixedString())
         continue
+      if tt == 80:
+        self.set_project_id(d.getVarInt64())
+        continue
 
 
       if (tt == 0): raise ProtocolBuffer.ProtocolBufferDecodeError
@@ -971,6 +1001,7 @@ class CreateSocketRequest(ProtocolBuffer.ProtocolMessage):
       res+=self.remote_ip_.__str__(prefix + "  ", printElemNumber)
       res+=prefix+">\n"
     if self.has_app_id_: res+=prefix+("app_id: %s\n" % self.DebugFormatString(self.app_id_))
+    if self.has_project_id_: res+=prefix+("project_id: %s\n" % self.DebugFormatInt64(self.project_id_))
     return res
 
 
@@ -984,6 +1015,7 @@ class CreateSocketRequest(ProtocolBuffer.ProtocolMessage):
   klisten_backlog = 5
   kremote_ip = 6
   kapp_id = 9
+  kproject_id = 10
 
   _TEXT = _BuildTagLookupTable({
     0: "ErrorCode",
@@ -994,7 +1026,8 @@ class CreateSocketRequest(ProtocolBuffer.ProtocolMessage):
     5: "listen_backlog",
     6: "remote_ip",
     9: "app_id",
-  }, 9)
+    10: "project_id",
+  }, 10)
 
   _TYPES = _BuildTagLookupTable({
     0: ProtocolBuffer.Encoder.NUMERIC,
@@ -1005,13 +1038,14 @@ class CreateSocketRequest(ProtocolBuffer.ProtocolMessage):
     5: ProtocolBuffer.Encoder.NUMERIC,
     6: ProtocolBuffer.Encoder.STRING,
     9: ProtocolBuffer.Encoder.STRING,
-  }, 9, ProtocolBuffer.Encoder.MAX_TYPE)
+    10: ProtocolBuffer.Encoder.NUMERIC,
+  }, 10, ProtocolBuffer.Encoder.MAX_TYPE)
 
 
   _STYLE = """"""
   _STYLE_CONTENT_TYPE = """"""
   _PROTO_DESCRIPTOR_NAME = 'apphosting.CreateSocketRequest'
-class CreateSocketReply(ProtocolBuffer.ProtocolMessage):
+class CreateSocketReply(_ExtendableProtocolMessage):
   has_socket_descriptor_ = 0
   socket_descriptor_ = ""
   has_server_address_ = 0
@@ -1020,6 +1054,8 @@ class CreateSocketReply(ProtocolBuffer.ProtocolMessage):
   proxy_external_ip_ = None
 
   def __init__(self, contents=None):
+    if _extension_runtime:
+      self._extension_fields = {}
     self.lazy_init_lock_ = thread.allocate_lock()
     if contents is not None: self.MergeFromString(contents)
 
@@ -1080,6 +1116,7 @@ class CreateSocketReply(ProtocolBuffer.ProtocolMessage):
     if (x.has_socket_descriptor()): self.set_socket_descriptor(x.socket_descriptor())
     if (x.has_server_address()): self.mutable_server_address().MergeFrom(x.server_address())
     if (x.has_proxy_external_ip()): self.mutable_proxy_external_ip().MergeFrom(x.proxy_external_ip())
+    if _extension_runtime: self._MergeExtensionFields(x)
 
   def Equals(self, x):
     if x is self: return 1
@@ -1089,6 +1126,7 @@ class CreateSocketReply(ProtocolBuffer.ProtocolMessage):
     if self.has_server_address_ and self.server_address_ != x.server_address_: return 0
     if self.has_proxy_external_ip_ != x.has_proxy_external_ip_: return 0
     if self.has_proxy_external_ip_ and self.proxy_external_ip_ != x.proxy_external_ip_: return 0
+    if _extension_runtime and not self._ExtensionEquals(x): return 0
     return 1
 
   def IsInitialized(self, debug_strs=None):
@@ -1102,6 +1140,8 @@ class CreateSocketReply(ProtocolBuffer.ProtocolMessage):
     if (self.has_socket_descriptor_): n += 1 + self.lengthString(len(self.socket_descriptor_))
     if (self.has_server_address_): n += 1 + self.lengthString(self.server_address_.ByteSize())
     if (self.has_proxy_external_ip_): n += 1 + self.lengthString(self.proxy_external_ip_.ByteSize())
+    if _extension_runtime:
+      n += self._ExtensionByteSize(False)
     return n
 
   def ByteSizePartial(self):
@@ -1109,14 +1149,20 @@ class CreateSocketReply(ProtocolBuffer.ProtocolMessage):
     if (self.has_socket_descriptor_): n += 1 + self.lengthString(len(self.socket_descriptor_))
     if (self.has_server_address_): n += 1 + self.lengthString(self.server_address_.ByteSizePartial())
     if (self.has_proxy_external_ip_): n += 1 + self.lengthString(self.proxy_external_ip_.ByteSizePartial())
+    if _extension_runtime:
+      n += self._ExtensionByteSize(True)
     return n
 
   def Clear(self):
     self.clear_socket_descriptor()
     self.clear_server_address()
     self.clear_proxy_external_ip()
+    if _extension_runtime: self._extension_fields.clear()
 
   def OutputUnchecked(self, out):
+    if _extension_runtime:
+      extensions = self._ListExtensions()
+      extension_index = 0
     if (self.has_socket_descriptor_):
       out.putVarInt32(10)
       out.putPrefixedString(self.socket_descriptor_)
@@ -1128,8 +1174,13 @@ class CreateSocketReply(ProtocolBuffer.ProtocolMessage):
       out.putVarInt32(34)
       out.putVarInt32(self.proxy_external_ip_.ByteSize())
       self.proxy_external_ip_.OutputUnchecked(out)
+    if _extension_runtime:
+      extension_index = self._OutputExtensionFields(out, False, extensions, extension_index, 536870912)
 
   def OutputPartial(self, out):
+    if _extension_runtime:
+      extensions = self._ListExtensions()
+      extension_index = 0
     if (self.has_socket_descriptor_):
       out.putVarInt32(10)
       out.putPrefixedString(self.socket_descriptor_)
@@ -1141,6 +1192,8 @@ class CreateSocketReply(ProtocolBuffer.ProtocolMessage):
       out.putVarInt32(34)
       out.putVarInt32(self.proxy_external_ip_.ByteSizePartial())
       self.proxy_external_ip_.OutputPartial(out)
+    if _extension_runtime:
+      extension_index = self._OutputExtensionFields(out, True, extensions, extension_index, 536870912)
 
   def TryMerge(self, d):
     while d.avail() > 0:
@@ -1160,6 +1213,10 @@ class CreateSocketReply(ProtocolBuffer.ProtocolMessage):
         d.skip(length)
         self.mutable_proxy_external_ip().TryMerge(tmp)
         continue
+      if _extension_runtime:
+        if (1000 <= tt):
+          self._ParseOneExtensionField(tt, d)
+          continue
 
 
       if (tt == 0): raise ProtocolBuffer.ProtocolBufferDecodeError
@@ -1177,8 +1234,12 @@ class CreateSocketReply(ProtocolBuffer.ProtocolMessage):
       res+=prefix+"proxy_external_ip <\n"
       res+=self.proxy_external_ip_.__str__(prefix + "  ", printElemNumber)
       res+=prefix+">\n"
+    if _extension_runtime:
+      res+=self._ExtensionDebugString(prefix, printElemNumber)
     return res
 
+  if _extension_runtime:
+    _extensions_by_field_number = {}
 
   def _BuildTagLookupTable(sparse, maxtag, default=None):
     return tuple([sparse.get(i, default) for i in xrange(0, 1+maxtag)])
@@ -2805,11 +2866,13 @@ class ConnectRequest(ProtocolBuffer.ProtocolMessage):
   _STYLE = """"""
   _STYLE_CONTENT_TYPE = """"""
   _PROTO_DESCRIPTOR_NAME = 'apphosting.ConnectRequest'
-class ConnectReply(ProtocolBuffer.ProtocolMessage):
+class ConnectReply(_ExtendableProtocolMessage):
   has_proxy_external_ip_ = 0
   proxy_external_ip_ = None
 
   def __init__(self, contents=None):
+    if _extension_runtime:
+      self._extension_fields = {}
     self.lazy_init_lock_ = thread.allocate_lock()
     if contents is not None: self.MergeFromString(contents)
 
@@ -2836,11 +2899,13 @@ class ConnectReply(ProtocolBuffer.ProtocolMessage):
   def MergeFrom(self, x):
     assert x is not self
     if (x.has_proxy_external_ip()): self.mutable_proxy_external_ip().MergeFrom(x.proxy_external_ip())
+    if _extension_runtime: self._MergeExtensionFields(x)
 
   def Equals(self, x):
     if x is self: return 1
     if self.has_proxy_external_ip_ != x.has_proxy_external_ip_: return 0
     if self.has_proxy_external_ip_ and self.proxy_external_ip_ != x.proxy_external_ip_: return 0
+    if _extension_runtime and not self._ExtensionEquals(x): return 0
     return 1
 
   def IsInitialized(self, debug_strs=None):
@@ -2851,27 +2916,42 @@ class ConnectReply(ProtocolBuffer.ProtocolMessage):
   def ByteSize(self):
     n = 0
     if (self.has_proxy_external_ip_): n += 1 + self.lengthString(self.proxy_external_ip_.ByteSize())
+    if _extension_runtime:
+      n += self._ExtensionByteSize(False)
     return n
 
   def ByteSizePartial(self):
     n = 0
     if (self.has_proxy_external_ip_): n += 1 + self.lengthString(self.proxy_external_ip_.ByteSizePartial())
+    if _extension_runtime:
+      n += self._ExtensionByteSize(True)
     return n
 
   def Clear(self):
     self.clear_proxy_external_ip()
+    if _extension_runtime: self._extension_fields.clear()
 
   def OutputUnchecked(self, out):
+    if _extension_runtime:
+      extensions = self._ListExtensions()
+      extension_index = 0
     if (self.has_proxy_external_ip_):
       out.putVarInt32(10)
       out.putVarInt32(self.proxy_external_ip_.ByteSize())
       self.proxy_external_ip_.OutputUnchecked(out)
+    if _extension_runtime:
+      extension_index = self._OutputExtensionFields(out, False, extensions, extension_index, 536870912)
 
   def OutputPartial(self, out):
+    if _extension_runtime:
+      extensions = self._ListExtensions()
+      extension_index = 0
     if (self.has_proxy_external_ip_):
       out.putVarInt32(10)
       out.putVarInt32(self.proxy_external_ip_.ByteSizePartial())
       self.proxy_external_ip_.OutputPartial(out)
+    if _extension_runtime:
+      extension_index = self._OutputExtensionFields(out, True, extensions, extension_index, 536870912)
 
   def TryMerge(self, d):
     while d.avail() > 0:
@@ -2882,6 +2962,10 @@ class ConnectReply(ProtocolBuffer.ProtocolMessage):
         d.skip(length)
         self.mutable_proxy_external_ip().TryMerge(tmp)
         continue
+      if _extension_runtime:
+        if (1000 <= tt):
+          self._ParseOneExtensionField(tt, d)
+          continue
 
 
       if (tt == 0): raise ProtocolBuffer.ProtocolBufferDecodeError
@@ -2894,8 +2978,12 @@ class ConnectReply(ProtocolBuffer.ProtocolMessage):
       res+=prefix+"proxy_external_ip <\n"
       res+=self.proxy_external_ip_.__str__(prefix + "  ", printElemNumber)
       res+=prefix+">\n"
+    if _extension_runtime:
+      res+=self._ExtensionDebugString(prefix, printElemNumber)
     return res
 
+  if _extension_runtime:
+    _extensions_by_field_number = {}
 
   def _BuildTagLookupTable(sparse, maxtag, default=None):
     return tuple([sparse.get(i, default) for i in xrange(0, 1+maxtag)])

@@ -51,8 +51,10 @@ final class HttpResponse {
     self::CREATED => "CREATE",
     self::NO_CONTENT => "NO CONTENT",
     self::PARTIAL_CONTENT => "PARTIAL CONTENT",
+
     self::NOT_MODIFIED => "NOT MODIFIED",
     self::RESUME_INCOMPLETE => "RESUME INCOMPLETE",
+
     self::BAD_REQUEST => "BAD REQUEST",
     self::UNAUTHORIZED => "UNAUTHORIZED",
     self::FORBIDDEN => "FORBIDDEN",
@@ -60,7 +62,11 @@ final class HttpResponse {
     self::REQUEST_TIMEOUT => "REQUEST TIMEOUT",
     self::PRECONDITION_FAILED => "PRECONDITION FAILED",
     self::RANGE_NOT_SATISFIABLE => "RANGE NOT SATISFIABLE",
+
     self::INTERNAL_SERVER_ERROR => "INTERNAL SERVER ERROR",
+    self::BAD_GATEWAY => "BAD GATEWAY",
+    self::SERVICE_UNAVAILABLE => "SERVICE UNAVAILABLE",
+    self::GATEWAY_TIMEOUT => "GATEWAY TIMEOUT",
   ];
 
   public static function getStatusMessage($code) {

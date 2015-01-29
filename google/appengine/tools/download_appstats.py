@@ -14,10 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-
-
-
-
 """Script for downloading Appstats data using remote_api.
 
 Usage:
@@ -25,6 +21,7 @@ Usage:
 
 If the -s HOSTNAME flag is not specified, the APPID must be specified.
 """
+
 
 
 

@@ -34,6 +34,7 @@ import time
 import urlparse
 from wsgiref import handlers
 
+from google.appengine.api import appinfo
 from google.appengine.api import appinfo_includes
 
 
@@ -60,14 +61,14 @@ class AppLoadError(Error):
   pass
 
 
-def FullyWrappedAppFromYAML(filename, metadata_getter):
+def FullyWrappedAppFromYAML(filename, appengine_config):
   """Like FullyWrappedApp, but first arg is a file name containing YAML."""
   with open(filename) as stream:
     appinfo_external = appinfo_includes.Parse(stream)
-  return FullyWrappedApp(appinfo_external, metadata_getter)
+  return FullyWrappedApp(appinfo_external, appengine_config)
 
 
-def FullyWrappedApp(appinfo_external, metadata_getter=None):
+def FullyWrappedApp(appinfo_external, appengine_config):
   """Completely wraps a user's app per the given YAML file.
 
   Should only be called once per process. Note that any file referenced in the
@@ -77,22 +78,23 @@ def FullyWrappedApp(appinfo_external, metadata_getter=None):
   Args:
     appinfo_external: an AppInfoExternal for this app, usually (always?) parsed
       from an app.yaml.
-    metadata_getter: Passed to OsEnvSetupMiddleware.
+    appengine_config: A VmAppengineEnvConfig object.
 
   Returns:
     A WSGI app, properly scaffolded for the GAE VM runtime.
   """
-  app = MetaWSGIApp(appinfo_external)
+  app = MetaWSGIApp(appinfo_external, appengine_config)
   app = middlewares.RequestLoggingMiddleware(app)
   app = middlewares.ErrorLoggingMiddleware(app)
   app = middlewares.WsgiEnvSettingMiddleware(app, appinfo_external)
   app = middlewares.FixServerEnvVarsMiddleware(app)
-  app = middlewares.OsEnvSetupMiddleware(app, metadata_getter)
+  app = middlewares.OsEnvSetupMiddleware(app, appengine_config)
 
 
   app = middlewares.PatchLoggingMethods(app)
   app = middlewares.LogFlushCounter(app)
   app = middlewares.RequestQueueingMiddleware(app, appinfo_external)
+  app = middlewares.UseRequestSecurityTicketForApiMiddleware(app)
   return app
 
 
@@ -296,19 +298,33 @@ class MetaWSGIApp(object):
     appinfo_external: The AppInfoExternal YAML object corresponding to the
       app_yaml_filename constructor parameter.
     threadsafe: Whether or not this app is threadsafe, per app.yaml.
-    handlers: A list of tuples of (url, script, appinfo.URLMap). The first two
-      are contained in the third, but are unpacked for convenience.
+    handlers: A list of tuples of (url, script, l7_safe, appinfo.URLMap).
+    - url: The url pattern which matches this handler.
+    - script: The script to serve for this handler.
+    - l7_safe: Is this handler safe to serve from the l7lb. Only pages
+      that don't have login requirements are safe for l7lb.
+    - appinfo.URLMap: The full appinfo URLMap for this handler.
+    The first three are contained in the fourth, but are unpacked for
+    l7_unsafe_redirect_url: the base url to redirect unsafe l7 requests that
+    did not come from the appserver via the service bridge.
   """
 
-  def __init__(self, appinfo_external):
+  def __init__(self, appinfo_external, appinfo_config):
     """Parse app.yaml file and extract valid handlers."""
     self.appinfo_external = appinfo_external
     self.threadsafe = appinfo_external.threadsafe
-    self.handlers = [(x.url, _NormalizedScript(x.script), x)
+    self.handlers = [(x.url,
+                      _NormalizedScript(x.script),
+                      x.login == appinfo.LOGIN_OPTIONAL,
+                      x)
                      for x in appinfo_external.handlers]
     logging.info('Parsed handlers: %s', [(x[0], x[1]) for x in self.handlers])
     sys.path[:] = FixDjangoPath(appinfo_external.libraries, sys.path)
     self.user_env_variables = appinfo_external.env_variables or {}
+    self.l7_unsafe_redirect_url = 'https://%s-dot-%s-dot-%s' % (
+        appinfo_config.major_version,
+        appinfo_config.module,
+        appinfo_config.appengine_hostname)
 
 
     self.is_last_successful = False
@@ -320,29 +336,53 @@ class MetaWSGIApp(object):
       vm_health_check = self.appinfo_external.vm_health_check
       self.check_interval_sec = vm_health_check.check_interval_sec
 
-  def _CheckIsValidRemoteAddr(self, remote_addr):
-    """Check if the given remote address came from appserver or localhost."""
-    if remote_addr == '127.23.23.23':
+  def _CheckIsValidAddress(self, valid_networks, octets_to_match, address):
+    """Check that an ip address is in valid_networks.
+
+    Args:
+      valid_networks: An iterable of valid ipv4 networks in string form.
+      octets_to_match: The number of octets needed to match to be valid.
+      address: The address to check.
+
+    Returns:
+      True iff the the addr is valid.
+    """
+
+    network = '.'.join(address.split('.')[:octets_to_match])
+    return network in valid_networks
+
+  def _CheckIsLocalAddress(self, address):
+    local_ip_networks = (
+
+        '127.0',
+
+        '172.17')
+    return self._CheckIsValidAddress(local_ip_networks, 2, address)
+
+  def _CheckIsTrustedIpAddress(self, address):
+    """Check if the given ip address came from appserver or localhost."""
+    valid_ip_networks = (
+
+        '169.254',
+
+        '192.168')
+    if address == '10.0.2.2':
+
+
+
+
+
 
       return True
-    if remote_addr.startswith('169.254.'):
+    return (self._CheckIsValidAddress(valid_ip_networks, 2, address) or
+            self._CheckIsLocalAddress(address))
 
-      return True
-    if remote_addr.startswith('127.0.0.'):
+  def _CheckIsValidHealthCheckAddress(self, address):
+    """Check if the given remote address came from a valid health check ip."""
 
-      return True
-    if remote_addr == '10.0.2.2':
-
-
-
-      return True
-    if remote_addr.startswith('192.168.'):
-
-      return True
-    if remote_addr.startswith('172.17.'):
-
-      return True
-    return False
+    valid_ip_networks = ('130.211.0', '130.211.1', '130.211.2', '130.211.3')
+    return (self._CheckIsTrustedIpAddress(address) or
+            self._CheckIsValidAddress(valid_ip_networks, 3, address))
 
   def GetUserApp(self, script):
     """Extracts the user's app given a script specification."""
@@ -364,10 +404,6 @@ class MetaWSGIApp(object):
 
 
     remote_addr = env.get(WSGI_REMOTE_ADDR_ENV_KEY, '')
-    if not self._CheckIsValidRemoteAddr(remote_addr):
-      logging.error('Invalid remote address %s, aborting request!', remote_addr)
-      start_response('403 Forbidden', [])
-      return ['<h1>403 Forbidden</h1>\n']
     path = env['PATH_INFO']
     if remote_addr == '127.0.0.1' and path == '/_ah/stop':
 
@@ -376,19 +412,38 @@ class MetaWSGIApp(object):
       return self.ServeApp(internal_app, 'internal', env, start_response)
 
     if path == '/_ah/health':
+      if not self._CheckIsValidHealthCheckAddress(remote_addr):
+        logging.error('Invalid health check address %s, aborting request!',
+                      remote_addr)
+        start_response('403 Forbidden', [])
+        return ['<h1>403 Forbidden</h1>\n']
       return self.ServeHealthCheck(env, start_response, remote_addr)
-    for (url, script, appinfo_external) in self.handlers:
+    for (url, script, l7_safe, appinfo_external) in self.handlers:
       matcher = re.match(url, path)
       if matcher and matcher.end() == len(path):
 
 
 
 
-        if script:
-          return self.GetUserAppAndServe(script, env, start_response)
+        if l7_safe or self._CheckIsTrustedIpAddress(remote_addr):
+
+
+          if script:
+            return self.GetUserAppAndServe(script, env, start_response)
+          else:
+            return self.ServeStaticFile(
+                matcher, appinfo_external, env, start_response)
         else:
-          return self.ServeStaticFile(
-              matcher, appinfo_external, env, start_response)
+
+
+
+
+          redirect_url = '%s%s' % (self.l7_unsafe_redirect_url, path)
+          logging.info('Returning 307 to %s for request from %s.',
+                       redirect_url, remote_addr)
+          start_response(
+              '307 Temporary Redirect', [('location', redirect_url)])
+          return ['<h1>307 Temporary Redirect</h1>\n']
     logging.error('No handler found for %s', path)
     start_response('404 Not Found', [])
     return ['<h1>404 Not Found</h1>\n']
@@ -424,22 +479,9 @@ class MetaWSGIApp(object):
     is_last_successful_list = parameters.get('IsLastSuccessful', None)
 
 
-    if remote_addr.startswith('169.254.'):
-      if is_last_successful_list is not None:
-        if is_last_successful_list[0].lower() == 'yes':
-          self.is_last_successful = True
-        elif is_last_successful_list[0].lower() == 'no':
-          self.is_last_successful = False
-        else:
-          self.is_last_successful = False
-          logging.warning('Wrong value for parameter IsLastSuccessful: %s',
-                          is_last_successful_list)
-        self.is_last_successful_time = time.time()
-      else:
-        logging.warning('No query parameter IsLastSuccessful')
+    if self._CheckIsLocalAddress(remote_addr):
 
-      return internal_app(env, start_response)
-    else:
+
       remote_check_valid = True
       if not self.is_last_successful_time:
         remote_check_valid = False
@@ -459,6 +501,19 @@ class MetaWSGIApp(object):
         if not remote_check_valid:
           logging.warning('unhealthy because remote health check is not valid.')
         return ['unhealthy']
+    else:
+      if is_last_successful_list is not None:
+        if is_last_successful_list[0].lower() == 'yes':
+          self.is_last_successful = True
+        elif is_last_successful_list[0].lower() == 'no':
+          self.is_last_successful = False
+        else:
+          self.is_last_successful = False
+          logging.warning('Wrong value for parameter IsLastSuccessful: %s',
+                          is_last_successful_list)
+        self.is_last_successful_time = time.time()
+
+      return internal_app(env, start_response)
 
   def GetUserAppAndServe(self, script, env, start_response):
     """Dispatch a WSGI request to <script>."""

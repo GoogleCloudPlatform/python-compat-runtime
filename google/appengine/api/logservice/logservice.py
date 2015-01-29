@@ -16,10 +16,7 @@
 #
 
 
-
-
-"""
-LogService API.
+"""LogService API.
 
 This module allows apps to flush logs, provide status messages, and
 programmatically access their request and application logs.
@@ -30,7 +27,9 @@ programmatically access their request and application logs.
 
 
 
+from __future__ import with_statement
 import base64
+import collections
 import cStringIO
 import logging
 import os
@@ -47,6 +46,7 @@ from google.appengine.api.logservice import log_service_pb
 from google.appengine.api.logservice import logsutil
 from google.appengine.datastore import datastore_rpc
 from google.appengine.runtime import apiproxy_errors
+from google.appengine.runtime import features
 
 
 AUTOFLUSH_ENABLED = True
@@ -64,11 +64,11 @@ AUTOFLUSH_EVERY_LINES = 50
 MAX_ITEMS_PER_FETCH = 1000
 
 
-LOG_LEVEL_DEBUG = 0
-LOG_LEVEL_INFO = 1
-LOG_LEVEL_WARNING = 2
-LOG_LEVEL_ERROR = 3
-LOG_LEVEL_CRITICAL = 4
+LOG_LEVEL_DEBUG = logsutil.LOG_LEVEL_DEBUG
+LOG_LEVEL_INFO = logsutil.LOG_LEVEL_INFO
+LOG_LEVEL_WARNING = logsutil.LOG_LEVEL_WARNING
+LOG_LEVEL_ERROR = logsutil.LOG_LEVEL_ERROR
+LOG_LEVEL_CRITICAL = logsutil.LOG_LEVEL_CRITICAL
 
 
 MODULE_ID_RE_STRING = r'(?!-)[a-z\d\-]{1,63}'
@@ -82,6 +82,12 @@ _MAJOR_VERSION_ID_RE = re.compile(_MAJOR_VERSION_ID_PATTERN)
 
 _REQUEST_ID_PATTERN = r'^[\da-fA-F]+$'
 _REQUEST_ID_RE = re.compile(_REQUEST_ID_PATTERN)
+
+
+
+
+
+_NEWLINE_REPLACEMENT = '\0'
 
 
 class Error(Exception):
@@ -123,135 +129,28 @@ class TimeoutError(Error):
     return self.__last_end_time
 
 
-class LogsBuffer(object):
+class _LogsDequeBuffer(object):
   """Threadsafe buffer for storing and periodically flushing app logs."""
 
-  _MAX_FLUSH_SIZE = int(1e6)
-  _MAX_LINE_SIZE = _MAX_FLUSH_SIZE
-  assert _MAX_LINE_SIZE <= _MAX_FLUSH_SIZE
-
-  def __init__(self, stream=None, stderr=False):
-    """Initializes the buffer, which wraps the given stream or sys.stderr.
+  def __init__(self):
+    """Initializes the buffer.
 
     The state of the LogsBuffer is protected by a separate lock.  The lock is
     acquired before any variables are mutated or accessed, and released
     afterward.  A recursive lock is used so that a single thread can acquire the
     lock multiple times, and release it only when an identical number of
     'unlock()' calls have been performed.
-
-    Args:
-      stream: A file-like object to store logs. Defaults to a cStringIO object.
-      stderr: If specified, use sys.stderr as the underlying stream.
     """
-    self._stderr = stderr
-    if self._stderr:
-      assert stream is None
-    else:
-      self._stream = stream or cStringIO.StringIO()
+
+
+
+
+    self._buffer = collections.deque()
     self._lock = threading.RLock()
     self._reset()
 
-  def _lock_and_call(self, method, *args):
-    """Calls 'method' while holding the buffer lock."""
-    self._lock.acquire()
-    try:
-      return method(*args)
-    finally:
-      self._lock.release()
-
-  def stream(self):
-    """Returns the underlying file-like object used to buffer logs."""
-    if self._stderr:
-
-
-      return sys.stderr
-    else:
-      return self._stream
-
-  def lines(self):
-    """Returns the number of log lines currently buffered."""
-    return self._lock_and_call(lambda: self._lines)
-
-  def bytes(self):
-    """Returns the size of the log buffer, in bytes."""
-    return self._lock_and_call(lambda: self._bytes)
-
-  def age(self):
-    """Returns the number of seconds since the log buffer was flushed."""
-    return self._lock_and_call(lambda: time.time() - self._flush_time)
-
-  def flush_time(self):
-    """Returns last time that the log buffer was flushed."""
-    return self._lock_and_call(lambda: self._flush_time)
-
-  def contents(self):
-    """Returns the contents of the logs buffer."""
-    return self._lock_and_call(self._contents)
-
-  def _contents(self):
-    """Internal version of contents() with no locking."""
-    try:
-      return self.stream().getvalue()
-    except AttributeError:
-
-
-      return ''
-
-  def reset(self):
-    """Resets the buffer state, without clearing the underlying stream."""
-    self._lock_and_call(self._reset)
-
-  def _reset(self):
-    """Internal version of reset() with no locking."""
-    contents = self._contents()
-    self._bytes = len(contents)
-    self._lines = len(contents.split('\n')) - 1
-    self._flush_time = time.time()
-    self._request = logsutil.RequestID()
-
-  def clear(self):
-    """Clears the contents of the logs buffer, and resets autoflush state."""
-    self._lock_and_call(self._clear)
-
-  def _clear(self):
-    """Internal version of clear() with no locking."""
-    if self._bytes > 0:
-      self.stream().truncate(0)
-    self._reset()
-
-  def close(self):
-    """Closes the underlying stream, flushing the current contents."""
-    self._lock_and_call(self._close)
-
-  def _close(self):
-    """Internal version of close() with no locking."""
-    self._flush()
-    self.stream().close()
-
-  def parse_logs(self):
-    """Parse the contents of the buffer and return an array of log lines."""
-    return logsutil.ParseLogs(self.contents())
-
-  def write(self, line):
-    """Writes a line to the logs buffer."""
-    return self._lock_and_call(self._write, line)
-
-  def writelines(self, seq):
-    """Writes each line in the given sequence to the logs buffer."""
-    for line in seq:
-      self.write(line)
-
-  def _write(self, line):
-    """Writes a line to the logs buffer."""
-    if self._request != logsutil.RequestID():
-
-
-      self._reset()
-    self.stream().write(line)
-
-    self._lines += 1
-    self._bytes += len(line)
-    self._autoflush()
+  _MAX_FLUSH_SIZE = 1000 * 1000
+  _MAX_LINE_SIZE = _MAX_FLUSH_SIZE
 
   @staticmethod
   def _truncate(line, max_length=_MAX_LINE_SIZE):
@@ -262,6 +161,114 @@ class LogsBuffer(object):
       line = line[:max_length - len(suffix)] + suffix
     return line
 
+  def stream(self):
+    """Returns the underlying file-like object used to buffer logs."""
+
+
+    return cStringIO.StringIO(self.contents())
+
+  def lines(self):
+    """Returns the number of log lines currently buffered."""
+    with self._lock:
+      return len(self._buffer)
+
+  def bytes(self):
+    """Returns the size of the log buffer, in bytes."""
+    with self._lock:
+      return self._bytes
+
+  def age(self):
+    """Returns the number of seconds since the log buffer was flushed."""
+    with self._lock:
+      return time.time() - self._flush_time
+
+  def flush_time(self):
+    """Returns last time that the log buffer was flushed."""
+    with self._lock:
+      return self._flush_time
+
+  def contents(self):
+    """Returns the contents of the logs buffer."""
+    with self._lock:
+      return self._contents()
+
+  def _contents(self):
+    """Internal version of contents() with no locking."""
+    return ''.join(self._buffer)
+
+  def reset(self):
+    """Resets the buffer state, without clearing the underlying stream."""
+    with self._lock:
+      return self._reset()
+
+  def _reset(self):
+    """Internal version of reset() with no locking."""
+    self._bytes = sum(len(line) for line in self._buffer)
+    self._flush_time = time.time()
+    self._request = logsutil.RequestID()
+
+  def clear(self):
+    """Clears the contents of the logs buffer, and resets autoflush state."""
+    with self._lock:
+      return self._clear()
+
+  def _clear(self):
+    """Internal version of clear() with no locking."""
+    self._buffer.clear()
+    self._reset()
+
+  def close(self):
+    """Closes the underlying stream, flushing the current contents."""
+    with self._lock:
+      return self._close()
+
+  def _close(self):
+    """Internal version of close() with no locking."""
+    self._flush()
+
+  def parse_logs(self):
+    """Parse the contents of the buffer and return an array of log lines."""
+    without_newlines = (line[:-1] if line[-1] == '\n' else line
+                        for line in self._buffer)
+    return [logsutil.ParseLogEntry(line) for line in without_newlines if line]
+
+  def write(self, lines):
+    """Writes a line to the logs buffer."""
+    with self._lock:
+
+      for line in cStringIO.StringIO(lines):
+        self._write(line)
+
+  def writelines(self, seq):
+    """Writes each line in the given sequence to the logs buffer."""
+    for line in seq:
+      self.write(line)
+
+  def _put_line(self, line):
+    """Write the line in the internal buffer for the next flush."""
+    self._buffer.append(line)
+    self._bytes += len(line)
+
+  def _get_line(self):
+    """Get and deque the oldest log line from the internal buffer."""
+    line = self._buffer.popleft()
+    self._bytes -= len(line)
+    return line
+
+  def _rollback_line(self, line):
+    """Write back the line as the oldest in the internal buffer."""
+    self._buffer.appendleft(line)
+    self._bytes += len(line)
+
+  def _write(self, line):
+    """Writes a line to the logs buffer."""
+    if self._request != logsutil.RequestID():
+
+
+      self._reset()
+    self._put_line(line)
+    self._autoflush()
+
   def flush(self):
     """Flushes the contents of the logs buffer.
 
@@ -271,45 +278,71 @@ class LogsBuffer(object):
     that the other buffer state variables (flush time, lines, bytes) are updated
     synchronously with the flush.
     """
-    self._lock_and_call(self._flush)
+    with self._lock:
+      self._flush()
 
   def _flush(self):
     """Internal version of flush() with no locking."""
-    logs = self.parse_logs()
-    self._clear()
+    lines_to_be_flushed = []
+    try:
+      while True:
+        group = log_service_pb.UserAppLogGroup()
+        bytes_left = self._MAX_FLUSH_SIZE
+        while self._buffer:
+          bare_line = self._get_line()
 
-    first_iteration = True
-    while logs or first_iteration:
-      first_iteration = False
-      request = log_service_pb.FlushRequest()
-      group = log_service_pb.UserAppLogGroup()
-      byte_size = 0
-      n = 0
-      for entry in logs:
+          timestamp_usec, level, message = logsutil.ParseLogEntry(bare_line)
+
+          if message[-1] == '\n':
+            message = message[:-1]
+
+          if not message:
+            continue
 
 
-        if len(entry[2]) > LogsBuffer._MAX_LINE_SIZE:
-          entry = list(entry)
-          entry[2] = self._truncate(entry[2], LogsBuffer._MAX_LINE_SIZE)
+
+          message = self._truncate(message, self._MAX_LINE_SIZE)
 
 
-        if byte_size + len(entry[2]) > LogsBuffer._MAX_FLUSH_SIZE:
+          if len(message) > bytes_left:
+            self._rollback_line(bare_line)
+            break
+
+          lines_to_be_flushed.append(bare_line)
+
+          line = group.add_log_line()
+          line.set_timestamp_usec(timestamp_usec)
+          line.set_level(level)
+          line.set_message(message)
+
+          bytes_left -= 1 + group.lengthString(line.ByteSize())
+
+        request = log_service_pb.FlushRequest()
+        request.set_logs(group.Encode())
+        response = api_base_pb.VoidProto()
+        apiproxy_stub_map.MakeSyncCall('logservice', 'Flush', request, response)
+        if not self._buffer:
           break
-        line = group.add_log_line()
-        line.set_timestamp_usec(entry[0])
-        line.set_level(entry[1])
-        line.set_message(entry[2])
-        byte_size += 1 + group.lengthString(line.ByteSize())
-        n += 1
-      assert n > 0 or not logs
-      logs = logs[n:]
-      request.set_logs(group.Encode())
-      response = api_base_pb.VoidProto()
-      apiproxy_stub_map.MakeSyncCall('logservice', 'Flush', request, response)
+    except apiproxy_errors.CancelledError:
+
+
+      lines_to_be_flushed.reverse()
+      self._buffer.extendleft(lines_to_be_flushed)
+    except Exception, e:
+      lines_to_be_flushed.reverse()
+      self._buffer.extendleft(lines_to_be_flushed)
+      line = '-' * 80
+      msg = 'ERROR: Could not flush to log_service (%s)\n%s\n%s\n%s\n'
+      sys.stderr.write(msg % (e, line, '\n'.join(self._buffer), line))
+      self._clear()
+      raise
+    else:
+      self._clear()
 
   def autoflush(self):
     """Flushes the buffer if certain conditions have been met."""
-    self._lock_and_call(self._autoflush)
+    with self._lock:
+      return self._autoflush()
 
   def _autoflush(self):
     """Internal version of autoflush() with no locking."""
@@ -324,10 +357,6 @@ class LogsBuffer(object):
   def autoflush_enabled(self):
     """Indicates if the buffer will periodically flush logs during a request."""
     return AUTOFLUSH_ENABLED
-
-
-
-_global_buffer = LogsBuffer(stderr=True)
 
 
 def logs_buffer():
@@ -346,6 +375,33 @@ def write(message):
     message: A message (string) to be written to application logs.
   """
   logs_buffer().write(message)
+
+
+def write_record(level, created, message):
+  """Add a 'record' to the logs buffer, and checks for autoflush.
+
+  Arguments:
+    level: the logging level of the record. From 0 to 4 inclusive.
+    created: the time in seconds the record was created.
+    message: the formatted message.
+  """
+
+
+
+
+
+  message = message.replace('\r\n', _NEWLINE_REPLACEMENT)
+  message = message.replace('\r', _NEWLINE_REPLACEMENT)
+  message = message.replace('\n', _NEWLINE_REPLACEMENT)
+  if isinstance(message, unicode):
+    message = message.encode('UTF-8')
+
+
+
+
+  logs_buffer().write('LOG %d %d %s\n' % (level,
+                                          long(created * 1000 * 1000),
+                                          message))
 
 
 def clear():
@@ -778,6 +834,8 @@ class RequestLog(object):
 class AppLog(object):
   """Application log line emitted while processing a request."""
 
+
+
   def __init__(self, time=None, level=None, message=None):
     self._time = time
     self._level = level
@@ -903,9 +961,10 @@ def fetch(start_time=None,
     if not isinstance(minimum_log_level, int):
       raise InvalidArgumentError('minimum_log_level must be an int')
 
-    if not minimum_log_level in range(LOG_LEVEL_CRITICAL+1):
-      raise InvalidArgumentError("""minimum_log_level must be between 0 and 4
-                                 inclusive""")
+    if minimum_log_level not in logsutil.LOG_LEVELS:
+      raise InvalidArgumentError(
+          'minimum_log_level must be one of %s' % repr(
+              logsutil.LOG_LEVELS))
     request.set_minimum_log_level(minimum_log_level)
 
   if not isinstance(include_incomplete, bool):
@@ -1001,3 +1060,226 @@ def fetch(start_time=None,
     request.set_count(batch_size)
 
   return _LogQueryResult(request, timeout=timeout)
+
+
+class _LogsStreamBuffer(object):
+  """Threadsafe buffer for storing and periodically flushing app logs.
+
+  This is the classic version that works with streams. It is still supported
+  for the early bootstrap LogsBuffer (which uses stderr) and for Python 2.5
+  runtime (which uses a custom stream).
+  """
+
+  _MAX_FLUSH_SIZE = 1000 * 1000
+  _MAX_LINE_SIZE = _MAX_FLUSH_SIZE
+  assert _MAX_LINE_SIZE <= _MAX_FLUSH_SIZE
+
+  def __init__(self, stream=None, stderr=False):
+    """Initializes the buffer, which wraps the given stream or sys.stderr.
+
+    The state of the LogsBuffer is protected by a separate lock.  The lock is
+    acquired before any variables are mutated or accessed, and released
+    afterward.  A recursive lock is used so that a single thread can acquire the
+    lock multiple times, and release it only when an identical number of
+    'unlock()' calls have been performed.
+
+    Args:
+      stream: A file-like object to store logs. Defaults to a cStringIO object.
+      stderr: If specified, use sys.stderr as the underlying stream.
+    """
+    self._stderr = stderr
+    if self._stderr:
+      assert stream is None
+    else:
+      self._stream = stream or cStringIO.StringIO()
+    self._lock = threading.RLock()
+    self._reset()
+
+  def stream(self):
+    """Returns the underlying file-like object used to buffer logs."""
+    if self._stderr:
+
+
+      return sys.stderr
+    else:
+      return self._stream
+
+  def lines(self):
+    """Returns the number of log lines currently buffered."""
+    with self._lock:
+      return self._lines
+
+  def bytes(self):
+    """Returns the size of the log buffer, in bytes."""
+    with self._lock:
+      return self._bytes
+
+  def age(self):
+    """Returns the number of seconds since the log buffer was flushed."""
+    with self._lock:
+      return time.time() - self._flush_time
+
+  def flush_time(self):
+    """Returns last time that the log buffer was flushed."""
+    with self._lock:
+      return self._flush_time
+
+  def contents(self):
+    """Returns the contents of the logs buffer."""
+    with self._lock:
+      return self._contents()
+
+  def _contents(self):
+    """Internal version of contents() with no locking."""
+    try:
+      return self.stream().getvalue()
+    except AttributeError:
+
+
+      return ''
+
+  def reset(self):
+    """Resets the buffer state, without clearing the underlying stream."""
+    with self._lock:
+      return self._reset()
+
+  def _reset(self):
+    """Internal version of reset() with no locking."""
+    contents = self._contents()
+    self._bytes = len(contents)
+    self._lines = len(contents.split('\n')) - 1
+    self._flush_time = time.time()
+    self._request = logsutil.RequestID()
+
+  def clear(self):
+    """Clears the contents of the logs buffer, and resets autoflush state."""
+    with self._lock:
+      return self._clear()
+
+  def _clear(self):
+    """Internal version of clear() with no locking."""
+    if self._bytes > 0:
+      self.stream().truncate(0)
+    self._reset()
+
+  def close(self):
+    """Closes the underlying stream, flushing the current contents."""
+    with self._lock:
+      return self._close()
+
+  def _close(self):
+    """Internal version of close() with no locking."""
+    self._flush()
+    self.stream().close()
+
+  def parse_logs(self):
+    """Parse the contents of the buffer and return an array of log lines."""
+    return logsutil.ParseLogs(self.contents())
+
+  def write(self, line):
+    """Writes a line to the logs buffer."""
+    with self._lock:
+      return self._write(line)
+
+  def writelines(self, seq):
+    """Writes each line in the given sequence to the logs buffer."""
+    for line in seq:
+      self.write(line)
+
+  def _write(self, line):
+    """Writes a line to the logs buffer."""
+    if self._request != logsutil.RequestID():
+
+
+      self._reset()
+    self.stream().write(line)
+
+    self._lines += 1
+    self._bytes += len(line)
+    self._autoflush()
+
+  @staticmethod
+  def _truncate(line, max_length=_MAX_LINE_SIZE):
+    """Truncates a potentially long log down to a specified maximum length."""
+    if len(line) > max_length:
+      original_length = len(line)
+      suffix = '...(length %d)' % original_length
+      line = line[:max_length - len(suffix)] + suffix
+    return line
+
+  def flush(self):
+    """Flushes the contents of the logs buffer.
+
+    This method holds the buffer lock until the API call has finished to ensure
+    that flush calls are performed in the correct order, so that log messages
+    written during the flush call aren't dropped or accidentally wiped, and so
+    that the other buffer state variables (flush time, lines, bytes) are updated
+    synchronously with the flush.
+    """
+    with self._lock:
+      self._flush()
+
+  def _flush(self):
+    """Internal version of flush() with no locking."""
+    logs = self.parse_logs()
+    self._clear()
+
+    while True:
+      group = log_service_pb.UserAppLogGroup()
+      byte_size = 0
+      n = 0
+      for timestamp_usec, level, message in logs:
+
+
+        message = self._truncate(message, self._MAX_LINE_SIZE)
+
+        if byte_size + len(message) > self._MAX_FLUSH_SIZE:
+          break
+        line = group.add_log_line()
+        line.set_timestamp_usec(timestamp_usec)
+        line.set_level(level)
+        line.set_message(message)
+        byte_size += 1 + group.lengthString(line.ByteSize())
+        n += 1
+      assert n > 0 or not logs
+      logs = logs[n:]
+
+      request = log_service_pb.FlushRequest()
+      request.set_logs(group.Encode())
+      response = api_base_pb.VoidProto()
+      apiproxy_stub_map.MakeSyncCall('logservice', 'Flush', request, response)
+      if not logs:
+        break
+
+  def autoflush(self):
+    """Flushes the buffer if certain conditions have been met."""
+    with self._lock:
+      return self._autoflush()
+
+  def _autoflush(self):
+    """Internal version of autoflush() with no locking."""
+    if not self.autoflush_enabled():
+      return
+
+    if ((AUTOFLUSH_EVERY_SECONDS and self.age() >= AUTOFLUSH_EVERY_SECONDS) or
+        (AUTOFLUSH_EVERY_LINES and self.lines() >= AUTOFLUSH_EVERY_LINES) or
+        (AUTOFLUSH_EVERY_BYTES and self.bytes() >= AUTOFLUSH_EVERY_BYTES)):
+      self._flush()
+
+  def autoflush_enabled(self):
+    """Indicates if the buffer will periodically flush logs during a request."""
+    return AUTOFLUSH_ENABLED
+
+
+
+def LogsBuffer(stream=None, stderr=False):
+
+
+  if stream or stderr or not features.IsEnabled('LogsBufferNew'):
+    return _LogsStreamBuffer(stream, stderr)
+  else:
+    return _LogsDequeBuffer()
+
+
+
+_global_buffer = LogsBuffer(stderr=True)

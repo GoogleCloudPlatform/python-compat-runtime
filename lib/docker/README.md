@@ -1,7 +1,7 @@
 docker-py
 =========
 
-[![Build Status](https://travis-ci.org/dotcloud/docker-py.png)](https://travis-ci.org/dotcloud/docker-py)
+[![Build Status](https://travis-ci.org/docker/docker-py.png)](https://travis-ci.org/docker/docker-py)
 
 An API client for docker written in Python
 
@@ -20,7 +20,7 @@ a Docker daemon, simply do:
 
 ```python
 c = docker.Client(base_url='unix://var/run/docker.sock',
-                  version='1.9',
+                  version='1.12',
                   timeout=10)
 ```
 
@@ -77,6 +77,17 @@ Creates a container that can then be `start`ed. Parameters are similar
 to those for the `docker run` command except it doesn't support the
 attach options (`-a`). See "Port bindings" and "Using volumes" below for
 more information on how to create port bindings and volume mappings.
+
+`command` is the command to be run in the container. String or list types are
+accepted.
+
+The `environment` variable accepts a dictionary or a list of strings
+in the following format `["PASSWORD=xxx"]` or `{"PASSWORD": "xxx"}`.
+
+The `mem_limit` variable accepts float values (which represent the memory limit
+of the created container in bytes) or a string with a units identification char
+('100000b', 1000k', 128m', '1g'). If a string is specified without a units
+character, bytes are assumed as an intended unit.
 
 `volumes_from` and `dns` arguments raise TypeError exception if they are used
 against v1.10 of docker remote API. Those arguments should be passed to
@@ -190,7 +201,7 @@ c.pull(repository, tag=None, stream=False)
 Identical to the `docker pull` command.
 
 ```python
-c.push(repository, stream=False)
+c.push(repository, tag=None, stream=False)
 ```
 
 Identical to the `docker push` command.
@@ -221,7 +232,8 @@ Identical to the `docker search` command.
 ```python
 c.start(container, binds=None, port_bindings=None, lxc_conf=None,
         publish_all_ports=False, links=None, privileged=False,
-        dns=None, dns_search=None, volumes_from=None, network_mode=None)
+        dns=None, dns_search=None, volumes_from=None, network_mode=None,
+        restart_policy=None, cap_add=None, cap_drop=None)
 ```
 
 Similar to the `docker start` command, but doesn't support attach
@@ -247,6 +259,36 @@ docker bridge, 'none': no networking for this container, 'container:[name|id]':
 reuses another container network stack), 'host': use the host network stack
 inside the container.
 
+`restart_policy` is available since v1.2.0 and sets the RestartPolicy for how a container should or should not be 
+restarted on exit. By default the policy is set to no meaning do not restart the container when it exits. 
+The user may specify the restart policy as a dictionary for example:
+for example: 
+```
+{
+    "MaximumRetryCount": 0, 
+    "Name": "always"
+}
+```
+for always restarting the container on exit or can specify to restart the container to restart on failure and can limit
+number of restarts. 
+for example:
+```
+{
+    "MaximumRetryCount": 5, 
+    "Name": "on-failure"
+}
+```
+
+`cap_add` and `cap_drop` are available since v1.2.0 and can be used to add or drop certain capabilities.
+The user may specify the capabilities as an array for example:
+```
+[
+    "SYS_ADMIN",
+    "MKNOD"
+]
+```
+
+ 
 ```python
 c.stop(container, timeout=10)
 ```
@@ -342,3 +384,62 @@ c.start(container_id, binds={
         }
 })
 ```
+
+Connection to daemon using HTTPS
+================================
+
+*These instructions are docker-py specific. Please refer to
+http://docs.docker.com/articles/https/ first.*
+
+*  Authenticate server based on public/default CA pool
+
+```python
+client = docker.Client(base_url='<https_url>', tls=True)
+```
+
+Equivalent CLI options: `docker --tls ...`
+
+If you want to use TLS but don't want to verify the server certificate
+(for example when testing with a self-signed certificate):
+
+```python
+tls_config = docker.tls.TLSConfig(verify=False)
+client = docker.Client(base_url='<https_url>', tls=tls_config)
+```
+
+* Authenticate server based on given CA
+
+```python
+tls_config = docker.tls.TLSConfig(ca_cert='/path/to/ca.pem')
+client = docker.Client(base_url='<https_url>', tls=tls_config)
+```
+
+Equivalent CLI options: `docker --tlsverify --tlscacert /path/to/ca.pem ...`
+
+* Authenticate with client certificate, do not authenticate server
+  based on given CA
+
+```python
+tls_config = docker.tls.TLSConfig(
+  client_cert=('/path/to/client-cert.pem', '/path/to/client-key.pem')
+)
+client = docker.Client(base_url='<https_url>', tls=tls_config)
+```
+
+Equivalent CLI options:
+`docker --tls --tlscert /path/to/client-cert.pem
+--tlskey /path/to/client-key.pem ...`
+
+* Authenticate with client certificate, authenticate server based on given CA
+
+```python
+tls_config = docker.tls.TLSConfig(
+  client_cert=('/path/to/client-cert.pem', '/path/to/client-key.pem'),
+  ca_cert='/path/to/ca.pem'
+)
+client = docker.Client(base_url='<https_url>', tls=tls_config)
+```
+
+Equivalent CLI options:
+`docker --tlsverify --tlscert /path/to/client-cert.pem
+--tlskey /path/to/client-key.pem --tlscacert /path/to/ca.pem ...`

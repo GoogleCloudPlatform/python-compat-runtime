@@ -18,7 +18,12 @@
 
 
 
-"""Appengine Files API."""
+"""Appengine Files API
+
+.. deprecated:: 1.8.1
+   Use Google Cloud Storage Client library instead.
+"""
+
 
 
 from file import *

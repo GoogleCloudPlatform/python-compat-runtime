@@ -17,6 +17,7 @@
 """Serves static content for "static_dir" and "static_files" handlers."""
 
 
+
 import base64
 import errno
 import httplib
@@ -27,10 +28,14 @@ import re
 import zlib
 
 from google.appengine.api import appinfo
+from google.appengine.tools import augment_mimetypes
 from google.appengine.tools.devappserver2 import errors
 from google.appengine.tools.devappserver2 import url_handler
 
 _FILE_MISSING_ERRNO_CONSTANTS = frozenset([errno.ENOENT, errno.ENOTDIR])
+
+# Run at import time so we only do this once.
+augment_mimetypes.init()
 
 
 class StaticContentHandler(url_handler.UserConfiguredURLHandler):

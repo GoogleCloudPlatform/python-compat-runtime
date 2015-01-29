@@ -44,6 +44,7 @@ directly instead of this class.
 """
 
 
+
 import sys
 
 from google.net.proto2.python.public import descriptor
@@ -346,6 +347,10 @@ class DescriptorPool(object):
     extensions = [
         self.MakeFieldDescriptor(extension, desc_name, index, is_extension=True)
         for index, extension in enumerate(desc_proto.extension)]
+    oneofs = [
+        descriptor.OneofDescriptor(desc.name, '.'.join((desc_name, desc.name)),
+                                   index, None, [])
+        for index, desc in enumerate(desc_proto.oneof_decl)]
     extension_ranges = [(r.start, r.end) for r in desc_proto.extension_range]
     if extension_ranges:
       is_extendable = True
@@ -357,6 +362,7 @@ class DescriptorPool(object):
         filename=file_name,
         containing_type=None,
         fields=fields,
+        oneofs=oneofs,
         nested_types=nested,
         enum_types=enums,
         extensions=extensions,
@@ -370,6 +376,12 @@ class DescriptorPool(object):
       nested.containing_type = desc
     for enum in desc.enum_types:
       enum.containing_type = desc
+    for field_index, field_desc in enumerate(desc_proto.field):
+      if field_desc.HasField('oneof_index'):
+        oneof_index = field_desc.oneof_index
+        oneofs[oneof_index].fields.append(fields[field_index])
+        fields[field_index].containing_oneof = oneofs[oneof_index]
+
     scope[_PrefixWithDot(desc_name)] = desc
     self._descriptors[desc_name] = desc
     return desc
@@ -530,7 +542,7 @@ class DescriptorPool(object):
         field_desc.default_value = field_proto.default_value.lower() == 'true'
       elif field_proto.type == descriptor.FieldDescriptor.TYPE_ENUM:
         field_desc.default_value = field_desc.enum_type.values_by_name[
-            field_proto.default_value].index
+            field_proto.default_value].number
       elif field_proto.type == descriptor.FieldDescriptor.TYPE_BYTES:
         field_desc.default_value = text_encoding.CUnescape(
             field_proto.default_value)

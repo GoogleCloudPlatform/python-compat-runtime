@@ -102,7 +102,7 @@ final class CloudStorageWriteClient extends CloudStorageClient {
               E_USER_WARNING);
           return false;
         }
-        if (!preg_match(self::METADATA_KEY_REGEX, $value)) {
+        if (!preg_match(self::METADATA_VALUE_REGEX, $value)) {
           trigger_error(sprintf("Invalid metadata value: %s", $value),
               E_USER_WARNING);
           return false;

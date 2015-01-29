@@ -16,8 +16,6 @@
 #
 
 
-
-
 """A Python Search API used by app developers.
 
 Contains methods used to interface with Search API.
@@ -30,11 +28,15 @@ Contains API classes that forward to apiproxy.
 
 
 
+
+import base64
 import datetime
+import logging
 import re
 import string
 import sys
 import warnings
+from google.net.proto import ProtocolBuffer
 
 from google.appengine.datastore import document_pb
 from google.appengine.api import apiproxy_stub_map
@@ -50,6 +52,7 @@ from google.appengine.runtime import apiproxy_errors
 
 __all__ = [
     'AtomField',
+    'AtomFacet',
     'ConcurrentTransactionError',
     'Cursor',
     'DateField',
@@ -59,12 +62,20 @@ __all__ = [
     'DOCUMENT_ID_FIELD_NAME',
     'Error',
     'ExpressionError',
+    'Facet',
+    'FacetOptions',
+    'FacetRange',
+    'FacetRefinement',
+    'FacetRequest',
+    'FacetResult',
+    'FacetResultValue',
     'Field',
     'FieldExpression',
     'HtmlField',
     'GeoField',
     'GeoPoint',
     'get_indexes',
+    'get_indexes_async',
     'GetResponse',
     'Index',
     'InternalError',
@@ -74,6 +85,9 @@ __all__ = [
     'MAXIMUM_DOCUMENT_ID_LENGTH',
     'MAXIMUM_DOCUMENTS_PER_PUT_REQUEST',
     'MAXIMUM_DOCUMENTS_RETURNED_PER_SEARCH',
+    'MAXIMUM_DEPTH_FOR_FACETED_SEARCH',
+    'MAXIMUM_FACETS_TO_RETURN',
+    'MAXIMUM_FACET_VALUES_TO_RETURN',
     'MAXIMUM_EXPRESSION_LENGTH',
     'MAXIMUM_FIELD_ATOM_LENGTH',
     'MAXIMUM_FIELD_NAME_LENGTH',
@@ -91,6 +105,7 @@ __all__ = [
     'MIN_DATE',
     'MIN_NUMBER_VALUE',
     'NumberField',
+    'NumberFacet',
     'OperationResult',
     'PutError',
     'PutResult',
@@ -119,6 +134,9 @@ MAXIMUM_DOCUMENTS_PER_PUT_REQUEST = 200
 MAXIMUM_EXPRESSION_LENGTH = 5000
 MAXIMUM_QUERY_LENGTH = 2000
 MAXIMUM_DOCUMENTS_RETURNED_PER_SEARCH = 1000
+MAXIMUM_DEPTH_FOR_FACETED_SEARCH = 10000
+MAXIMUM_FACETS_TO_RETURN = 100
+MAXIMUM_FACET_VALUES_TO_RETURN = 100
 MAXIMUM_SEARCH_OFFSET = 1000
 
 MAXIMUM_SORTED_DOCUMENTS = 10000
@@ -213,6 +231,55 @@ def _ConcatenateErrorMessages(prefix, status):
   if status.error_detail():
     return prefix + ': ' + status.error_detail()
   return prefix
+
+
+class _RpcOperationFuture(object):
+  """Represents the future result a search RPC sent to a backend."""
+
+  def __init__(self, call, request, response, deadline, get_result_hook):
+    """Initializer.
+
+    Args:
+      call: Method name to call, as a string
+      request: The request object
+      response: The response object
+      deadline: Deadline for RPC call in seconds; if None use the default.
+      get_result_hook: Required result hook. Must be a function that takes
+        no arguments. Its return value is returned by get_result().
+    """
+    _ValidateDeadline(deadline)
+    self._get_result_hook = get_result_hook
+    self._rpc = apiproxy_stub_map.UserRPC('search', deadline=deadline)
+    self._rpc.make_call(call, request, response)
+
+  def get_result(self):
+    self._rpc.wait();
+    try:
+      self._rpc.check_success();
+    except apiproxy_errors.ApplicationError, e:
+      raise _ToSearchError(e)
+    return self._get_result_hook()
+
+
+class _SimpleOperationFuture(object):
+  """Adapts a late-binding function to a future."""
+
+  def __init__(self, future, function):
+    self._future = future
+    self._function = function
+
+  def get_result(self):
+    return self._function(self._future.get_result())
+
+
+class _WrappedValueFuture(object):
+  """Adapts an immediately-known result to a future."""
+
+  def __init__(self, result):
+    self._result = result
+
+  def get_result(self):
+    return self._result
 
 
 class OperationResult(object):
@@ -512,6 +579,19 @@ def _CheckIndexName(index_name):
   return _ValidateVisiblePrintableAsciiNotReserved(index_name, 'index_name')
 
 
+def _CheckFacetName(name):
+  """Checks facet name is not too long and matches facet name pattern.
+
+  Facet name pattern: "[A-Za-z][A-Za-z0-9_]*".
+
+  Args:
+    name: the name string to validate.
+  Returns:
+    the valid name.
+  """
+  return _CheckFieldName(name)
+
+
 def _CheckFieldName(name):
   """Checks field name is not too long and matches field name pattern.
 
@@ -559,6 +639,24 @@ def _ConvertToList(arg):
     except TypeError:
       return [arg]
   return []
+
+
+def _CheckType(obj, obj_type, obj_name):
+  """Check the type of an object."""
+  if not isinstance(obj, obj_type):
+    raise TypeError('%s must be a %s, got %s'
+                    % (obj_name, obj_type, obj.__class__.__name__))
+  return obj
+
+
+def _ConvertToListAndCheckType(arg, element_type, arg_name):
+  """Converts args to a list and check its element type."""
+  ret = _ConvertToList(arg)
+  for element in ret:
+    if not isinstance(element, element_type):
+      raise TypeError('%s should be single element or list of type %s'
+                      % (arg_name, element_type))
+  return ret
 
 
 def _ConvertToUnicodeList(arg):
@@ -669,6 +767,7 @@ def _ListIndexesResponsePbToGetResponse(response):
       results=[_NewIndexFromPb(index)
                for index in response.index_metadata_list()])
 
+
 @datastore_rpc._positional(7)
 def get_indexes(namespace='', offset=None, limit=20,
                 start_index_name=None, include_start_index=True,
@@ -699,25 +798,25 @@ def get_indexes(namespace='', offset=None, limit=20,
     ValueError: If any of the parameters have invalid values (e.g., a
       negative deadline).
   """
+  return get_indexes_async(
+      namespace, offset, limit, start_index_name, include_start_index,
+      index_name_prefix, fetch_schema, deadline=deadline, **kwargs).get_result()
+
+
+@datastore_rpc._positional(7)
+def get_indexes_async(namespace='', offset=None, limit=20,
+                      start_index_name=None, include_start_index=True,
+                      index_name_prefix=None, fetch_schema=False, deadline=None,
+                      **kwargs):
+  """Asynchronously returns a list of available indexes.
+
+  Identical to get_indexes() except that it returns a future. Call
+  get_result() on the return value to block on the call and get its result.
+  """
 
   app_id = kwargs.pop('app_id', None)
   if kwargs:
     raise TypeError('Invalid arguments: %s' % ', '.join(kwargs))
-
-  response = _GetIndexes(
-      namespace=namespace, offset=offset, limit=limit,
-      start_index_name=start_index_name,
-      include_start_index=include_start_index,
-      index_name_prefix=index_name_prefix,
-      fetch_schema=fetch_schema, deadline=deadline, app_id=app_id)
-  return _ListIndexesResponsePbToGetResponse(response)
-
-
-def _GetIndexes(namespace='', offset=None, limit=20,
-                start_index_name=None, include_start_index=True,
-                index_name_prefix=None, fetch_schema=False, deadline=None,
-                app_id=None):
-  """Returns a ListIndexesResponse."""
 
   request = search_service_pb.ListIndexesRequest()
   params = request.mutable_params()
@@ -752,10 +851,12 @@ def _GetIndexes(namespace='', offset=None, limit=20,
   if app_id:
     request.set_app_id(app_id)
 
-  _MakeSyncSearchServiceCall('ListIndexes', request, response, deadline)
+  def hook():
+    _CheckStatus(response.status())
+    return _ListIndexesResponsePbToGetResponse(response)
+  return _RpcOperationFuture(
+      'ListIndexes', request, response, deadline, hook)
 
-  _CheckStatus(response.status())
-  return response
 
 class Field(object):
   """An abstract base class which represents a field of a document.
@@ -839,6 +940,379 @@ class Field(object):
   def _CopyStringValueToProtocolBuffer(self, field_value_pb):
     """Copies value to a string value in proto buf."""
     field_value_pb.set_string_value(self.value.encode('utf-8'))
+
+
+class Facet(object):
+  """An abstract base class which represents a facet of a document.
+
+    This class should not be directly instantiated.
+  """
+
+  def __init__(self, name, value):
+    """Initializer.
+
+    Args:
+      name: The name of the facet. Facet names must have maximum length
+        MAXIMUM_FIELD_NAME_LENGTH and match pattern "[A-Za-z][A-Za-z0-9_]*".
+      value: The value of the facet which can be a str, unicode or number.
+
+    Raises:
+      TypeError: If any of the parameters have invalid types, or an unknown
+        attribute is passed.
+      ValueError: If any of the parameters have invalid values.
+    """
+    self._name = _CheckFacetName(_ConvertToUnicode(name))
+    self._value = self._CheckValue(value)
+
+  @property
+  def name(self):
+    """Returns the name of the facet."""
+    return self._name
+
+  @property
+  def value(self):
+    """Returns the value of the facet."""
+    return self._value
+
+  def _CheckValue(self, value):
+    """Checks the value is valid for the given type.
+
+    Args:
+      value: The value to check.
+
+    Returns:
+      The checked value.
+    """
+    raise NotImplementedError('_CheckValue is an abstract method')
+
+  def _CopyStringValueToProtocolBuffer(self, facet_value_pb):
+    """Copies value to a string value in proto buf."""
+    facet_value_pb.set_string_value(self.value.encode('utf-8'))
+
+  def _CopyToProtocolBuffer(self, pb):
+    """Copies facet's contents to a document_pb.Facet proto buffer."""
+    pb.set_name(self.name)
+    if self.value is not None:
+      facet_value_pb = pb.mutable_value()
+      self._CopyValueToProtocolBuffer(facet_value_pb)
+    return pb
+
+  def _AttributeValueList(self):
+    return [self.name, self.value]
+
+  def __eq__(self, other):
+    return (isinstance(other, type(self)) and
+            self._AttributeValueList() == other._AttributeValueList())
+
+  def __ne__(self, other):
+    return not self == other
+
+  def __hash__(self):
+    return hash(self._AttributeValueList())
+
+  def __repr__(self):
+    return _Repr(self, [('name', self.name), ('value', self.value)])
+
+
+class AtomFacet(Facet):
+  """A Facet that has content to be treated as a single token for indexing.
+
+  The following example shows an atom facet named wine_type:
+    AtomFacet(name='wine_type', value='Red')
+  """
+
+  def __init__(self, name, value=None):
+    """Initializer.
+
+    Args:
+      name: The name of the facet.
+      value: A str or unicode object to be treated as an indivisible text value.
+
+    Raises:
+      TypeError: If value is not a string.
+      ValueError: If value is longer than allowed.
+    """
+    Facet.__init__(self, name, _ConvertToUnicode(value))
+
+  def _CheckValue(self, value):
+    return _CheckAtom(value)
+
+  def _CopyValueToProtocolBuffer(self, facet_value_pb):
+    facet_value_pb.set_type(document_pb.FacetValue.ATOM)
+    self._CopyStringValueToProtocolBuffer(facet_value_pb)
+
+
+class NumberFacet(Facet):
+  """A Facet that has a numeric value.
+
+  The following example shows a number facet named wine_vintage:
+    NumberFacet(name='wine_vintage', value=2000)
+  """
+
+  def __init__(self, name, value=None):
+    """Initializer.
+
+    Args:
+      name: The name of the facet.
+      value: A numeric value.
+
+    Raises:
+      TypeError: If value is not numeric.
+      ValueError: If value is out of range.
+    """
+    Facet.__init__(self, name, value)
+
+  def _CheckValue(self, value):
+    value = _CheckNumber(value, 'facet value')
+    if value < MIN_NUMBER_VALUE or value > MAX_NUMBER_VALUE:
+      raise ValueError('value, %d must be between %d and %d' %
+                       (value, MIN_NUMBER_VALUE, MAX_NUMBER_VALUE))
+    return value
+
+  def _CopyValueToProtocolBuffer(self, facet_value_pb):
+    facet_value_pb.set_type(document_pb.FacetValue.NUMBER)
+    facet_value_pb.set_string_value(str(self.value))
+
+
+def _NewFacetFromPb(pb):
+  """Constructs a Facet from a document_pb.Facet protocol buffer."""
+  name = _DecodeUTF8(pb.name())
+  val_type = pb.value().type()
+  value = _DecodeValue(_GetValue(pb.value()), val_type)
+  if val_type == document_pb.FacetValue.ATOM:
+    return AtomFacet(name, value)
+  elif val_type == document_pb.FacetValue.NUMBER:
+    return NumberFacet(name, value)
+  return InvalidRequest('Unknown facet value type %d' % val_type)
+
+
+def _NewFacetsFromPb(facet_list):
+  """Returns a list of Facet copied from a document_pb.Document proto buf."""
+  return [_NewFacetFromPb(f) for f in facet_list]
+
+
+class FacetRange(object):
+  """A facet range with start and end values.
+
+    An example of a FacetRange for good rating is:
+    FacetRange(start=3.0, end=3.5)
+  """
+
+  @datastore_rpc._positional(1)
+  def __init__(self, start=None, end=None):
+    """Initializer.
+
+    Args:
+      start: Start value for the range, inclusive.
+      end: End value for the range. exclusive.
+
+    Raises:
+      TypeError: If any of the parameters have invalid types, or an unknown
+        attribute is passed.
+      ValueError: If any of the parameters have invalid values.
+    """
+    if start is None and end is None:
+      raise ValueError(
+          'Either start or end need to be provided for a facet range.')
+    none_or_numeric_type = (type(None), int, float, long)
+    self._start = _CheckType(start, none_or_numeric_type, 'start')
+    self._end = _CheckType(end, none_or_numeric_type, 'end')
+
+  @property
+  def start(self):
+    """Returns inclusive start of the range."""
+    return self._start
+
+  @property
+  def end(self):
+    """Returns exclusive end of the range."""
+    return self._end
+
+
+class FacetRequest(object):
+  """A facet to be included in search result.
+
+  An example of a request for a facet only with name:
+    FacetRequest('ExpediteShipping')
+  (in that case, results will always have this facet)
+  Or with a value constraint:
+    FacetRequest('Size', values=['XL','L','M']
+  (results will have this facet with only specified values)
+  Or ranges:
+    FacetRequest('Rating', ranges=[
+        FacetRange(1.0, 2.0),
+        FacetRange(2.0, 3.5),
+        FacetRange(3.5, 4.0)]
+  (results will have this facet with specified ranges)
+  """
+
+  @datastore_rpc._positional(2)
+  def __init__(self, name, value_limit=10, ranges=None, values=None):
+    """Initializer.
+
+    Args:
+      name: The name of the facet.
+      value_limit: Number of values to return if values is not specified.
+      ranges: Range of values to return. Cannot be set with values.
+      values: Specific values to return. Cannot be set with ranges.
+
+    Raises:
+      TypeError: If any of the parameters have invalid types, or an unknown
+        attribute is passed.
+      ValueError: If any of the parameters have invalid values.
+    """
+    self._name = _CheckFacetName(_ConvertToUnicode(name))
+    self._value_limit = _CheckFacetValueLimit(value_limit)
+    if ranges is not None and values is not None:
+      raise ValueError(
+          'Cannot specify both ranges and values.')
+    self._ranges = _ConvertToListAndCheckType(
+        ranges, FacetRange, 'ranges')
+    self._values = _ConvertToListAndCheckType(
+        values, (basestring, int, float, long), 'values')
+
+  @property
+  def name(self):
+    """Returns the name of the facet."""
+    return self._name
+
+  @property
+  def value_limit(self):
+    """Returns number of values to be included in the result."""
+    return self._value_limit
+
+  @property
+  def ranges(self):
+    """Returns FacetRanges of values to be included in the result."""
+    return self._ranges
+
+  @property
+  def values(self):
+    """Returns specific values to be included in the result."""
+    return self._values
+
+  def _CopyToProtocolBuffer(self, facet_request_pb):
+    """Converts this object to a search_service_pb.FacetRequest proto buff."""
+    facet_request_pb.set_name(self.name)
+    request_param_pb = facet_request_pb.mutable_params()
+    request_param_pb.set_value_limit(self.value_limit)
+    for facet_range in self.ranges:
+      range_pb = request_param_pb.add_range()
+      if facet_range.start is not None:
+        range_pb.set_start(str(facet_range.start))
+      if facet_range.end is not None:
+        range_pb.set_end(str(facet_range.end))
+    for constraint in self.values:
+      request_param_pb.add_value_constraint(constraint)
+
+
+class FacetRefinement(object):
+  """A Facet Refinement to filter out search results based on a facet value.
+
+  NOTE: The recommended way to use facet refinement is to use the token
+  string. Each FacetResult will have a token that is acceptable instead of this
+  class. To provide manual FacetRefinement, an instance of this class can be
+  passed to SearchOptions.
+  NOTE: that either value or facet_range should be set but not both.
+  Example: Request for a range refinement for a numeric facet:
+    FacetRefinement(name='rating', facet_range=FacetRange(start=1.0,end=2.5))
+  """
+
+  @datastore_rpc._positional(2)
+  def __init__(self, name, value=None, facet_range=None):
+    """Initializer.
+
+    Args:
+      name: The name of the facet.
+      value: Value of the facet.
+      facet_range: A FacetRange to refine facet based on a range.
+
+    Raises:
+      TypeError: If any of the parameters have invalid types, or an unknown
+        attribute is passed.
+      ValueError: If any of the parameters have invalid values.
+    """
+    self._name = _ConvertToUnicode(name)
+    if (value is None) == (facet_range is None):
+      raise ValueError('Either value or facet_range should be set but not '
+                       'both.')
+    self._value = value
+    self._facet_range = facet_range
+
+  @property
+  def name(self):
+    """Returns name of the facet refinement."""
+    return self._name
+
+  @property
+  def value(self):
+    """Returns value of the facet refinement."""
+    return self._value
+
+  @property
+  def facet_range(self):
+    """Returns range of the facet refinement."""
+    return self._facet_range
+
+  def ToTokenString(self):
+    """Converts this refinement to a token string safe to be used in HTML.
+
+    The format of this string may change.
+
+    Returns:
+      A token string safe to be used in HTML for this facet refinement.
+    """
+    facet_refinement = search_service_pb.FacetRefinement()
+    self._CopyToProtocolBuffer(facet_refinement)
+    return base64.b64encode(facet_refinement.SerializeToString())
+
+  @staticmethod
+  def FromTokenString(token_string):
+    """Converts a token string to a FacetRefinement object.
+
+    Do not store token strings between different versions of API as key could
+    be incompatible.
+
+    Args:
+      token_string: A token string created by ToTokenString method or returned
+      by a search result.
+    Returns:
+      A FacetRefinement object.
+    Raises:
+      ValueError: If the token_string is invalid.
+    """
+    ref_pb = search_service_pb.FacetRefinement()
+
+    try:
+      ref_pb.ParseFromString(base64.b64decode(token_string))
+    except (ProtocolBuffer.ProtocolBufferDecodeError, TypeError), e:
+
+
+      raise ValueError('Invalid refinement token %s' % token_string, e)
+
+    facet_range = None
+    if ref_pb.has_range():
+      range_pb = ref_pb.range()
+      facet_range = FacetRange(
+          start=float(range_pb.start()) if range_pb.has_start() else None,
+          end=float(range_pb.end()) if range_pb.has_end() else None)
+
+    return FacetRefinement(ref_pb.name(),
+                           value=ref_pb.value() if ref_pb.has_value() else None,
+                           facet_range=facet_range)
+
+  def _CopyToProtocolBuffer(self, facet_refinement_pb):
+    """Copies This object to a search_service_pb.FacetRefinement."""
+    facet_refinement_pb.set_name(self.name)
+    if self.value is not None:
+      facet_refinement_pb.set_value(str(self.value))
+    if self.facet_range is not None:
+      if self.facet_range.start:
+        facet_refinement_pb.mutable_range().set_start(
+            str(self.facet_range.start))
+      if self.facet_range.end:
+        facet_refinement_pb.mutable_range().set_end(
+            str(self.facet_range.end))
 
 
 def _CopyFieldToProtocolBuffer(field, pb):
@@ -1172,7 +1646,8 @@ class Document(object):
   """
   _FIRST_JAN_2011 = datetime.datetime(2011, 1, 1)
 
-  def __init__(self, doc_id=None, fields=None, language='en', rank=None):
+  def __init__(self, doc_id=None, fields=None, language='en', rank=None,
+               facets=None):
     """Initializer.
 
     Args:
@@ -1187,6 +1662,8 @@ class Document(object):
         If not specified, the number of seconds since 1st Jan 2011 is used.
         Documents are returned in descending order of their rank, in absence
         of sorting or scoring options.
+      facets: An iterable of Facet instances representing the facets for this
+        document.
 
     Raises:
       TypeError: If any of the parameters have invalid types, or an unknown
@@ -1198,10 +1675,14 @@ class Document(object):
       _CheckDocumentId(doc_id)
     self._doc_id = doc_id
     self._fields = _GetList(fields)
+    self._facets = _GetList(facets)
     self._language = _CheckLanguage(_ConvertToUnicode(language))
 
 
     self._field_map = None
+
+
+    self._facet_map = None
 
     doc_rank = rank
     if doc_rank is None:
@@ -1219,6 +1700,11 @@ class Document(object):
   def fields(self):
     """Returns a list of fields of the document."""
     return self._fields
+
+  @property
+  def facets(self):
+    """Returns a list of facets of the document."""
+    return self._facets
 
   @property
   def language(self):
@@ -1249,6 +1735,21 @@ class Document(object):
         'Must have exactly one field with name %s, but found %d.' %
         (field_name, len(fields)))
 
+  def facet(self, facet_name):
+    """Returns list of facets with the provided name.
+
+    Args:
+      facet_name: The name of the facet to return.
+
+    Returns:
+      A list of facets with the given name.
+    """
+    return self._BuildFacetMap().get(facet_name, [])
+
+  def __setstate__(self, state):
+    self.__dict__ = {'_facets': [], '_facet_map': None}
+    self.__dict__.update(state)
+
   def __getitem__(self, field_name):
     """Returns a list of all fields with the provided field name.
 
@@ -1271,10 +1772,20 @@ class Document(object):
   def _BuildFieldMap(self):
     """Lazily build the field map."""
     if self._field_map is None:
-      self._field_map = {}
+      field_map = {}
       for field in self._fields:
-        self._field_map.setdefault(field.name, []).append(field)
+        field_map.setdefault(field.name, []).append(field)
+      self._field_map = field_map
     return self._field_map
+
+  def _BuildFacetMap(self):
+    """Lazily build the facet map."""
+    if self._facet_map is None:
+      facet_map = {}
+      for facet in self._facets:
+        facet_map.setdefault(facet.name, []).append(facet)
+      self._facet_map = facet_map
+    return self._facet_map
 
   def _CheckRank(self, rank):
     """Checks if rank is valid, then returns it."""
@@ -1288,12 +1799,13 @@ class Document(object):
   def __repr__(self):
     return _Repr(
         self, [('doc_id', self.doc_id), ('fields', self.fields),
-               ('language', self.language), ('rank', self.rank)])
+               ('facets', self.facets), ('language', self.language),
+               ('rank', self.rank)])
 
   def __eq__(self, other):
     return (isinstance(other, type(self)) and self.doc_id == other.doc_id and
             self.rank == other.rank and self.language == other.language
-            and self.fields == other.fields)
+            and self.fields == other.fields and self.facets == other.facets)
 
   def __ne__(self, other):
     return not self == other
@@ -1318,6 +1830,9 @@ def _CopyDocumentToProtocolBuffer(document, pb):
   for field in document.fields:
     field_pb = pb.add_field()
     _CopyFieldToProtocolBuffer(field, field_pb)
+  for facet in document.facets:
+    facet_pb = pb.add_facet()
+    facet._CopyToProtocolBuffer(facet_pb)
   pb.set_order_id(document.rank)
   return pb
 
@@ -1335,7 +1850,8 @@ def _NewDocumentFromPb(doc_pb):
   return Document(doc_id=_DecodeUTF8(doc_pb.id()),
                   fields=_NewFieldsFromPb(doc_pb.field_list()),
                   language=lang,
-                  rank=doc_pb.order_id())
+                  rank=doc_pb.order_id(),
+                  facets=_NewFacetsFromPb(doc_pb.facet_list()))
 
 
 def _QuoteString(argument):
@@ -1528,14 +2044,15 @@ def _CopySortExpressionToProtocolBuffer(sort_expression, pb):
   pb.set_sort_expression(sort_expression.expression.encode('utf-8'))
   if sort_expression.direction == SortExpression.ASCENDING:
     pb.set_sort_descending(False)
-  if isinstance(sort_expression.default_value, basestring):
-    pb.set_default_value_text(sort_expression.default_value.encode('utf-8'))
-  elif (isinstance(sort_expression.default_value, datetime.datetime) or
-        isinstance(sort_expression.default_value, datetime.date)):
-    pb.set_default_value_numeric(
-        search_util.EpochTime(sort_expression.default_value))
-  else:
-    pb.set_default_value_numeric(sort_expression.default_value)
+  if sort_expression.default_value is not None:
+    if isinstance(sort_expression.default_value, basestring):
+      pb.set_default_value_text(sort_expression.default_value.encode('utf-8'))
+    elif (isinstance(sort_expression.default_value, datetime.datetime) or
+          isinstance(sort_expression.default_value, datetime.date)):
+      pb.set_default_value_text(str(
+          search_util.EpochTime(sort_expression.default_value)))
+    else:
+      pb.set_default_value_numeric(sort_expression.default_value)
   return pb
 
 
@@ -1606,7 +2123,7 @@ class SortExpression(object):
 
   _DIRECTIONS = frozenset([ASCENDING, DESCENDING])
 
-  def __init__(self, expression, direction=DESCENDING, default_value=''):
+  def __init__(self, expression, direction=DESCENDING, default_value=None):
     """Initializer.
 
     Args:
@@ -1638,13 +2155,14 @@ class SortExpression(object):
       raise TypeError('expression must be a SortExpression, got None')
     _CheckExpression(self._expression)
     self._default_value = default_value
-    if isinstance(self.default_value, basestring):
-      self._default_value = _ConvertToUnicode(default_value)
-      _CheckText(self._default_value, 'default_value')
-    elif not isinstance(self._default_value,
-                        (int, long, float, datetime.date, datetime.datetime)):
-      raise TypeError('default_value must be text, numeric or datetime, got %s'
-                      % self._default_value.__class__.__name__)
+    if self._default_value is not None:
+      if isinstance(self.default_value, basestring):
+        self._default_value = _ConvertToUnicode(default_value)
+        _CheckText(self._default_value, 'default_value')
+      elif not isinstance(self._default_value,
+                          (int, long, float, datetime.date, datetime.datetime)):
+        raise TypeError('default_value must be text, numeric or datetime, got '
+                        '%s' % self._default_value.__class__.__name__)
 
   @property
   def expression(self):
@@ -1672,11 +2190,90 @@ class SortExpression(object):
                ('default_value', self.default_value)])
 
 
+class FacetResultValue(object):
+  """A facet value as part of search result."""
+
+  def __init__(self, label, count, refinement):
+    """Initializer.
+
+    Args:
+      label: The label of the facet. Either the name of the facet, user
+        provider range name, or system generated range name.
+      count: Occurrence frequency of the label for the given facet.
+      refinement: The FacetRefinement object for this value. Passing this object
+        or its string token to the next query will refine the result based on
+        this facet value.
+    Raises:
+      TypeError: If any of the parameters have invalid types, or an unknown
+        attribute is passed.
+      ValueError: If any of the parameters have invalid values.
+    """
+    self._label = label
+    self._count = count
+    _CheckType(refinement, FacetRefinement, 'refinement')
+    self._refinement_token = refinement.ToTokenString()
+    self._refinement = refinement
+
+  @property
+  def label(self):
+    """Returns the label for this facet value."""
+    return self._label
+
+  @property
+  def count(self):
+    """Returns the count for this facet value."""
+    return self._count
+
+  @property
+  def refinement_token(self):
+    """Returns the refinement token string for this facet value."""
+    return self._refinement_token
+
+  def __repr__(self):
+    return _Repr(self, [('label', self.label),
+                        ('count', self.count),
+                        ('refinement', self._refinement)])
+
+
+class FacetResult(object):
+  """Represents a facet result returned from a search with faceted search."""
+
+  def __init__(self, name, values=None):
+    """Initializer.
+
+    Args:
+      name: The name of this facet result.
+      values: An iterable of FacetResultValue instances representing values for
+        this document.
+    Raises:
+      TypeError: If any of the parameters have invalid types, or an unknown
+        attribute is passed.
+      ValueError: If any of the parameters have invalid values.
+    """
+    self._name = _ConvertToUnicode(name)
+    self._values = values
+
+  @property
+  def name(self):
+    """Returns the name of this facet result."""
+    return self._name
+
+  @property
+  def values(self):
+    """Returns values for this facet result."""
+    return self._values
+
+  def __repr__(self):
+    return _Repr(self, [('name', self.name),
+                        ('values', self.values)])
+
+
 class ScoredDocument(Document):
   """Represents a scored document returned from a search."""
 
   def __init__(self, doc_id=None, fields=None, language='en',
-               sort_scores=None, expressions=None, cursor=None, rank=None):
+               sort_scores=None, expressions=None, cursor=None, rank=None,
+               facets=None):
     """Initializer.
 
     Args:
@@ -1696,6 +2293,8 @@ class ScoredDocument(Document):
         less than sys.maxint. If not specified, the number of seconds since
         1st Jan 2011 is used. Documents are returned in descending order of
         their rank.
+      facets: An iterable of Facet instances representing the facets for this
+        document.
 
     Raises:
       TypeError: If any of the parameters have invalid types, or an unknown
@@ -1703,7 +2302,8 @@ class ScoredDocument(Document):
       ValueError: If any of the parameters have invalid values.
     """
     super(ScoredDocument, self).__init__(doc_id=doc_id, fields=fields,
-                                         language=language, rank=rank)
+                                         language=language, rank=rank,
+                                         facets=facets)
     self._sort_scores = self._CheckSortScores(_GetList(sort_scores))
     self._expressions = _GetList(expressions)
     if cursor is not None and not isinstance(cursor, Cursor):
@@ -1771,7 +2371,7 @@ class ScoredDocument(Document):
 class SearchResults(object):
   """Represents the result of executing a search request."""
 
-  def __init__(self, number_found, results=None, cursor=None):
+  def __init__(self, number_found, results=None, cursor=None, facets=None):
     """Initializer.
 
     Args:
@@ -1780,6 +2380,8 @@ class SearchResults(object):
         search request.
       cursor: A Cursor to continue the search from the end of the
         search results.
+      facets: The list of FacetResults returned from executing a search request
+        with faceted search enabled.
 
     Raises:
       TypeError: If any of the parameters have an invalid type, or an unknown
@@ -1792,6 +2394,7 @@ class SearchResults(object):
       raise TypeError('cursor must be a Cursor, got %s' %
                       cursor.__class__.__name__)
     self._cursor = cursor
+    self._facets = _GetList(facets)
 
   def __iter__(self):
 
@@ -1828,10 +2431,20 @@ class SearchResults(object):
     """
     return self._cursor
 
+  @property
+  def facets(self):
+    """Return the list of FacetResults that found in matched documents."""
+    return self._facets
+
+  def __setstate__(self, state):
+    self.__dict__ = {'_facets': []}
+    self.__dict__.update(state)
+
   def __repr__(self):
     return _Repr(self, [('results', self.results),
                         ('number_found', self.number_found),
-                        ('cursor', self.cursor)])
+                        ('cursor', self.cursor),
+                        ('facets', self.facets)])
 
 
 class GetResponse(object):
@@ -1861,6 +2474,12 @@ class GetResponse(object):
   def __iter__(self):
     for result in self.results:
       yield result
+
+  def __len__(self):
+    return len(self.results)
+
+  def __getitem__(self, index):
+    return self.results[index]
 
   @property
   def results(self):
@@ -1974,6 +2593,36 @@ def _CheckLimit(limit):
       upper_bound=MAXIMUM_DOCUMENTS_RETURNED_PER_SEARCH)
 
 
+def _CheckFacetDepth(depth):
+  """Checks the facet depth to return is an integer within range."""
+  if depth is None:
+    return None
+  else:
+    return _CheckInteger(
+        depth, 'depth', zero_ok=False,
+        upper_bound=MAXIMUM_DEPTH_FOR_FACETED_SEARCH)
+
+
+def _CheckFacetDiscoveryLimit(facet_limit):
+  """Checks the facet limit is an integer within range."""
+  if facet_limit is None:
+    return None
+  else:
+    return _CheckInteger(
+        facet_limit, 'discover_facet_limit',
+        upper_bound=MAXIMUM_FACETS_TO_RETURN)
+
+
+def _CheckFacetValueLimit(value_limit):
+  """Checks the facet value limit is an integer within range."""
+  if value_limit is None:
+    return None
+  else:
+    return _CheckInteger(
+        value_limit, 'facet_value_limit', zero_ok=False,
+        upper_bound=MAXIMUM_FACET_VALUES_TO_RETURN)
+
+
 def _CheckOffset(offset):
   """Checks the offset in document list is an integer within range."""
   return _CheckInteger(
@@ -2003,6 +2652,73 @@ def _CheckNumberOfFields(returned_expressions, snippeted_fields,
     raise ValueError(
         'too many fields, snippets or expressions to return  %d > maximum %d'
         % (number_expressions, MAXIMUM_FIELDS_RETURNED_PER_SEARCH))
+
+
+class FacetOptions(object):
+  """Options for processing facet reults of a query."""
+
+  @datastore_rpc._positional(1)
+  def __init__(self, discovery_limit=10, discovery_value_limit=None,
+               depth=None):
+    """Initializer.
+
+    Options include number of facets to discover, number of values for each
+    facet and the depth of the result to be considered for facet computation.
+
+    If you wish to discovering 5 facets with 10 values each in 6000 search
+    results, you can use a FacetOption object like this:
+
+    facet_option = FacetOption(discover_facet_limit=5,
+                               discover_facet_value_limit=10,
+                               depth=6000)
+
+    Args:
+      discovery_limit: Number of facets to discover if facet discovery is
+        turned on. If None, discover facets will be disabled.
+      discovery_value_limit: Number of values to be discovered for each of
+        the top discovered facets.
+      depth: Number of documents in query results to evaluate to gather
+        facet information.
+    Raises:
+      TypeError: If an unknown attribute is passed.
+      ValueError: If any of the parameters have invalid values (e.g., a
+        negative depth).
+    """
+    self._discovery_limit = _CheckFacetDiscoveryLimit(discovery_limit)
+    self._discovery_value_limit = _CheckFacetValueLimit(
+        discovery_value_limit)
+    self._depth = _CheckFacetDepth(depth)
+
+  @property
+  def discovery_limit(self):
+    """Returns the number of facets to discover."""
+    return self._discovery_limit
+
+  @property
+  def discovery_value_limit(self):
+    """Returns the number of values to discover for each facet."""
+    return self._discovery_value_limit
+
+  @property
+  def depth(self):
+    """Returns the number of documents to analyze for facet discovery."""
+    return self._depth
+
+  def __repr__(self):
+    return _Repr(
+        self, [('discovery_limit', self.discovery_limit),
+               ('discovery_value_limit', self.discovery_value_limit),
+               ('depth', self._depth)])
+
+  def _CopyToProtocolBuffer(self, params):
+    """Copies a FacetOptions object to a SearchParams proto buff."""
+    if self.discovery_limit is not None:
+      params.set_auto_discover_facet_count(self.discovery_limit)
+    if self.discovery_value_limit is not None:
+      params.mutable_facet_auto_detect_param().set_value_limit(
+          self.discovery_value_limit)
+    if self.depth is not None:
+      params.set_facet_depth(self.depth)
 
 
 class QueryOptions(object):
@@ -2232,7 +2948,9 @@ def _CopyQueryOptionsToProtocolBuffer(
 class Query(object):
   """Represents a request on the search service to query the index."""
 
-  def __init__(self, query_string, options=None):
+  @datastore_rpc._positional(3)
+  def __init__(self, query_string, options=None, enable_facet_discovery=False,
+               return_facets=None, facet_options=None, facet_refinements=None):
 
 
 
@@ -2255,7 +2973,8 @@ class Query(object):
                       SortExpression(expression='subject')],
                   limit=1000),
               returned_fields=['author', 'subject', 'summary'],
-              snippeted_fields=['content'])))
+              snippeted_fields=['content']),
+          facet_refinements=[ref_key1, ref_key2]))
 
     In order to get a Cursor, you specify a Cursor in QueryOptions.cursor
     and extract the Cursor for the next request from results.cursor to
@@ -2264,6 +2983,31 @@ class Query(object):
       results = index.search(
           Query(query_string='subject:first good',
                 options=QueryOptions(cursor=results.cursor)))
+
+    To enable faceted search in the result, you can use
+    enable_facet_discovery or return_facets, as shown below:
+
+    # discover top facets
+    results = index.search(
+        Query(query_string='movies',
+              enable_facet_discovery=true))
+
+    # included specific facets with search result
+    results = index.search(
+        Query(query_string='movies',
+              include_facets=['rating', 'shipping_method']))
+
+    # discover only 5 facets and two manual facets with customized value
+    facet_option = FacetOption(discovery_limit=5)
+    facet1 = FacetRequest('Rating', ranges=[
+        FacetRange(1.0, 2.0),
+        FacetRange(2.0, 3.5),
+        FacetRange(3.5, 4.0)]
+    results = index.search(
+        Query(query_string='movies',
+              enable_facet_discovery=true,
+              facet_option=facet_option,
+              include_facets=[facet1, 'shipping_method']))
 
     Args:
       query_string: The query to match against documents in the index. A query
@@ -2282,12 +3026,34 @@ class Query(object):
         https://developers.google.com/appengine/docs/python/search/overview#Expressions
         for a list of expressions that can be used in queries.
       options: A QueryOptions describing post-processing of search results.
+      enable_facet_discovery: discovery top relevent facets to this search query
+        and return them.
+      return_facets: An iterable of FacetRequest or basestring as facet name to
+        return specific facet with the result.
+      facet_options: A FacetOption describing processing of facets.
+      facet_refinements: An iterable of FacetRefinement objects or refinement
+        token strings used to filter out search results based on a facet value.
+        refinements for different facets will be conjunction and refinements for
+        the same facet will be disjunction.
     Raises:
       QueryError: If the query string is not parseable.
     """
     self._query_string = _ConvertToUnicode(query_string)
     _CheckQuery(self._query_string)
     self._options = options
+    self._facet_options = facet_options
+    self._enable_facet_discovery = enable_facet_discovery
+    self._return_facets = _ConvertToListAndCheckType(
+        return_facets, (basestring, FacetRequest), 'return_facet')
+    for index, facet in enumerate(self._return_facets):
+      if isinstance(facet, basestring):
+        self._return_facets[index] = FacetRequest(self._return_facets[index])
+    self._facet_refinements = _ConvertToListAndCheckType(
+        facet_refinements, (basestring, FacetRefinement), 'facet_refinements')
+    for index, refinement in enumerate(self._facet_refinements):
+      if isinstance(refinement, basestring):
+        self._facet_refinements[index] = FacetRefinement.FromTokenString(
+            refinement)
 
   @property
   def query_string(self):
@@ -2299,6 +3065,33 @@ class Query(object):
     """Returns QueryOptions defining post-processing on the search results."""
     return self._options
 
+  @property
+  def facet_options(self):
+    """Returns FacetOptions defining processing of facets."""
+    return self._facet_options
+
+  @property
+  def facet_refinements(self):
+    """Returns list of facet refinements."""
+    return self._facet_refinements
+
+  @property
+  def enable_facet_discovery(self):
+    """Returns true if facet disocery is on."""
+    return self._enable_facet_discovery
+
+  @property
+  def return_facets(self):
+    """Returns the list of specific facets to be included with the result."""
+    return self._return_facets
+
+  def __setstate__(self, state):
+    self.__dict__ = {'_enable_facet_discovery': False,
+                     '_facet_options': None,
+                     '_return_facets': [],
+                     '_facet_refinements': []}
+    self.__dict__.update(state)
+
 
 def _CopyQueryToProtocolBuffer(query, params):
   """Copies Query object to params protobuf."""
@@ -2307,10 +3100,19 @@ def _CopyQueryToProtocolBuffer(query, params):
 
 def _CopyQueryObjectToProtocolBuffer(query, params):
   _CopyQueryToProtocolBuffer(query.query_string, params)
+  for refinement in query.facet_refinements:
+    refinement._CopyToProtocolBuffer(params.add_facet_refinement())
+  for return_facet in query.return_facets:
+    return_facet._CopyToProtocolBuffer(params.add_include_facet())
   options = query.options
   if query.options is None:
     options = QueryOptions()
   _CopyQueryOptionsObjectToProtocolBuffer(query.query_string, options, params)
+  facet_options = query.facet_options
+  if facet_options is None:
+    facet_options = FacetOptions(
+        discovery_limit=10 if query.enable_facet_discovery else None)
+  facet_options._CopyToProtocolBuffer(params)
 
 
 class Index(object):
@@ -2479,8 +3281,7 @@ class Index(object):
     """Index the collection of documents.
 
     If any of the documents are already in the index, then reindex them with
-    their corresponding fresh document. If any of the documents fail to be
-    indexed, then none of the documents will be indexed.
+    their corresponding fresh document.
 
     Args:
       documents: A Document or iterable of Documents to index.
@@ -2499,7 +3300,15 @@ class Index(object):
         or number of the documents is larger than
         MAXIMUM_DOCUMENTS_PER_PUT_REQUEST or deadline is a negative number.
     """
+    return self.put_async(documents, deadline=deadline).get_result()
 
+  @datastore_rpc._positional(2)
+  def put_async(self, documents, deadline=None):
+    """Asynchronously indexes the collection of documents.
+
+    Identical to put() except that it returns a future. Call
+    get_result() on the return value to block on the call and get its result.
+    """
     if isinstance(documents, basestring):
       raise TypeError('documents must be a Document or sequence of '
                       'Documents, got %s' % documents.__class__.__name__)
@@ -2509,7 +3318,7 @@ class Index(object):
       docs = [documents]
 
     if not docs:
-      return []
+      return _WrappedValueFuture([])
 
     if len(docs) > MAXIMUM_DOCUMENTS_PER_PUT_REQUEST:
       raise ValueError('too many documents to index')
@@ -2536,19 +3345,20 @@ class Index(object):
       doc_pb = params.add_document()
       _CopyDocumentToProtocolBuffer(document, doc_pb)
 
-    _MakeSyncSearchServiceCall('IndexDocument', request, response, deadline)
+    def hook():
+      results = self._NewPutResultList(response)
 
-    results = self._NewPutResultList(response)
+      if response.status_size() != len(params.document_list()):
+        raise PutError('did not index requested number of documents', results)
 
-    if response.status_size() != len(params.document_list()):
-      raise PutError('did not index requested number of documents', results)
-
-    for status in response.status_list():
-      if status.code() != search_service_pb.SearchServiceError.OK:
-        raise PutError(
-            _ConcatenateErrorMessages(
-                'one or more put document operations failed', status), results)
-    return results
+      for status in response.status_list():
+        if status.code() != search_service_pb.SearchServiceError.OK:
+          raise PutError(
+              _ConcatenateErrorMessages(
+                  'one or more put document operations failed', status), results)
+      return results
+    return _RpcOperationFuture(
+        'IndexDocument', request, response, deadline, hook)
 
   def _NewDeleteResultFromPb(self, status_pb, doc_id):
     """Constructs DeleteResult from RequestStatus pb and doc_id."""
@@ -2569,8 +3379,7 @@ class Index(object):
     """Delete the documents with the corresponding document ids from the index.
 
     If no document exists for the identifier in the list, then that document
-    identifier is ignored. If any document delete fails, then no documents
-    will be deleted.
+    identifier is ignored.
 
     Args:
       document_ids: A single identifier or list of identifiers of documents
@@ -2586,9 +3395,18 @@ class Index(object):
         identifiers or number of document ids is larger than
         MAXIMUM_DOCUMENTS_PER_PUT_REQUEST or deadline is a negative number.
     """
+    return self.delete_async(document_ids, deadline=deadline).get_result()
+
+  @datastore_rpc._positional(2)
+  def delete_async(self, document_ids, deadline=None):
+    """Asynchronously deletes the documents with the corresponding document ids.
+
+    Identical to delete() except that it returns a future. Call
+    get_result() on the return value to block on the call and get its result.
+    """
     doc_ids = _ConvertToList(document_ids)
     if not doc_ids:
-      return
+      return _WrappedValueFuture([])
 
     if len(doc_ids) > MAXIMUM_DOCUMENTS_PER_PUT_REQUEST:
       raise ValueError('too many documents to delete')
@@ -2601,21 +3419,22 @@ class Index(object):
       _CheckDocumentId(document_id)
       params.add_doc_id(document_id)
 
-    _MakeSyncSearchServiceCall('DeleteDocument', request, response,
-                               deadline)
+    def hook():
+      results = self._NewDeleteResultList(doc_ids, response)
 
-    results = self._NewDeleteResultList(doc_ids, response)
-
-    if response.status_size() != len(doc_ids):
-      raise DeleteError(
-          'did not delete requested number of documents', results)
-
-    for status in response.status_list():
-      if status.code() != search_service_pb.SearchServiceError.OK:
+      if response.status_size() != len(doc_ids):
         raise DeleteError(
-            _ConcatenateErrorMessages(
-                'one or more delete document operations failed', status),
-            results)
+            'did not delete requested number of documents', results)
+
+      for status in response.status_list():
+        if status.code() != search_service_pb.SearchServiceError.OK:
+          raise DeleteError(
+              _ConcatenateErrorMessages(
+                  'one or more delete document operations failed', status),
+              results)
+      return results
+    return _RpcOperationFuture(
+        'DeleteDocument', request, response, deadline, hook)
 
   def delete_schema(self):
     """Deprecated in 1.7.4. Delete the schema from the index.
@@ -2638,18 +3457,20 @@ class Index(object):
     params = request.mutable_params()
     _CopyMetadataToProtocolBuffer(self, params.add_index_spec())
 
-    _MakeSyncSearchServiceCall('DeleteSchema', request, response, None)
+    def hook():
 
-    results = self._NewDeleteResultList([self.name], response)
+      results = self._NewDeleteResultList([self.name], response)
 
-    if response.status_size() != 1:
-      raise DeleteError('did not delete exactly one schema', results)
+      if response.status_size() != 1:
+        raise DeleteError('did not delete exactly one schema', results)
 
-    status = response.status_list()[0]
-    if status.code() != search_service_pb.SearchServiceError.OK:
-      raise DeleteError(
-          _ConcatenateErrorMessages('delete schema operation failed', status),
-          results)
+      status = response.status_list()[0]
+      if status.code() != search_service_pb.SearchServiceError.OK:
+        raise DeleteError(
+            _ConcatenateErrorMessages('delete schema operation failed', status),
+            results)
+    return _RpcOperationFuture(
+        'DeleteSchema', request, response, None, hook).get_result()
 
   def _NewScoredDocumentFromPb(self, doc_pb, sort_scores, expressions, cursor):
     """Constructs a Document from a document_pb.Document protocol buffer."""
@@ -2659,8 +3480,30 @@ class Index(object):
     return ScoredDocument(
         doc_id=_DecodeUTF8(doc_pb.id()),
         fields=_NewFieldsFromPb(doc_pb.field_list()),
+        facets=_NewFacetsFromPb(doc_pb.facet_list()),
         language=lang, rank=doc_pb.order_id(), sort_scores=sort_scores,
         expressions=_NewFieldsFromPb(expressions), cursor=cursor)
+
+  def _NewFacetResultFromPb(self, facet_result_pb):
+    """Returns a FacetResult populated from search_service FacetResult pb."""
+    values = []
+    for facet_value_pb in facet_result_pb.value_list():
+      refinement_pb = facet_value_pb.refinement()
+      if refinement_pb.has_range():
+        range_pb = refinement_pb.range()
+        facet_range = FacetRange(
+            start=(float(range_pb.start()) if range_pb.has_start() else None),
+            end=(float(range_pb.end()) if range_pb.has_end() else None))
+      else:
+        facet_range = None
+      refinement = FacetRefinement(
+          name=refinement_pb.name(),
+          value=refinement_pb.value() if refinement_pb.has_value() else None,
+          facet_range=facet_range)
+      values.append(FacetResultValue(label=facet_value_pb.name(),
+                                     count=facet_value_pb.count(),
+                                     refinement=refinement))
+    return FacetResult(name=facet_result_pb.name(), values=values)
 
   def _NewSearchResults(self, response, cursor):
     """Returns a SearchResults populated from a search_service response pb."""
@@ -2682,9 +3525,12 @@ class Index(object):
 
         results_cursor = Cursor(web_safe_string=_ToWebSafeString(
             cursor.per_result, _DecodeUTF8(response.cursor())))
+    facets = []
+    for facet_result in response.facet_result_list():
+      facets.append(self._NewFacetResultFromPb(facet_result))
     return SearchResults(
         results=results, number_found=response.matched_count(),
-        cursor=results_cursor)
+        cursor=results_cursor, facets=facets)
 
   @datastore_rpc._positional(2)
   def get(self, doc_id, deadline=None):
@@ -2706,10 +3552,21 @@ class Index(object):
       ValueError: If any of the parameters have invalid values (e.g., a
         negative deadline).
     """
-    response = self.get_range(start_id=doc_id, limit=1, deadline=deadline)
-    if response.results and response.results[0].doc_id == doc_id:
-      return response.results[0]
-    return None
+    return self.get_async(doc_id, deadline=deadline).get_result()
+
+  @datastore_rpc._positional(2)
+  def get_async(self, doc_id, deadline=None):
+    """Asynchronously retrieve a document by document ID.
+
+    Identical to get() except that it returns a future. Call
+    get_result() on the return value to block on the call and get its result.
+    """
+    future = self.get_range_async(start_id=doc_id, limit=1, deadline=deadline)
+    def hook(response):
+      if response.results and response.results[0].doc_id == doc_id:
+        return response.results[0]
+      return None
+    return _SimpleOperationFuture(future, hook)
 
   @datastore_rpc._positional(2)
   def search(self, query, deadline=None, **kwargs):
@@ -2735,7 +3592,7 @@ class Index(object):
     The following code fragment shows how to use a results cursor
 
       cursor = results.cursor
-      for result in response:
+      for result in results:
          # process result
 
       results = index.search(
@@ -2756,6 +3613,9 @@ class Index(object):
       results = index.search(
           Query('subject:first good', options=QueryOptions(cursor=cursor)))
 
+    See http://developers.google.com/appengine/docs/python/search/query_strings
+    for more information about query syntax.
+
     Args:
       query: The Query to match against documents in the index.
 
@@ -2772,10 +3632,28 @@ class Index(object):
       ValueError: If any of the parameters have invalid values (e.g., a
         negative deadline).
     """
+    return self.search_async(query, deadline=deadline, **kwargs).get_result()
 
+  @datastore_rpc._positional(2)
+  def search_async(self, query, deadline=None, **kwargs):
+    """Asynchronously searches the index for documents matching the query.
 
+    Identical to search() except that it returns a future. Call
+    get_result() on the return value to block on the call and get its result.
+    """
+    if isinstance(query, basestring):
+      query = Query(query_string=query)
+    request = self._NewSearchRequest(query, deadline, **kwargs)
+    response = search_service_pb.SearchResponse()
+    def hook():
+      _CheckStatus(response.status())
+      cursor = None
+      if query.options:
+        cursor = query.options.cursor
+      return self._NewSearchResults(response, cursor)
+    return _RpcOperationFuture('Search', request, response, deadline, hook)
 
-
+  def _NewSearchRequest(self, query, deadline, **kwargs):
 
     app_id = kwargs.pop('app_id', None)
     if kwargs:
@@ -2790,16 +3668,7 @@ class Index(object):
       query = Query(query_string=query)
     _CopyMetadataToProtocolBuffer(self, params.mutable_index_spec())
     _CopyQueryObjectToProtocolBuffer(query, params)
-
-    response = search_service_pb.SearchResponse()
-
-    _MakeSyncSearchServiceCall('Search', request, response, deadline)
-
-    _CheckStatus(response.status())
-    cursor = None
-    if query.options:
-      cursor = query.options.cursor
-    return self._NewSearchResults(response, cursor)
+    return request
 
   def _NewGetResponse(self, response):
     """Returns a GetResponse from the list_documents response pb."""
@@ -2808,31 +3677,6 @@ class Index(object):
       documents.append(_NewDocumentFromPb(doc_proto))
 
     return GetResponse(results=documents)
-
-  def _GetRange(self, start_id=None, include_start_object=True,
-                limit=100, ids_only=False, deadline=None, app_id=None):
-    """Get a range of objects in the index, in id order in a response."""
-    request = search_service_pb.ListDocumentsRequest()
-    if app_id:
-      request.set_app_id(app_id)
-
-    params = request.mutable_params()
-    _CopyMetadataToProtocolBuffer(self, params.mutable_index_spec())
-
-    if start_id:
-      params.set_start_doc_id(start_id)
-    params.set_include_start_doc(include_start_object)
-
-    params.set_limit(_CheckInteger(
-        limit, 'limit', zero_ok=False,
-        upper_bound=MAXIMUM_DOCUMENTS_RETURNED_PER_SEARCH))
-    params.set_keys_only(ids_only)
-
-    response = search_service_pb.ListDocumentsResponse()
-    _MakeSyncSearchServiceCall('ListDocuments', request, response, deadline)
-
-    _CheckStatus(response.status())
-    return response
 
   @datastore_rpc._positional(5)
   def get_range(self, start_id=None, include_start_object=True,
@@ -2861,14 +3705,44 @@ class Index(object):
       ValueError: If any of the parameters have invalid values (e.g., a
         negative deadline).
     """
+    return self.get_range_async(
+        start_id, include_start_object, limit, ids_only, deadline=deadline,
+        **kwargs).get_result()
+
+  @datastore_rpc._positional(5)
+  def get_range_async(self, start_id=None, include_start_object=True,
+                      limit=100, ids_only=False, deadline=None, **kwargs):
+    """Asynchronously gets a range of Documents in the index, in id order.
+
+    Identical to get_range() except that it returns a future. Call
+    get_result() on the return value to block on the call and get its result.
+    """
 
     app_id = kwargs.pop('app_id', None)
     if kwargs:
       raise TypeError('Invalid arguments: %s' % ', '.join(kwargs))
-    response = self._GetRange(
-        start_id=start_id, include_start_object=include_start_object,
-        limit=limit, ids_only=ids_only, deadline=deadline, app_id=app_id)
-    return self._NewGetResponse(response)
+    request = search_service_pb.ListDocumentsRequest()
+    if app_id:
+      request.set_app_id(app_id)
+
+    params = request.mutable_params()
+    _CopyMetadataToProtocolBuffer(self, params.mutable_index_spec())
+
+    if start_id:
+      params.set_start_doc_id(start_id)
+    params.set_include_start_doc(include_start_object)
+
+    params.set_limit(_CheckInteger(
+        limit, 'limit', zero_ok=False,
+        upper_bound=MAXIMUM_DOCUMENTS_RETURNED_PER_SEARCH))
+    params.set_keys_only(ids_only)
+
+    response = search_service_pb.ListDocumentsResponse()
+    def hook():
+      _CheckStatus(response.status())
+      return self._NewGetResponse(response)
+    return _RpcOperationFuture(
+        'ListDocuments', request, response, deadline, hook)
 
 
 _CURSOR_TYPE_PB_MAP = {
@@ -2951,7 +3825,7 @@ def _NewIndexFromPb(index_metadata_pb):
 
 
 def _MakeSyncSearchServiceCall(call, request, response, deadline):
-  """Make a synchronous call to search service.
+  """Deprecated: Make a synchronous call to search service.
 
   If the deadline is not None, waits only until the deadline expires.
 
@@ -2967,21 +3841,27 @@ def _MakeSyncSearchServiceCall(call, request, response, deadline):
     TypeError: if the deadline is not a number and is not None.
     ValueError: If the deadline is less than zero.
   """
+  _ValidateDeadline(deadline)
+  logging.warning("_MakeSyncSearchServiceCall is deprecated; please use API.")
   try:
     if deadline is None:
       apiproxy_stub_map.MakeSyncCall('search', call, request, response)
     else:
 
 
-      if (not isinstance(deadline, (int, long, float))
-          or isinstance(deadline, (bool,))):
-        raise TypeError('deadline argument should be int/long/float (%r)'
-                        % (deadline,))
-      if deadline <= 0:
-        raise ValueError('deadline argument must be > 0 (%s)' % (deadline,))
       rpc = apiproxy_stub_map.UserRPC('search', deadline=deadline)
       rpc.make_call(call, request, response)
       rpc.wait()
       rpc.check_success()
   except apiproxy_errors.ApplicationError, e:
     raise _ToSearchError(e)
+
+def _ValidateDeadline(deadline):
+  if deadline is None:
+    return
+  if (not isinstance(deadline, (int, long, float))
+      or isinstance(deadline, (bool,))):
+    raise TypeError('deadline argument should be int/long/float (%r)'
+                    % (deadline,))
+  if deadline <= 0:
+    raise ValueError('deadline argument must be > 0 (%s)' % (deadline,))

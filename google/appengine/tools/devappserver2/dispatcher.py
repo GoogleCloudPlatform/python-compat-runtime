@@ -18,16 +18,16 @@
 
 import collections
 import logging
+import socket
 import threading
 import urlparse
 import wsgiref.headers
 
 from google.appengine.api import appinfo
 from google.appengine.api import request_info
-from google.appengine.tools.devappserver2 import constants
 from google.appengine.tools.devappserver2 import instance
-from google.appengine.tools.devappserver2 import scheduled_executor
 from google.appengine.tools.devappserver2 import module
+from google.appengine.tools.devappserver2 import scheduled_executor
 from google.appengine.tools.devappserver2 import start_response_utils
 from google.appengine.tools.devappserver2 import thread_executor
 from google.appengine.tools.devappserver2 import wsgi_server
@@ -46,6 +46,7 @@ DISPATCH_AH_URL_PATH_PREFIX_WHITELIST = ('/_ah/queue/deferred',)
 
 
 class PortRegistry(object):
+
   def __init__(self):
     self._ports = {}
     self._ports_lock = threading.RLock()
@@ -74,6 +75,7 @@ class Dispatcher(request_info.Dispatcher):
                runtime_stderr_loglevel,
                php_config,
                python_config,
+               java_config,
                cloud_sql_config,
                vm_config,
                module_to_max_instances,
@@ -81,7 +83,6 @@ class Dispatcher(request_info.Dispatcher):
                automatic_restart,
                allow_skipped_files,
                module_to_threadsafe_override):
-
     """Initializer for Dispatcher.
 
     Args:
@@ -100,12 +101,13 @@ class Dispatcher(request_info.Dispatcher):
       python_config: A runtime_config_pb2.PythonConfig instance containing
           Python runtime-specific configuration. If None then defaults are
           used.
+      java_config: A runtime_config_pb2.JavaConfig instance containing Java
+          runtime-specific configuration. If None then defaults are used.
       cloud_sql_config: A runtime_config_pb2.CloudSQL instance containing the
           required configuration for local Google Cloud SQL development. If None
           then Cloud SQL will not be available.
       vm_config: A runtime_config_pb2.VMConfig instance containing
-          VM runtime-specific configuration. If vm_config does not have
-          docker_daemon_url specified all docker-related stuff is disabled.
+          VM runtime-specific configuration.
       module_to_max_instances: A mapping between a module name and the maximum
           number of instances that can be created (this overrides the settings
           found in the configuration argument) e.g.
@@ -125,6 +127,7 @@ class Dispatcher(request_info.Dispatcher):
     self._configuration = configuration
     self._php_config = php_config
     self._python_config = python_config
+    self._java_config = java_config
     self._cloud_sql_config = cloud_sql_config
     self._vm_config = vm_config
     self._request_data = None
@@ -140,7 +143,8 @@ class Dispatcher(request_info.Dispatcher):
     self._dispatch_server = None
     self._quit_event = threading.Event()  # Set when quit() has been called.
     self._update_checking_thread = threading.Thread(
-        target=self._loop_checking_for_updates)
+        target=self._loop_checking_for_updates,
+        name='Dispatcher Update Checking')
     self._module_to_max_instances = module_to_max_instances or {}
     self._use_mtime_file_watcher = use_mtime_file_watcher
     self._automatic_restart = automatic_restart
@@ -233,6 +237,7 @@ class Dispatcher(request_info.Dispatcher):
                    self._runtime_stderr_loglevel,
                    self._php_config,
                    self._python_config,
+                   self._java_config,
                    self._cloud_sql_config,
                    self._vm_config,
                    self._port,
@@ -245,7 +250,9 @@ class Dispatcher(request_info.Dispatcher):
                    self._allow_skipped_files,
                    threadsafe_override)
 
-    if module_configuration.manual_scaling:
+    # TODO: Remove this 'or' statement when we support auto-scaled VMs.
+    if (module_configuration.manual_scaling or
+        module_configuration.runtime == 'vm'):
       _module = module.ManualScalingModule(*module_args)
     elif module_configuration.basic_scaling:
       _module = module.BasicScalingModule(*module_args)
@@ -265,6 +272,7 @@ class Dispatcher(request_info.Dispatcher):
 
     If instance_id is set, this will return a hostname for that particular
     instances. Otherwise, it will return the hostname for load-balancing.
+    Returning 0.0.0.0 is modified to be a more useful address to the user.
 
     Args:
       module_name: A str containing the name of the module.
@@ -282,9 +290,21 @@ class Dispatcher(request_info.Dispatcher):
     """
     _module = self._get_module(module_name, version)
     if instance_id is None:
-      return _module.balanced_address
+      hostname = _module.balanced_address
     else:
-      return _module.get_instance_address(instance_id)
+      hostname = _module.get_instance_address(instance_id)
+
+    parts = hostname.split(':')
+    # 0.0.0.0 or 0 binds to all interfaces but only connects to localhost.
+    # Convert to an address that can connect from local and remote machines.
+    # TODO: handle IPv6 bind-all address (::).
+    try:
+      if socket.inet_aton(parts[0]) == '\0\0\0\0':
+        hostname = ':'.join([socket.gethostname()] + parts[1:])
+    except socket.error:
+      # socket.inet_aton raised an exception so parts[0] is not an IP address.
+      pass
+    return hostname
 
   def get_module_names(self):
     """Returns a list of module names."""
@@ -421,7 +441,7 @@ class Dispatcher(request_info.Dispatcher):
       else:
         raise request_info.ModuleDoesNotExistError(module_name)
     if (version is not None and
-          version != self._module_configurations[module_name].major_version):
+        version != self._module_configurations[module_name].major_version):
       raise request_info.VersionDoesNotExistError()
     return self._module_name_to_module[module_name]
 
@@ -554,7 +574,7 @@ class Dispatcher(request_info.Dispatcher):
     port = _module.get_instance_port(instance_id) if instance_id else (
         _module.balanced_port)
     environ = _module.build_request_environ(method, relative_url, headers, body,
-                                          source_ip, port)
+                                            source_ip, port)
 
     _THREAD_POOL.submit(self._handle_request,
                         environ,
@@ -641,6 +661,10 @@ class Dispatcher(request_info.Dispatcher):
     if not hostname or hostname == default_address:
       return self._module_for_request(path), None
 
+
+
+
+
     default_address_offset = hostname.find(default_address)
     if default_address_offset > 0:
       prefix = hostname[:default_address_offset - 1]
@@ -690,7 +714,7 @@ class Dispatcher(request_info.Dispatcher):
     """
     try:
       return _module._handle_request(environ, start_response, inst=inst,
-                                   request_type=request_type)
+                                     request_type=request_type)
     except:
       if catch_and_log_exceptions:
         logging.exception('Internal error while handling request.')

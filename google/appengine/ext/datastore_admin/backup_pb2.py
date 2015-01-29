@@ -19,6 +19,7 @@
 
 import sys
 _b=sys.version_info[0]<3 and (lambda x:x) or (lambda x:x.encode('latin1'))
+import google
 from google.net.proto2.python.public import descriptor as _descriptor
 from google.net.proto2.python.public import message as _message
 from google.net.proto2.python.public import reflection as _reflection
@@ -161,6 +162,8 @@ _BACKUP = _descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
+  oneofs=[
+  ],
   serialized_start=80,
   serialized_end=220,
 )
@@ -203,6 +206,8 @@ _BACKUPINFO = _descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
+  oneofs=[
+  ],
   serialized_start=222,
   serialized_end=303,
 )
@@ -252,6 +257,8 @@ _KINDBACKUPINFO = _descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
+  oneofs=[
+  ],
   serialized_start=306,
   serialized_end=446,
 )
@@ -294,6 +301,8 @@ _ENTITYSCHEMA_TYPE = _descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
+  oneofs=[
+  ],
   serialized_start=547,
   serialized_end=725,
 )
@@ -335,6 +344,8 @@ _ENTITYSCHEMA_FIELD = _descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
+  oneofs=[
+  ],
   serialized_start=727,
   serialized_end=833,
 )
@@ -370,6 +381,8 @@ _ENTITYSCHEMA = _descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
+  oneofs=[
+  ],
   serialized_start=449,
   serialized_end=1105,
 )

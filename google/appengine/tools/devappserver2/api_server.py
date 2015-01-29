@@ -20,6 +20,7 @@ The Remote API protocol is used for communication.
 """
 
 
+
 import logging
 import os
 import pickle
@@ -334,6 +335,9 @@ def setup_stubs(
     default_gcs_bucket_name: A str, overriding the default bucket behavior.
   """
 
+
+
+
   identity_stub = app_identity_stub.AppIdentityServiceStub.Create(
       email_address=appidentity_email_address,
       private_key_path=appidentity_private_key_path)
@@ -380,8 +384,9 @@ def setup_stubs(
     from google.appengine.api.images import images_stub
   except ImportError:
 
-    logging.warning('Could not initialize images API; you are likely missing '
-                    'the Python "PIL" module.')
+
+
+
     # We register a stub which throws a NotImplementedError for most RPCs.
     from google.appengine.api.images import images_not_implemented_stub
     apiproxy_stub_map.apiproxy.RegisterStub(
@@ -530,7 +535,7 @@ def test_setup_stubs(
     mail_smtp_password='',
     mail_enable_sendmail=False,
     mail_show_mail_body=False,
-    mail_allow_tls=False,
+    mail_allow_tls=True,
     matcher_prospective_search_path='/dev/null',
     search_index_path=None,
     taskqueue_auto_run_tasks=False,
