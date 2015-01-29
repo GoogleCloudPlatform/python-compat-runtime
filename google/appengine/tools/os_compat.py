@@ -14,9 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-
-
-
 """OS cross-platform compatibility tweaks.
 
 This module will, on import, change some parts of the running evironment so
@@ -26,6 +23,7 @@ operating systems, such as Linux/Mac OSX/Windows.
 Some of these changes must be done before other modules are imported, so
 always import this module first.
 """
+
 
 
 

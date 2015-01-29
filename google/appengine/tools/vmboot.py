@@ -40,7 +40,7 @@ import time
 from google.appengine.ext.vmruntime import vmservice
 
 
-logging.basicConfig(level=logging.INFO, format=initialize.LOG_FORMAT)
+logging.basicConfig(level=logging.INFO)
 
 
 def main():

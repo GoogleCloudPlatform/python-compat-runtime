@@ -16,8 +16,11 @@
 #
 """Functions that prepare GAE user code for running in a GCE VM."""
 
+import json
 import logging
+import logging.handlers
 import sys
+import traceback
 
 from google.appengine import api
 from google.appengine.api import app_logging
@@ -30,8 +33,40 @@ from google.appengine.ext.vmruntime import background_thread
 from google.appengine.runtime import request_environment
 from google.appengine.runtime import runtime
 
-LOG_FORMAT = '%(asctime)s %(threadName)s %(levelname)s %(message)s'
-APP_LOG_FILE = '/var/log/app_engine/app.log'
+
+APP_LOG_FILE = '/var/log/app_engine/app.log.json'
+
+
+MAX_LOG_BYTES = 128 * 1024 * 1024
+
+
+LOG_BACKUP_COUNT = 3
+
+
+class JsonFormatter(logging.Formatter):
+  """Class for logging to the cloud logging api with json metadata."""
+
+  def format(self, record):
+    """Format the record as json the cloud logging agent understands.
+
+    Args:
+      record: A logging.LogRecord to format.
+
+    Returns:
+      A json string to log.
+    """
+    data = {'thread': record.thread,
+            'timeNanos': int(record.created * 1000000000)}
+    if record.exc_info:
+
+      data['message'] = '%s\n%s' % (record.getMessage(),
+                                    traceback.format_exc(
+                                        record.exc_info))
+      data['severity'] = 'CRITICAL'
+    else:
+      data['message'] = record.getMessage()
+      data['severity'] = record.levelname
+    return json.dumps(data)
 
 
 def InitializeFileLogging():
@@ -47,8 +82,9 @@ def InitializeFileLogging():
   logger.handlers = []
 
 
-  file_handler = logging.FileHandler(APP_LOG_FILE)
-  file_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+  file_handler = logging.handlers.RotatingFileHandler(
+      APP_LOG_FILE, maxBytes=MAX_LOG_BYTES, backupCount=LOG_BACKUP_COUNT)
+  file_handler.setFormatter(JsonFormatter())
   logger.addHandler(file_handler)
 
   logger.setLevel(logging.DEBUG)

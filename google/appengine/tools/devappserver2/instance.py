@@ -17,6 +17,7 @@
 """Manage the lifecycle of runtime processes and dispatch requests to them."""
 
 
+
 import collections
 import logging
 import threading
@@ -133,6 +134,7 @@ class Instance(object):
     self._last_request_end_time = time.time()  # Protected by self._condition.
     self._expecting_ready_request = expect_ready_request
     self._expecting_shutdown_request = False
+    self._healthy = True
 
     # A deque containg (start_time, end_time) 2-tuples representing completed
     # requests. This is used to compute latency and qps statistics.
@@ -245,7 +247,8 @@ class Instance(object):
               not self._quitting and
               not self._expecting_ready_request and
               not self._expecting_shutdown_request and
-              self._started)
+              self._started and
+              self._healthy)
 
   def _trim_request_history_to_60s(self):
     """Removes obsolete entries from _outstanding_request_history."""
@@ -276,6 +279,9 @@ class Instance(object):
       self._last_request_end_time = time.time()
       self._started = True
     logging.debug('Started instance: %s', self)
+    # We are in development mode, here be optimistic for the health of the
+    # instance so it can respond instantly to the first request.
+    self.set_health(True)
     return True
 
   def quit(self, allow_async=False, force=False, expect_shutdown=False):
@@ -422,6 +428,13 @@ class Instance(object):
              and not self.has_quit):
         self._condition.wait(timeout_time - time.time())
       return bool(self.remaining_request_capacity and self.can_accept_requests)
+
+  def set_health(self, health):
+    self._healthy = health
+
+  @property
+  def healthy(self):
+    return self._healthy
 
 
 class InstanceFactory(object):

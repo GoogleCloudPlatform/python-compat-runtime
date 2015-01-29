@@ -19,6 +19,7 @@
 
 import sys
 _b=sys.version_info[0]<3 and (lambda x:x) or (lambda x:x.encode('latin1'))
+import google
 from google.net.proto2.python.internal import enum_type_wrapper
 from google.net.proto2.python.public import descriptor as _descriptor
 from google.net.proto2.python.public import message as _message
@@ -624,6 +625,8 @@ _BINDVARIABLEPROTO = _descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
+  oneofs=[
+  ],
   serialized_start=48,
   serialized_end=230,
 )
@@ -722,6 +725,8 @@ _RESULTPROTO = _descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
+  oneofs=[
+  ],
   serialized_start=233,
   serialized_end=629,
 )
@@ -807,6 +812,8 @@ _OPPROTO = _descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
+  oneofs=[
+  ],
   serialized_start=632,
   serialized_end=1385,
 )
@@ -842,6 +849,8 @@ _SAVEPOINT = _descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
+  oneofs=[
+  ],
   serialized_start=1387,
   serialized_end=1424,
 )
@@ -891,6 +900,8 @@ _SQLEXCEPTION = _descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
+  oneofs=[
+  ],
   serialized_start=1426,
   serialized_end=1525,
 )
@@ -926,6 +937,8 @@ _TUPLEPROTO = _descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
+  oneofs=[
+  ],
   serialized_start=1527,
   serialized_end=1570,
 )
@@ -1080,6 +1093,8 @@ _COLUMNPROTO = _descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
+  oneofs=[
+  ],
   serialized_start=1573,
   serialized_end=2021,
 )
@@ -1115,6 +1130,8 @@ _ROWSETPROTO = _descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
+  oneofs=[
+  ],
   serialized_start=2023,
   serialized_end=2112,
 )
@@ -1150,6 +1167,8 @@ _JDBCDATABASEMETADATAPROTO_SCHEMA = _descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
+  oneofs=[
+  ],
   serialized_start=8720,
   serialized_end=8773,
 )
@@ -2180,6 +2199,8 @@ _JDBCDATABASEMETADATAPROTO = _descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
+  oneofs=[
+  ],
   serialized_start=2115,
   serialized_end=9102,
 )
@@ -2215,6 +2236,8 @@ _PROPERTY = _descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
+  oneofs=[
+  ],
   serialized_start=9104,
   serialized_end=9142,
 )
@@ -2327,6 +2350,8 @@ _EXECOPTIONS = _descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
+  oneofs=[
+  ],
   serialized_start=9145,
   serialized_end=9615,
 )
@@ -2355,6 +2380,8 @@ _BATCHBINDVARIABLEPROTO = _descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
+  oneofs=[
+  ],
   serialized_start=9617,
   serialized_end=9692,
 )
@@ -2390,6 +2417,8 @@ _BATCHPROTO = _descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
+  oneofs=[
+  ],
   serialized_start=9694,
   serialized_end=9787,
 )
@@ -2418,6 +2447,8 @@ _PARAMETERMETADATA = _descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
+  oneofs=[
+  ],
   serialized_start=9789,
   serialized_end=9822,
 )
@@ -2453,6 +2484,8 @@ _RPCERRORPROTO = _descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
+  oneofs=[
+  ],
   serialized_start=9824,
   serialized_end=9882,
 )

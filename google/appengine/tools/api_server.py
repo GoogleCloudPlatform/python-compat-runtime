@@ -14,16 +14,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-
-
-
-
 """Serves the stub App Engine APIs (e.g. memcache, datastore) over HTTP.
 
 The Remote API protocol is used for communication.
 """
 
 from __future__ import with_statement
+
 
 
 import BaseHTTPServer
@@ -386,8 +383,6 @@ def _SetupStubs(
   except ImportError:
 
 
-    logging.warning('Could not initialize images API; you are likely missing '
-                    'the Python "PIL" module.')
 
     from google.appengine.api.images import images_not_implemented_stub
     apiproxy_stub_map.apiproxy.RegisterStub(
@@ -542,7 +537,7 @@ def ParseCommandArguments(args):
   parser.add_argument('--smtp_allow_tls',
                       action=boolean_action.BooleanAction,
                       const=True,
-                      default=False)
+                      default=True)
 
 
   parser.add_argument('--prospective_search_path', default=None)

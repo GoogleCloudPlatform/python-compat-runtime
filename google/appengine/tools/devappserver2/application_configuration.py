@@ -14,11 +14,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-"""Stores application configuration taken from e.g. app.yaml, queues.yaml."""
+"""Stores application configuration taken from e.g. app.yaml, index.yaml."""
 
 # TODO: Support more than just app.yaml.
 
 
+
+import datetime
 import errno
 import logging
 import os
@@ -32,6 +34,12 @@ from google.appengine.api import appinfo
 from google.appengine.api import appinfo_includes
 from google.appengine.api import backendinfo
 from google.appengine.api import dispatchinfo
+from google.appengine.client.services import port_manager
+from google.appengine.tools import app_engine_web_xml_parser
+from google.appengine.tools import java_quickstart
+from google.appengine.tools import queue_xml_parser
+from google.appengine.tools import web_xml_parser
+from google.appengine.tools import xml_parser_utils
 from google.appengine.tools import yaml_translator
 from google.appengine.tools.devappserver2 import errors
 
@@ -44,6 +52,21 @@ INBOUND_SERVICES_CHANGED = 4
 ENV_VARIABLES_CHANGED = 5
 ERROR_HANDLERS_CHANGED = 6
 NOBUILD_FILES_CHANGED = 7
+
+
+
+
+
+
+_HEALTH_CHECK_DEFAULTS = {
+    'enable_health_check': True,
+    'check_interval_sec': 5,
+    'timeout_sec': 4,
+    'unhealthy_threshold': 2,
+    'healthy_threshold': 2,
+    'restart_threshold': 60,
+    'host': '127.0.0.1'
+}
 
 
 def java_supported():
@@ -73,14 +96,17 @@ class ModuleConfiguration(object):
       ('manual_scaling', 'manual_scaling'),
       ('automatic_scaling', 'automatic_scaling')]
 
-  def __init__(self, config_path):
+  def __init__(self, config_path, app_id=None):
     """Initializer for ModuleConfiguration.
 
     Args:
       config_path: A string containing the full path of the yaml or xml file
           containing the configuration for this module.
+      app_id: A string that is the application id, or None if the application id
+          from the yaml or xml file should be used.
     """
     self._config_path = config_path
+    self._forced_app_id = app_id
     root = os.path.dirname(config_path)
     self._is_java = os.path.normpath(config_path).endswith(
         os.sep + 'WEB-INF' + os.sep + 'appengine-web.xml')
@@ -115,6 +141,27 @@ class ModuleConfiguration(object):
           self._config_path)
     self._minor_version_id = ''.join(random.choice(string.digits) for _ in
                                      range(18))
+
+    self._forwarded_ports = {}
+    if self.runtime == 'vm':
+      vm_settings = self._app_info_external.vm_settings
+      ports = None
+      if vm_settings:
+        ports = vm_settings.get('forwarded_ports')
+      if not ports:
+        if (self._app_info_external.network and
+            self._app_info_external.network.forwarded_ports):
+          ports = ','.join(self._app_info_external.network.forwarded_ports)
+      if ports:
+        logging.debug('setting forwarded ports %s', ports)
+        pm = port_manager.PortManager()
+        pm.Add(ports, 'forwarded')
+        self._forwarded_ports = pm.GetAllMappedPorts()
+
+    self._translate_configuration_files()
+
+    self._vm_health_check = _set_health_check_defaults(
+        self._app_info_external.vm_health_check)
 
   @property
   def application_root(self):
@@ -170,6 +217,11 @@ class ModuleConfiguration(object):
     return self._app_info_external.GetEffectiveRuntime()
 
   @property
+  def forwarded_ports(self):
+    """A dictionary with forwarding rules as host_port => container_port."""
+    return self._forwarded_ports
+
+  @property
   def threadsafe(self):
     return self._threadsafe
 
@@ -220,6 +272,10 @@ class ModuleConfiguration(object):
   @property
   def config_path(self):
     return self._config_path
+
+  @property
+  def vm_health_check(self):
+    return self._vm_health_check
 
   def check_for_updates(self):
     """Return any configuration changes since the last check_for_updates call.
@@ -318,6 +374,13 @@ class ModuleConfiguration(object):
     else:
       with open(configuration_path) as f:
         config, files = appinfo_includes.ParseAndReturnIncludePaths(f)
+    if self._forced_app_id:
+      config.application = self._forced_app_id
+
+    if config.runtime == 'vm' and not config.version:
+      config.version = generate_version_id()
+      logging.info('No version specified. Generated version id: %s',
+                   config.version)
     return config, [configuration_path] + files
 
   def _parse_java_configuration(self, app_engine_web_xml_path):
@@ -336,25 +399,83 @@ class ModuleConfiguration(object):
     """
     with open(app_engine_web_xml_path) as f:
       app_engine_web_xml_str = f.read()
+    app_engine_web_xml = (
+        app_engine_web_xml_parser.AppEngineWebXmlParser().ProcessXml(
+            app_engine_web_xml_str))
+
+    quickstart = xml_parser_utils.BooleanValue(
+        app_engine_web_xml.beta_settings.get('java_quickstart', 'false'))
+
     web_inf_dir = os.path.dirname(app_engine_web_xml_path)
-    web_xml_path = os.path.join(web_inf_dir, 'web.xml')
-    with open(web_xml_path) as f:
-      web_xml_str = f.read()
+    if quickstart:
+      app_dir = os.path.dirname(web_inf_dir)
+      web_xml_str, web_xml_path = java_quickstart.quickstart_generator(app_dir)
+      webdefault_xml_str = java_quickstart.get_webdefault_xml()
+      web_xml_str = java_quickstart.remove_mappings(
+          web_xml_str, webdefault_xml_str)
+    else:
+      web_xml_path = os.path.join(web_inf_dir, 'web.xml')
+      with open(web_xml_path) as f:
+        web_xml_str = f.read()
+
     has_jsps = False
     for _, _, filenames in os.walk(self.application_root):
       if any(f.endswith('.jsp') for f in filenames):
         has_jsps = True
         break
+
+    web_xml = web_xml_parser.WebXmlParser().ProcessXml(web_xml_str, has_jsps)
     app_yaml_str = yaml_translator.TranslateXmlToYamlForDevAppServer(
-        app_engine_web_xml_str, web_xml_str, has_jsps, self.application_root)
+        app_engine_web_xml, web_xml, self.application_root)
     config = appinfo.LoadSingleAppInfo(app_yaml_str)
     return config, [app_engine_web_xml_path, web_xml_path]
+
+  def _translate_configuration_files(self):
+    """Writes YAML equivalents of certain XML configuration files."""
+    # For the most part we translate files in memory rather than writing out
+    # translations. But since the task queue stub (taskqueue_stub.py)
+    # reads queue.yaml directly rather than being configured with it, we need
+    # to write a translation for the stub to find.
+    # This means that we won't detect a change to the queue.xml, but we don't
+    # currently have logic to react to changes to queue.yaml either.
+    web_inf = os.path.join(self._application_root, 'WEB-INF')
+    queue_xml_file = os.path.join(web_inf, 'queue.xml')
+    if os.path.exists(queue_xml_file):
+      appengine_generated = os.path.join(web_inf, 'appengine-generated')
+      if not os.path.exists(appengine_generated):
+        os.mkdir(appengine_generated)
+      queue_yaml_file = os.path.join(appengine_generated, 'queue.yaml')
+      with open(queue_xml_file) as f:
+        queue_xml = f.read()
+      queue_yaml = queue_xml_parser.GetQueueYaml(None, queue_xml)
+      with open(queue_yaml_file, 'w') as f:
+        f.write(queue_yaml)
+
+
+def _set_health_check_defaults(vm_health_check):
+  """Sets default values for any missing attributes in VmHealthCheck.
+
+  These defaults need to be kept up to date with the production values in
+  vm_health_check.cc
+
+  Args:
+    vm_health_check: An instance of appinfo.VmHealthCheck or None.
+
+  Returns:
+    An instance of appinfo.VmHealthCheck
+  """
+  if not vm_health_check:
+    vm_health_check = appinfo.VmHealthCheck()
+  for k, v in _HEALTH_CHECK_DEFAULTS.iteritems():
+    if getattr(vm_health_check, k) is None:
+      setattr(vm_health_check, k, v)
+  return vm_health_check
 
 
 class BackendsConfiguration(object):
   """Stores configuration information for a backends.yaml file."""
 
-  def __init__(self, app_config_path, backend_config_path):
+  def __init__(self, app_config_path, backend_config_path, app_id=None):
     """Initializer for BackendsConfiguration.
 
     Args:
@@ -362,18 +483,21 @@ class BackendsConfiguration(object):
           containing the configuration for this module.
       backend_config_path: A string containing the full path of the
           backends.yaml file containing the configuration for backends.
+      app_id: A string that is the application id, or None if the application id
+          from the yaml or xml file should be used.
     """
     self._update_lock = threading.RLock()
-    self._base_module_configuration = ModuleConfiguration(app_config_path)
+    self._base_module_configuration = ModuleConfiguration(
+        app_config_path, app_id)
     backend_info_external = self._parse_configuration(
         backend_config_path)
 
     self._backends_name_to_backend_entry = {}
     for backend in backend_info_external.backends or []:
       self._backends_name_to_backend_entry[backend.name] = backend
-    self._changes = dict(
-        (backend_name, set())
-        for backend_name in self._backends_name_to_backend_entry)
+      self._changes = dict(
+          (backend_name, set())
+          for backend_name in self._backends_name_to_backend_entry)
 
   @staticmethod
   def _parse_configuration(configuration_path):
@@ -488,6 +612,10 @@ class BackendConfiguration(object):
     return self._module_configuration.effective_runtime
 
   @property
+  def forwarded_ports(self):
+    return self._module_configuration.forwarded_ports
+
+  @property
   def threadsafe(self):
     return self._module_configuration.threadsafe
 
@@ -543,6 +671,10 @@ class BackendConfiguration(object):
   @property
   def config_path(self):
     return self._module_configuration.config_path
+
+  @property
+  def vm_health_check(self):
+    return self._module_configuration.vm_health_check
 
   def check_for_updates(self):
     """Return any configuration changes since the last check_for_updates call.
@@ -610,12 +742,14 @@ class DispatchConfiguration(object):
 class ApplicationConfiguration(object):
   """Stores application configuration information."""
 
-  def __init__(self, config_paths):
+  def __init__(self, config_paths, app_id=None):
     """Initializer for ApplicationConfiguration.
 
     Args:
       config_paths: A list of strings containing the paths to yaml files,
           or to directories containing them.
+      app_id: A string that is the application id, or None if the application id
+          from the yaml or xml file should be used.
     """
     self.modules = []
     self.dispatch = None
@@ -629,9 +763,10 @@ class ApplicationConfiguration(object):
           config_path.endswith('backends.yml')):
         # TODO: Reuse the ModuleConfiguration created for the app.yaml
         # instead of creating another one for the same file.
+        app_yaml = config_path.replace('backends.y', 'app.y')
         self.modules.extend(
-            BackendsConfiguration(config_path.replace('backends.y', 'app.y'),
-                                  config_path).get_backend_configurations())
+            BackendsConfiguration(
+                app_yaml, config_path, app_id).get_backend_configurations())
       elif (config_path.endswith('dispatch.yaml') or
             config_path.endswith('dispatch.yml')):
         if self.dispatch:
@@ -639,7 +774,7 @@ class ApplicationConfiguration(object):
               'Multiple dispatch.yaml files specified')
         self.dispatch = DispatchConfiguration(config_path)
       else:
-        module_configuration = ModuleConfiguration(config_path)
+        module_configuration = ModuleConfiguration(config_path, app_id)
         self.modules.append(module_configuration)
     application_ids = set(module.application
                           for module in self.modules)
@@ -761,3 +896,15 @@ def get_app_error_file(module_configuration):
       return os.path.join(module_configuration.application_root,
                           error_handler.file)
   return None
+
+
+def generate_version_id(datetime_getter=datetime.datetime.now):
+  """Generates a version id based off the current time.
+
+  Args:
+    datetime_getter: A function that returns a datetime.datetime instance.
+
+  Returns:
+    A version string based.
+  """
+  return datetime_getter().isoformat().lower().translate(None, ':-')[:15]

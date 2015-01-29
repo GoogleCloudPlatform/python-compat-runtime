@@ -17,6 +17,7 @@
 """Serves content for "script" handlers using the Python runtime."""
 
 
+
 import os
 import sys
 
@@ -26,8 +27,7 @@ from google.appengine.tools.devappserver2 import http_runtime
 from google.appengine.tools.devappserver2 import instance
 
 _RUNTIME_PATH = os.path.abspath(
-    os.path.join(os.path.dirname(sys.argv[0]), '_python_runtime.py')
-    )
+    os.path.join(os.path.dirname(sys.argv[0]), '_python_runtime.py'))
 _RUNTIME_ARGS = [sys.executable, _RUNTIME_PATH]
 
 

@@ -18,14 +18,15 @@
 
 import functools
 import logging
+import logging.handlers
 import os
 import sys
 import threading
 import time
 import traceback
-import urllib2
 
 from google.appengine.api import logservice
+from google.appengine.ext.vmruntime import vmstub
 from google.appengine.runtime import request_environment
 
 
@@ -35,6 +36,8 @@ LOG_FLUSH_COUNTER_HEADER = 'X-AppEngine-Log-Flush-Count'
 MAX_CONCURRENT_REQUESTS = 501
 
 REQUEST_LOG_FILE = '/var/log/app_engine/request.log'
+REQUEST_LOG_BYTES = 128 * 1024 * 1024
+REQUEST_LOG_BACKUPS = 3
 
 
 def PatchLoggingMethods(app):
@@ -91,6 +94,30 @@ def PatchLoggingMethods(app):
     return app(wsgi_env, start_response)
 
   return LogWrapper
+
+
+def UseRequestSecurityTicketForApiMiddleware(app):
+  """WSGI middleware wrapper that sets the thread to use the security ticket.
+
+  This sets up the appengine api so that if a security ticket is passed in with
+  the request, it will be used.
+
+  Args:
+    app: (callable) a WSGI app per PEP 333.
+
+  Returns:
+    A wrapped <app>, which is also a valid WSGI app.
+  """
+
+  def TicketWrapper(wsgi_env, start_response):
+    try:
+      vmstub.VMStub.SetUseRequestSecurityTicketForThread(True)
+      return app(wsgi_env, start_response)
+    finally:
+
+      vmstub.VMStub.SetUseRequestSecurityTicketForThread(False)
+
+  return TicketWrapper
 
 
 def LogFlushCounter(app):
@@ -213,7 +240,10 @@ def RequestLoggingMiddleware(app):
 
     logger.propagate = False
     logger.handlers = []
-    handler = logging.FileHandler(REQUEST_LOG_FILE)
+    handler = logging.handlers.RotatingFileHandler(
+        REQUEST_LOG_FILE,
+        maxBytes=REQUEST_LOG_BYTES,
+        backupCount=REQUEST_LOG_BACKUPS)
     handler.setFormatter(logging.Formatter('%(message)s'))
     logger.addHandler(handler)
     return logger
@@ -280,71 +310,21 @@ def WsgiEnvSettingMiddleware(app, appinfo_external):
   return SetWsgiEnv
 
 
-def _MetadataGetter(key):
-  return urllib2.urlopen(
-      'http://metadata/0.1/meta-data/attributes/' + key).read()
-
-
-
-def OsEnvSetupMiddleware(app, metadata_getter=None):
+def OsEnvSetupMiddleware(app, appengine_config):
   """Patch os.environ to be thread local, and stamp it with default values.
 
   When this function is called, we remember the values of os.environ. When the
   wrapped inner function (i.e. the WSGI middleware) is called, we patch
   os.environ to be thread local, and we fill in the remembered values. Per
-  request, we also merge the WSGI environment with os.environ.
+  request, we also merge the appengine_config environment with os.environ.
 
   Args:
     app: The WSGI app to wrap.
-    metadata_getter: Function that takes a key and returns this VMs metadata for
-      that key. If None, we'll use the production value.
+    appengine_config: A VmAppengineEnvConfig object.
 
   Returns:
     The wrapped app, also a WSGI app.
   """
-  metadata_getter = metadata_getter or _MetadataGetter
-
-  appid = os.environ.get('GAE_LONG_APP_ID') or metadata_getter('gae_project')
-  partition = (os.environ.get('GAE_PARTITION')
-               or metadata_getter('gae_partition'))
-  module = (os.environ.get('GAE_MODULE_NAME') or
-            metadata_getter('gae_backend_name'))
-
-
-  instance = (os.environ.get('GAE_MODULE_INSTANCE') or
-              metadata_getter('gae_backend_instance'))
-
-  major_version = os.environ.get('GAE_MODULE_VERSION')
-  if not major_version:
-
-
-    version = metadata_getter('gae_backend_version')
-
-
-
-    major_version = version.rsplit('_')[0]
-
-  minor_version = os.environ.get('GAE_MINOR_VERSION')
-  if not minor_version:
-
-
-
-
-
-    pwd = os.getcwd()
-    base = os.path.basename(pwd)
-    minor_version = base.rsplit('-', 1)[-1]
-
-
-
-  escaped_appid = appid.replace(':', '_').replace('.', '_')
-  default_ticket = '%s/%s.%s.%s' % (
-      escaped_appid, module, major_version, instance)
-
-
-
-  server_software = os.environ.get('SERVER_SOFTWARE')
-
 
 
 
@@ -359,14 +339,17 @@ def OsEnvSetupMiddleware(app, metadata_getter=None):
       if isinstance(val, basestring):
         os.environ[key] = val
 
-    os.environ['SERVER_SOFTWARE'] = server_software
+    os.environ['SERVER_SOFTWARE'] = appengine_config.server_software
     os.environ['APPENGINE_RUNTIME'] = 'python27'
-    os.environ['APPLICATION_ID'] = '%s~%s' % (partition, appid)
-    os.environ['INSTANCE_ID'] = instance
-    os.environ['BACKEND_ID'] = major_version
-    os.environ['CURRENT_MODULE_ID'] = module
-    os.environ['CURRENT_VERSION_ID'] = '%s.%s' % (major_version, minor_version)
-    os.environ['DEFAULT_TICKET'] = default_ticket
+    os.environ['APPLICATION_ID'] = '%s~%s' % (appengine_config.partition,
+                                              appengine_config.appid)
+    os.environ['INSTANCE_ID'] = appengine_config.instance
+    os.environ['BACKEND_ID'] = appengine_config.major_version
+    os.environ['CURRENT_MODULE_ID'] = appengine_config.module
+    os.environ['CURRENT_VERSION_ID'] = '%s.%s' % (
+        appengine_config.major_version, appengine_config.minor_version)
+
+    os.environ['DEFAULT_TICKET'] = appengine_config.default_ticket
     return app(wsgi_env, start_response)
 
   return PatchEnv

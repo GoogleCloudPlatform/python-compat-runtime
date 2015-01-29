@@ -35,6 +35,7 @@ to be compatible) library to replace db.py is also under development.
 
 
 
+
 __all__ = ['AbstractAdapter',
            'BaseConfiguration',
            'BaseConnection',
@@ -157,11 +158,19 @@ class AbstractAdapter(object):
     """Turn an entity_pb.EntityProto into a user-level entity."""
     raise NotImplementedError
 
-  def pb_v4_to_entity(self, pb):
+  def pb_v4_to_entity(self, pb, is_projection):
     """Turn an entity_v4_pb.Entity into a user-level entity."""
     v3_entity = entity_pb.EntityProto()
-    datastore_pbs.get_entity_converter().v4_to_v3_entity(pb, v3_entity)
+    datastore_pbs.get_entity_converter().v4_to_v3_entity(
+      pb, v3_entity, is_projection)
     return self.pb_to_entity(v3_entity)
+
+  def pb_v4_to_query_result(self, pb, query_options):
+    """Turn an entity_v4_pb.Entity into a user-level query result."""
+    if query_options.keys_only:
+      return self.pb_v4_to_key(pb.key())
+    else:
+      return self.pb_v4_to_entity(pb, bool(query_options.projection))
 
   def pb_to_index(self, pb):
     """Turn an entity_pb.CompositeIndex into a user-level Index
@@ -1670,7 +1679,7 @@ class BaseConnection(object):
     if isinstance(get_response, datastore_v4_pb.LookupResponse):
       for result in get_response.found_list():
         v4_key = result.entity().key()
-        entity = self.__adapter.pb_v4_to_entity(result.entity())
+        entity = self.__adapter.pb_v4_to_entity(result.entity(), False)
         result_dict[datastore_types.ReferenceToKeyValue(v4_key)] = entity
     else:
       for entity_result in get_response.entity_list():

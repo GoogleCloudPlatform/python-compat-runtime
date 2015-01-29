@@ -18,9 +18,13 @@
 
 
 
-"""App Engine Files API."""
+"""Files API.
+
+.. deprecated:: 1.8.1
+   Use Google Cloud Storage Client library instead."""
 
 from __future__ import with_statement
+
 
 
 __all__ = [

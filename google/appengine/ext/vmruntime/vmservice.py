@@ -26,6 +26,7 @@ from wsgiref import simple_server
 from google.appengine.api import appinfo_includes
 from google.appengine.ext.vmruntime import meta_app
 from google.appengine.ext.vmruntime import middlewares
+from google.appengine.ext.vmruntime import vmconfig
 from google.appengine.ext.vmruntime import vmstub
 
 LISTENING_HOST = '0.0.0.0'
@@ -107,27 +108,27 @@ class VmRuntimeCherryPyServer(VmRuntimeServer):
 class VmService(object):
   """Class to create and run the service."""
 
-  app = None
-  servers = None
-  appinfo_external = None
   server_class = VmRuntimeWSGIRefServer
 
   server_class = VmRuntimeCherryPyServer
 
-
-
   def __init__(self, filename, host, port):
-    with open(filename) as stream:
-      self.appinfo_external = appinfo_includes.Parse(stream)
-    vmstub.Register(vmstub.VMStub())
-    self.app = meta_app.FullyWrappedApp(self.appinfo_external)
-    self.CreateServer(host, port)
+    self.filename = filename
+    self.host = host
+    self.port = port
+    self.server = None
 
-  def CreateServer(self, host, port):
+  def CreateServer(self):
 
-    self.server = self.server_class(host, port, self.app,
-                                    self.appinfo_external)
-    logging.info('Configured server on %s:%s', host, port)
+    with open(self.filename) as stream:
+      appinfo_external = appinfo_includes.Parse(stream)
+
+    appengine_config = vmconfig.BuildVmAppengineEnvConfig()
+    vmstub.Register(vmstub.VMStub(appengine_config.default_ticket))
+    app = meta_app.FullyWrappedApp(appinfo_external, appengine_config)
+    self.server = self.server_class(self.host, self.port, app,
+                                    appinfo_external)
+    logging.info('Configured server on %s:%s', self.host, self.port)
 
   def StartServer(self):
     assert self.server
@@ -137,4 +138,5 @@ class VmService(object):
 def CreateAndRunService(config_filename):
   """Helper called from vmboot.main() to create and run the service."""
   service = VmService(config_filename, LISTENING_HOST, HTTP_PORT)
+  service.CreateServer()
   service.StartServer()

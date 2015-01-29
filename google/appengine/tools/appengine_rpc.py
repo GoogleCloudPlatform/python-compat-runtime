@@ -14,11 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-
-
-
-
 """Tool for performing authenticated RPCs against App Engine."""
+
 
 
 import google
@@ -27,6 +24,7 @@ import cookielib
 import cStringIO
 import fancy_urllib
 import gzip
+import hashlib
 import logging
 import os
 import re
@@ -35,8 +33,6 @@ import sys
 import time
 import urllib
 import urllib2
-
-from google.appengine.tools import dev_appserver_login
 
 _UPLOADING_APP_DOC_URLS = {
     "go": "https://developers.google.com/appengine/docs/go/tools/"
@@ -360,10 +356,29 @@ class AbstractRpcServer(object):
       self._GetAuthCookie(auth_token)
       return
 
+
+  @staticmethod
+  def _CreateDevAppServerCookieData(email, admin):
+    """Creates cookie payload data.
+
+    Args:
+      email: The user's email address.
+      admin: True if the user is an admin; False otherwise.
+
+    Returns:
+      String containing the cookie payload.
+    """
+    if email:
+      user_id_digest = hashlib.md5(email.lower()).digest()
+      user_id = "1" + "".join(["%02d" % ord(x) for x in user_id_digest])[:20]
+    else:
+      user_id = ""
+    return "%s:%s:%s" % (email, bool(admin), user_id)
+
   def _DevAppServerAuthenticate(self):
     """Authenticates the user on the dev_appserver."""
     credentials = self.auth_function()
-    value = dev_appserver_login.CreateCookieData(credentials[0], True)
+    value = self._CreateDevAppServerCookieData(credentials[0], True)
     self.extra_headers["Cookie"] = ('dev_appserver_login="%s"; Path=/;' % value)
 
   def Send(self, request_path, payload="",

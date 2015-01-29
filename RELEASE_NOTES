@@ -3,8 +3,146 @@ All rights reserved.
 
 App Engine SDK - Release Notes
 
-Version 1.9.7
+Version 1.9.15
+
+All
 ==============================
+- Fixed an issue with Datastore stats not displaying entity counts.
+    https://code.google.com/p/googleappengine/issues/detail?id=9328
+
+Python
+==============================
+- search.GetResponse in the Search API now supports __len__.
+    https://code.google.com/p/googleappengine/issues/detail?id=10340
+- The get_access_token() method of the App Identity API now caches access
+  tokens within the instance.
+- Fixed an issue with Cloud Endpoints where multi-class Python APIs
+  that reused method names could result in incorrect API descriptors.
+    https://code.google.com/p/googleappengine/issues/detail?id=10595
+    https://code.google.com/p/googleappengine/issues/detail?id=11366
+    https://code.google.com/p/googleappengine/issues/detail?id=11373
+
+PHP
+==============================
+- Temporary uploaded files are now unlinked (deleted) if not moved. Empty
+  files not written to a temporary directory are removed.
+    http://stackoverflow.com/questions/21571418/google-app-engine-empty-form
+    -upload-field-submission-issue
+- Fixed an issue with get_define_constraints not returning a Core array.
+    https://code.google.com/p/googleappengine/issues/detail?id=11236
+
+Version 1.9.14
+
+All
+==============================
+- The URL Fetch service will always issue a GET request when it receives
+  and responds to a 302 response; previously it would preserve the original
+  HTTP method. This new behavior is in line with modern conventions (see
+  http://tools.ietf.org/html/rfc7231#section-6.4).  You can
+  use the final_url field of the Response object (or a similar object in other
+  APIs, see
+  https://cloud.google.com/appengine/docs/python/urlfetch/responseobjects)
+  to determine if your fetches are being redirected. If this change affects
+  your application, please contact our support team - even if you do not have
+  a support contract at
+  https://support.google.com/cloud/answer/3420056?hl=en&ref_topic=3473162.
+
+Version 1.9.13
+==============================
+- No changes for 1.9.13
+
+
+Version 1.9.12
+
+Python
+==============================
+- The libxslt library has been updated from v1.1.22 to v1.1.28
+- Fixed an issue with NDB where a user gets an error stating "_AugmentedQuery'
+  object has no attribute '_filter_predicate'" when running a query without a
+  filter predicate.
+
+PHP
+==============================
+- Fixed an issue where users are unable to read newly created files in Google
+  Cloud Storage.
+    https://code.google.com/p/googleappengine/issues/detail?id=10869
+
+Version 1.9.11
+
+Python
+==============================
+- Fixed an issue with the Search API not returning results in the proper date
+  order.
+
+PHP
+==============================
+- PHP has now been updated to 5.4.32.
+
+Version 1.9.10
+
+Python
+==============================
+- Asynchronous calls are now supported in the Search API.
+
+PHP
+==============================
+- Fixed an issue that causes script routing errors in the dev_appserver when
+  the url regular expression uses subgroups that include a leading slash.
+    https://code.google.com/p/googleappengine/issues/detail?id=11134
+
+Version 1.9.9
+
+All
+==============================
+- TLS is now supported and enabled by default in the dev_appserver.
+    https://code.google.com/p/googleappengine/issues/detail?id=497
+- Fixed an issue with the Datastore Admin failing to load due to a
+  DeadlineExceededError when retrieving kinds.
+    https://code.google.com/p/googleappengine/issues/detail?id=11145
+
+PHP
+=============================
+- Fixed an issue where form fields submitted with Google Cloud Storage upload
+  may not get encoded correctly.
+    https://code.google.com/p/googleappengine/issues/detail?id=9534
+
+Version 1.9.8
+
+All
+=============================
+- Fixed an issue with Datastore Admin not properly restoring backups if writes
+  are disabled.
+    https://code.google.com/p/googleappengine/issues/detail?id=11090
+
+Python
+=============================
+- Fixed an issue with NDB repeated, nested structures growing exponentially
+  when saving.
+    https://code.google.com/p/googleappengine/issues/detail?id=11082
+
+PHP
+=============================
+- PHP is now updated to 5.4.30.
+
+Version 1.9.7
+
+All
+==============================
+- Added memcache historical hit ratio to Admin Console dashboard.
+- Fixed an issue with sockets connections timing out after 2 minutes.
+- Fixed an issue with appcfg request_logs not working.
+    https://code.google.com/p/googleappengine/issues/detail?id=10886
+
+Python
+==============================
+- Fixed an issue with the dev_appserver remove_ignored_dirs not working.
+
+PHP
+==============================
+- Fixed an issue with the dev_appserver directory separator for DOCUMENT_ROOT,
+  SCRIPT_FILENAME, SCRIPT_NAME, and PHP_SELF not working on Windows.
+- Fixed an issue with decrement not working in Memcache and Memcached.
+    http://code.google.com/p/googleappengine/issues/detail?id=10964
 
 Version 1.9.6
 

@@ -3374,6 +3374,10 @@ class CompiledCursor_Position(ProtocolBuffer.ProtocolMessage):
 class CompiledCursor(ProtocolBuffer.ProtocolMessage):
   has_position_ = 0
   position_ = None
+  has_postfix_position_ = 0
+  postfix_position_ = None
+  has_absolute_position_ = 0
+  absolute_position_ = None
 
   def __init__(self, contents=None):
     self.lazy_init_lock_ = thread.allocate_lock()
@@ -3398,52 +3402,132 @@ class CompiledCursor(ProtocolBuffer.ProtocolMessage):
 
   def has_position(self): return self.has_position_
 
+  def postfix_position(self):
+    if self.postfix_position_ is None:
+      self.lazy_init_lock_.acquire()
+      try:
+        if self.postfix_position_ is None: self.postfix_position_ = IndexPostfix()
+      finally:
+        self.lazy_init_lock_.release()
+    return self.postfix_position_
+
+  def mutable_postfix_position(self): self.has_postfix_position_ = 1; return self.postfix_position()
+
+  def clear_postfix_position(self):
+
+    if self.has_postfix_position_:
+      self.has_postfix_position_ = 0;
+      if self.postfix_position_ is not None: self.postfix_position_.Clear()
+
+  def has_postfix_position(self): return self.has_postfix_position_
+
+  def absolute_position(self):
+    if self.absolute_position_ is None:
+      self.lazy_init_lock_.acquire()
+      try:
+        if self.absolute_position_ is None: self.absolute_position_ = IndexPosition()
+      finally:
+        self.lazy_init_lock_.release()
+    return self.absolute_position_
+
+  def mutable_absolute_position(self): self.has_absolute_position_ = 1; return self.absolute_position()
+
+  def clear_absolute_position(self):
+
+    if self.has_absolute_position_:
+      self.has_absolute_position_ = 0;
+      if self.absolute_position_ is not None: self.absolute_position_.Clear()
+
+  def has_absolute_position(self): return self.has_absolute_position_
+
 
   def MergeFrom(self, x):
     assert x is not self
     if (x.has_position()): self.mutable_position().MergeFrom(x.position())
+    if (x.has_postfix_position()): self.mutable_postfix_position().MergeFrom(x.postfix_position())
+    if (x.has_absolute_position()): self.mutable_absolute_position().MergeFrom(x.absolute_position())
 
   def Equals(self, x):
     if x is self: return 1
     if self.has_position_ != x.has_position_: return 0
     if self.has_position_ and self.position_ != x.position_: return 0
+    if self.has_postfix_position_ != x.has_postfix_position_: return 0
+    if self.has_postfix_position_ and self.postfix_position_ != x.postfix_position_: return 0
+    if self.has_absolute_position_ != x.has_absolute_position_: return 0
+    if self.has_absolute_position_ and self.absolute_position_ != x.absolute_position_: return 0
     return 1
 
   def IsInitialized(self, debug_strs=None):
     initialized = 1
     if (self.has_position_ and not self.position_.IsInitialized(debug_strs)): initialized = 0
+    if (self.has_postfix_position_ and not self.postfix_position_.IsInitialized(debug_strs)): initialized = 0
+    if (self.has_absolute_position_ and not self.absolute_position_.IsInitialized(debug_strs)): initialized = 0
     return initialized
 
   def ByteSize(self):
     n = 0
     if (self.has_position_): n += 2 + self.position_.ByteSize()
+    if (self.has_postfix_position_): n += 1 + self.lengthString(self.postfix_position_.ByteSize())
+    if (self.has_absolute_position_): n += 1 + self.lengthString(self.absolute_position_.ByteSize())
     return n
 
   def ByteSizePartial(self):
     n = 0
     if (self.has_position_): n += 2 + self.position_.ByteSizePartial()
+    if (self.has_postfix_position_): n += 1 + self.lengthString(self.postfix_position_.ByteSizePartial())
+    if (self.has_absolute_position_): n += 1 + self.lengthString(self.absolute_position_.ByteSizePartial())
     return n
 
   def Clear(self):
     self.clear_position()
+    self.clear_postfix_position()
+    self.clear_absolute_position()
 
   def OutputUnchecked(self, out):
+    if (self.has_postfix_position_):
+      out.putVarInt32(10)
+      out.putVarInt32(self.postfix_position_.ByteSize())
+      self.postfix_position_.OutputUnchecked(out)
     if (self.has_position_):
       out.putVarInt32(19)
       self.position_.OutputUnchecked(out)
       out.putVarInt32(20)
+    if (self.has_absolute_position_):
+      out.putVarInt32(26)
+      out.putVarInt32(self.absolute_position_.ByteSize())
+      self.absolute_position_.OutputUnchecked(out)
 
   def OutputPartial(self, out):
+    if (self.has_postfix_position_):
+      out.putVarInt32(10)
+      out.putVarInt32(self.postfix_position_.ByteSizePartial())
+      self.postfix_position_.OutputPartial(out)
     if (self.has_position_):
       out.putVarInt32(19)
       self.position_.OutputPartial(out)
       out.putVarInt32(20)
+    if (self.has_absolute_position_):
+      out.putVarInt32(26)
+      out.putVarInt32(self.absolute_position_.ByteSizePartial())
+      self.absolute_position_.OutputPartial(out)
 
   def TryMerge(self, d):
     while d.avail() > 0:
       tt = d.getVarInt32()
+      if tt == 10:
+        length = d.getVarInt32()
+        tmp = ProtocolBuffer.Decoder(d.buffer(), d.pos(), d.pos() + length)
+        d.skip(length)
+        self.mutable_postfix_position().TryMerge(tmp)
+        continue
       if tt == 19:
         self.mutable_position().TryMerge(d)
+        continue
+      if tt == 26:
+        length = d.getVarInt32()
+        tmp = ProtocolBuffer.Decoder(d.buffer(), d.pos(), d.pos() + length)
+        d.skip(length)
+        self.mutable_absolute_position().TryMerge(tmp)
         continue
 
 
@@ -3457,6 +3541,14 @@ class CompiledCursor(ProtocolBuffer.ProtocolMessage):
       res+=prefix+"Position {\n"
       res+=self.position_.__str__(prefix + "  ", printElemNumber)
       res+=prefix+"}\n"
+    if self.has_postfix_position_:
+      res+=prefix+"postfix_position <\n"
+      res+=self.postfix_position_.__str__(prefix + "  ", printElemNumber)
+      res+=prefix+">\n"
+    if self.has_absolute_position_:
+      res+=prefix+"absolute_position <\n"
+      res+=self.absolute_position_.__str__(prefix + "  ", printElemNumber)
+      res+=prefix+">\n"
     return res
 
 
@@ -3471,10 +3563,14 @@ class CompiledCursor(ProtocolBuffer.ProtocolMessage):
   kPositionkey = 32
   kPositionstart_inclusive = 28
   kPositionbefore_ascending = 33
+  kpostfix_position = 1
+  kabsolute_position = 3
 
   _TEXT = _BuildTagLookupTable({
     0: "ErrorCode",
+    1: "postfix_position",
     2: "Position",
+    3: "absolute_position",
     27: "start_key",
     28: "start_inclusive",
     29: "IndexValue",
@@ -3486,7 +3582,9 @@ class CompiledCursor(ProtocolBuffer.ProtocolMessage):
 
   _TYPES = _BuildTagLookupTable({
     0: ProtocolBuffer.Encoder.NUMERIC,
+    1: ProtocolBuffer.Encoder.STRING,
     2: ProtocolBuffer.Encoder.STARTGROUP,
+    3: ProtocolBuffer.Encoder.STRING,
     27: ProtocolBuffer.Encoder.STRING,
     28: ProtocolBuffer.Encoder.NUMERIC,
     29: ProtocolBuffer.Encoder.STARTGROUP,
@@ -5948,6 +6046,7 @@ class DeleteRequest(ProtocolBuffer.ProtocolMessage):
 
   def __init__(self, contents=None):
     self.key_ = []
+    self.composite_index_ = []
     self.snapshot_ = []
     self.lazy_init_lock_ = thread.allocate_lock()
     if contents is not None: self.MergeFromString(contents)
@@ -6006,6 +6105,22 @@ class DeleteRequest(ProtocolBuffer.ProtocolMessage):
 
   def has_transaction(self): return self.has_transaction_
 
+  def composite_index_size(self): return len(self.composite_index_)
+  def composite_index_list(self): return self.composite_index_
+
+  def composite_index(self, i):
+    return self.composite_index_[i]
+
+  def mutable_composite_index(self, i):
+    return self.composite_index_[i]
+
+  def add_composite_index(self):
+    x = CompositeIndex()
+    self.composite_index_.append(x)
+    return x
+
+  def clear_composite_index(self):
+    self.composite_index_ = []
   def trusted(self): return self.trusted_
 
   def set_trusted(self, x):
@@ -6067,6 +6182,7 @@ class DeleteRequest(ProtocolBuffer.ProtocolMessage):
     if (x.has_header()): self.mutable_header().MergeFrom(x.header())
     for i in xrange(x.key_size()): self.add_key().CopyFrom(x.key(i))
     if (x.has_transaction()): self.mutable_transaction().MergeFrom(x.transaction())
+    for i in xrange(x.composite_index_size()): self.add_composite_index().CopyFrom(x.composite_index(i))
     if (x.has_trusted()): self.set_trusted(x.trusted())
     if (x.has_force()): self.set_force(x.force())
     if (x.has_mark_changes()): self.set_mark_changes(x.mark_changes())
@@ -6081,6 +6197,9 @@ class DeleteRequest(ProtocolBuffer.ProtocolMessage):
       if e1 != e2: return 0
     if self.has_transaction_ != x.has_transaction_: return 0
     if self.has_transaction_ and self.transaction_ != x.transaction_: return 0
+    if len(self.composite_index_) != len(x.composite_index_): return 0
+    for e1, e2 in zip(self.composite_index_, x.composite_index_):
+      if e1 != e2: return 0
     if self.has_trusted_ != x.has_trusted_: return 0
     if self.has_trusted_ and self.trusted_ != x.trusted_: return 0
     if self.has_force_ != x.has_force_: return 0
@@ -6098,6 +6217,8 @@ class DeleteRequest(ProtocolBuffer.ProtocolMessage):
     for p in self.key_:
       if not p.IsInitialized(debug_strs): initialized=0
     if (self.has_transaction_ and not self.transaction_.IsInitialized(debug_strs)): initialized = 0
+    for p in self.composite_index_:
+      if not p.IsInitialized(debug_strs): initialized=0
     for p in self.snapshot_:
       if not p.IsInitialized(debug_strs): initialized=0
     return initialized
@@ -6108,6 +6229,8 @@ class DeleteRequest(ProtocolBuffer.ProtocolMessage):
     n += 1 * len(self.key_)
     for i in xrange(len(self.key_)): n += self.lengthString(self.key_[i].ByteSize())
     if (self.has_transaction_): n += 1 + self.lengthString(self.transaction_.ByteSize())
+    n += 1 * len(self.composite_index_)
+    for i in xrange(len(self.composite_index_)): n += self.lengthString(self.composite_index_[i].ByteSize())
     if (self.has_trusted_): n += 2
     if (self.has_force_): n += 2
     if (self.has_mark_changes_): n += 2
@@ -6121,6 +6244,8 @@ class DeleteRequest(ProtocolBuffer.ProtocolMessage):
     n += 1 * len(self.key_)
     for i in xrange(len(self.key_)): n += self.lengthString(self.key_[i].ByteSizePartial())
     if (self.has_transaction_): n += 1 + self.lengthString(self.transaction_.ByteSizePartial())
+    n += 1 * len(self.composite_index_)
+    for i in xrange(len(self.composite_index_)): n += self.lengthString(self.composite_index_[i].ByteSizePartial())
     if (self.has_trusted_): n += 2
     if (self.has_force_): n += 2
     if (self.has_mark_changes_): n += 2
@@ -6132,6 +6257,7 @@ class DeleteRequest(ProtocolBuffer.ProtocolMessage):
     self.clear_header()
     self.clear_key()
     self.clear_transaction()
+    self.clear_composite_index()
     self.clear_trusted()
     self.clear_force()
     self.clear_mark_changes()
@@ -6163,6 +6289,10 @@ class DeleteRequest(ProtocolBuffer.ProtocolMessage):
       out.putVarInt32(82)
       out.putVarInt32(self.header_.ByteSize())
       self.header_.OutputUnchecked(out)
+    for i in xrange(len(self.composite_index_)):
+      out.putVarInt32(90)
+      out.putVarInt32(self.composite_index_[i].ByteSize())
+      self.composite_index_[i].OutputUnchecked(out)
 
   def OutputPartial(self, out):
     if (self.has_trusted_):
@@ -6190,6 +6320,10 @@ class DeleteRequest(ProtocolBuffer.ProtocolMessage):
       out.putVarInt32(82)
       out.putVarInt32(self.header_.ByteSizePartial())
       self.header_.OutputPartial(out)
+    for i in xrange(len(self.composite_index_)):
+      out.putVarInt32(90)
+      out.putVarInt32(self.composite_index_[i].ByteSizePartial())
+      self.composite_index_[i].OutputPartial(out)
 
   def TryMerge(self, d):
     while d.avail() > 0:
@@ -6227,6 +6361,12 @@ class DeleteRequest(ProtocolBuffer.ProtocolMessage):
         d.skip(length)
         self.mutable_header().TryMerge(tmp)
         continue
+      if tt == 90:
+        length = d.getVarInt32()
+        tmp = ProtocolBuffer.Decoder(d.buffer(), d.pos(), d.pos() + length)
+        d.skip(length)
+        self.add_composite_index().TryMerge(tmp)
+        continue
 
 
       if (tt == 0): raise ProtocolBuffer.ProtocolBufferDecodeError
@@ -6251,6 +6391,14 @@ class DeleteRequest(ProtocolBuffer.ProtocolMessage):
       res+=prefix+"transaction <\n"
       res+=self.transaction_.__str__(prefix + "  ", printElemNumber)
       res+=prefix+">\n"
+    cnt=0
+    for e in self.composite_index_:
+      elm=""
+      if printElemNumber: elm="(%d)" % cnt
+      res+=prefix+("composite_index%s <\n" % elm)
+      res+=e.__str__(prefix + "  ", printElemNumber)
+      res+=prefix+">\n"
+      cnt+=1
     if self.has_trusted_: res+=prefix+("trusted: %s\n" % self.DebugFormatBool(self.trusted_))
     if self.has_force_: res+=prefix+("force: %s\n" % self.DebugFormatBool(self.force_))
     if self.has_mark_changes_: res+=prefix+("mark_changes: %s\n" % self.DebugFormatBool(self.mark_changes_))
@@ -6271,6 +6419,7 @@ class DeleteRequest(ProtocolBuffer.ProtocolMessage):
   kheader = 10
   kkey = 6
   ktransaction = 5
+  kcomposite_index = 11
   ktrusted = 4
   kforce = 7
   kmark_changes = 8
@@ -6285,7 +6434,8 @@ class DeleteRequest(ProtocolBuffer.ProtocolMessage):
     8: "mark_changes",
     9: "snapshot",
     10: "header",
-  }, 10)
+    11: "composite_index",
+  }, 11)
 
   _TYPES = _BuildTagLookupTable({
     0: ProtocolBuffer.Encoder.NUMERIC,
@@ -6296,7 +6446,8 @@ class DeleteRequest(ProtocolBuffer.ProtocolMessage):
     8: ProtocolBuffer.Encoder.NUMERIC,
     9: ProtocolBuffer.Encoder.STRING,
     10: ProtocolBuffer.Encoder.STRING,
-  }, 10, ProtocolBuffer.Encoder.MAX_TYPE)
+    11: ProtocolBuffer.Encoder.STRING,
+  }, 11, ProtocolBuffer.Encoder.MAX_TYPE)
 
 
   _STYLE = """"""

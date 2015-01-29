@@ -21,6 +21,7 @@ module is the sandboxed version.
 """
 
 
+
 import cStringIO
 import os
 import sys
@@ -48,6 +49,14 @@ from google.appengine.tools.devappserver2.python import request_state
 # Copied from httplib; done so we don't have to import httplib which breaks
 # our httplib "forwarder" as the environment variable that controls which
 # implementation we get is not yet set.
+
+
+
+
+
+
+
+
 
 httplib_responses = {
     100: 'Continue',

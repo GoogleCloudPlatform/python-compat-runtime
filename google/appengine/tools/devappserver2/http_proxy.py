@@ -23,22 +23,14 @@ only. Static files are handled separately.
 import contextlib
 import httplib
 import logging
-import socket
 import urllib
 import wsgiref.headers
 
 from google.appengine.tools.devappserver2 import http_runtime_constants
+from google.appengine.tools.devappserver2 import http_utils
 from google.appengine.tools.devappserver2 import instance
 from google.appengine.tools.devappserver2 import login
 from google.appengine.tools.devappserver2 import util
-
-
-class Error(Exception):
-  """Base class for errors in this module."""
-
-
-class HostNotReachable(Error):
-  """Raised if host can't be reached at given port."""
 
 
 class HttpProxy:
@@ -87,25 +79,14 @@ class HttpProxy:
       retries: int, Number of connection retries.
 
     Raises:
-      HostNotReachable: if host:port can't be reached after given number of
-        retries.
+      http_utils.HostNotReachable: if host:port can't be reached after given
+          number of retries.
     """
-    def ping():
-      connection = httplib.HTTPConnection(self._host, self._port)
-      with contextlib.closing(connection):
-        try:
-          connection.connect()
-        except socket.error, httplib.HTTPException:
-          return False
-        else:
-          return True
+    # If there was a prior error, we don't need to wait for a connection.
+    if self._prior_error:
+      return
 
-    while not ping() and retries > 0:
-      retries -= 1
-    if not retries:
-      raise HostNotReachable(
-          'Cannot connect to the instance on {host}:{port}'.format(
-              host=self._host, port=self._port))
+    http_utils.wait_for_connection(self._host, self._port, retries)
 
   def handle(self, environ, start_response, url_map, match, request_id,
              request_type):

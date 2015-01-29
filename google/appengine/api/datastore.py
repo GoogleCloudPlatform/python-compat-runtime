@@ -44,6 +44,7 @@ which needs BadValueError, so it can't be defined in datastore.
 
 
 
+
 import heapq
 import itertools
 import logging
@@ -229,6 +230,8 @@ class _BaseIndex(object):
 
 
   BUILDING, SERVING, DELETING, ERROR = range(4)
+
+
 
 
   ASCENDING = datastore_query.PropertyOrder.ASCENDING
