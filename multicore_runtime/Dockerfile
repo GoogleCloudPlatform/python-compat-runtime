@@ -20,8 +20,9 @@ WORKDIR /app
 
 RUN ln -s /home/vmagent/python_vm_runtime/google /home/vmagent/app/google
 
-RUN pip install -r base_requirements.txt
-
 ENTRYPOINT ["/usr/bin/env", "gunicorn", "-b", "0.0.0.0:8080", "wsgi:meta_app", "--log-file=-"]
 
 ADD . /home/vmagent/app/
+
+RUN pip install -r base_requirements.txt
+
