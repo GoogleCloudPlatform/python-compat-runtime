@@ -1,0 +1,15 @@
+# Multicore web application server.
+gunicorn
+
+# Better HTTP api calls, used by vmstub.py.
+requests
+
+# Required by the base runtime.
+webapp2
+webob
+
+# Required to parse app.yaml.
+pyyaml
+
+# Better request/response processing for the meta app.
+werkzeug
