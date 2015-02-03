@@ -11,15 +11,18 @@ def get_module_config_filename():
   logging.info('Using module_yaml_path from env: %s', module_yaml_path)
   return module_yaml_path
 
+
 def get_module_config(filename):
   with open(filename) as f:
     return appinfo_includes.Parse(f)
+
 
 def normalize_script(script):
   """Translates $PYTHON_LIB in the given script. Returns the translation."""
   if script:
     return script.replace('$PYTHON_LIB/', '')
   return script
+
 
 def app_for_script(script):
   if script:
@@ -30,6 +33,7 @@ def app_for_script(script):
       return None
     else:
       return app
+
 
 def load_user_scripts_into_handlers(handlers):
   """Accepts appinfo_external.handlers data and returns preloaded user scripts.
@@ -42,8 +46,8 @@ def load_user_scripts_into_handlers(handlers):
   """
 
   loaded_handlers = [(x.url,
-                     normalize_script(x.script),
-                     app_for_script(x.script) if x.script else None)
+                      normalize_script(x.script),
+                      app_for_script(x.script) if x.script else None)
                      for x in handlers]
   logging.info('Parsed handlers: %s', [(x[0], x[1]) for x in loaded_handlers])
   return loaded_handlers

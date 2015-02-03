@@ -1,14 +1,13 @@
 import logging
-import re
-import sys
-
-from google.appengine.ext.vmruntime import vmstub
-from google.appengine.ext.vmruntime import vmconfig
 
 from dispatcher import dispatcher
 from wsgi_utils import get_module_config
 from wsgi_utils import get_module_config_filename
 from wsgi_utils import load_user_scripts_into_handlers
+
+from google.appengine.ext.vmruntime import vmconfig
+from google.appengine.ext.vmruntime import vmstub
+
 
 logging.basicConfig(level=logging.INFO)
 

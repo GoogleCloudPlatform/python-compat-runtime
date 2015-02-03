@@ -1,8 +1,10 @@
 import unittest
-from mock import patch, MagicMock
+from mock import MagicMock
+from mock import patch
 
 from werkzeug.test import Client
-from werkzeug.wrappers import Request, Response
+from werkzeug.wrappers import Request
+from werkzeug.wrappers import Response
 
 from google.appengine.api import appinfo
 
@@ -11,9 +13,11 @@ FAKE_HANDLERS = [
     appinfo.URLMap(url='/failure', script='wsgi_test.nonexistent_function')]
 HELLO_STRING = 'Hello World!'
 
+
 @Request.application
 def hello_world(request):
   return Response(HELLO_STRING)
+
 
 class MetaAppTestCase(unittest.TestCase):
 
@@ -24,7 +28,7 @@ class MetaAppTestCase(unittest.TestCase):
     # Instantiate an app with a simple fake configuration.
     with patch('wsgi_utils.get_module_config_filename'):
       with patch('wsgi_utils.get_module_config', return_value=MagicMock(handlers=FAKE_HANDLERS)):
-        with patch('google.appengine.ext.vmruntime.vmconfig.BuildVmAppengineEnvConfig', default_ticket="0"):
+        with patch('google.appengine.ext.vmruntime.vmconfig.BuildVmAppengineEnvConfig'):
           import wsgi
           self.app = wsgi.meta_app
     self.client = Client(self.app, Response)
