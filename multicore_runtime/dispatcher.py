@@ -11,7 +11,7 @@ def dispatcher(handlers):
   a list of tuples of (url, script, app).
   """
 
-  def configured_dispatcher(env, start_response):
+  def dispatch(env, start_response):
     """Handle one request."""
     request = Request(env)
     for (url, script, app) in handlers: # Closure over parent func's handlers.
