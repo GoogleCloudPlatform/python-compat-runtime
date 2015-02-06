@@ -17,13 +17,6 @@ def get_module_config(filename):
     return appinfo_includes.Parse(f)
 
 
-def normalize_script(script):
-  """Translates $PYTHON_LIB in the given script. Returns the translation."""
-  if script:
-    return script.replace('$PYTHON_LIB/', '')
-  return script
-
-
 def app_for_script(script):
   if script:
     app, filename, err = wsgi.LoadObject(script)
@@ -46,7 +39,7 @@ def load_user_scripts_into_handlers(handlers):
   """
 
   loaded_handlers = [(x.url,
-                      normalize_script(x.script),
+                      x.script.replace('$PYTHON_LIB/', '') if x.script else x.script,
                       app_for_script(x.script) if x.script else None)
                      for x in handlers]
   logging.info('Parsed handlers: %s',
