@@ -35,4 +35,4 @@ def dispatcher(handlers):
     start_response('404 Not Found', [])
     return ['<h1>404 Not Found</h1>\n']
 
-  return configured_dispatcher
+  return dispatch

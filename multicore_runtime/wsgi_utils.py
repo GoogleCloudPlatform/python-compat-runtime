@@ -49,5 +49,6 @@ def load_user_scripts_into_handlers(handlers):
                       normalize_script(x.script),
                       app_for_script(x.script) if x.script else None)
                      for x in handlers]
-  logging.info('Parsed handlers: %s', [(x[0], x[1]) for x in loaded_handlers])
+  logging.info('Parsed handlers: %s',
+               [(url, script) for (url, script, _) in loaded_handlers])
   return loaded_handlers
