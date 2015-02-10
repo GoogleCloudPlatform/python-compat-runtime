@@ -30,7 +30,10 @@ def dispatcher(handlers):
         # but in development or for local queries they may end up here.
         # TODO: support static files.
         else:
-          pass
+            logging.error('Static file serving is not supported: %s ',
+                          request.path)
+            start_response('500 Internal Server Error', [])
+            return ['<h1>500 Internal Server Error</h1>\n']
     logging.error('No handler found for %s', request.path)
     start_response('404 Not Found', [])
     return ['<h1>404 Not Found</h1>\n']
