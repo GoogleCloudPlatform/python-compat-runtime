@@ -1,11 +1,10 @@
 import logging
 import re
-import sys
 
 from werkzeug.wrappers import Request
 
 def dispatcher(handlers):
-  """Accepts a list of handlers and returns a WSGI app that dispatches to them.
+  """Accepts handlers and returns a WSGI app that dispatches requests to them.
   
   The list of handlers is as produced by wsgi.load_user_scripts_into_handlers:
   a list of tuples of (url, script, app).
@@ -14,7 +13,7 @@ def dispatcher(handlers):
   def dispatch(env, start_response):
     """Handle one request."""
     request = Request(env)
-    for (url, script, app) in handlers: # Closure over parent func's handlers.
+    for url, script, app in handlers: # Closure over parent func's handlers.
       matcher = re.match(url, request.path)
       if matcher and matcher.end() == len(request.path):
         if script:
