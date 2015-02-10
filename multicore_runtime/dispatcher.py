@@ -6,8 +6,9 @@ from werkzeug.wrappers import Request
 def dispatcher(handlers):
   """Accepts handlers and returns a WSGI app that dispatches requests to them.
   
-  The list of handlers is as produced by wsgi.load_user_scripts_into_handlers:
-  a list of tuples of (url, script, app).
+  The list of handlers is as produced by
+  wsgi_utils.load_user_scripts_into_handlers: a list of tuples of
+  (url, script, app).
   """
 
   def dispatch(env, start_response):
