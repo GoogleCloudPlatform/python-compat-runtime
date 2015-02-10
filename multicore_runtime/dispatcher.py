@@ -1,20 +1,29 @@
+# Copyright 2015 Google Inc. All Rights Reserved.
+
+"""A WSGI app that, once configured, dispatches requests to user apps."""
+
 import logging
 import re
 
 from werkzeug.wrappers import Request
 
+
 def dispatcher(handlers):
   """Accepts handlers and returns a WSGI app that dispatches requests to them.
-  
-  The list of handlers is as produced by
-  wsgi_utils.load_user_scripts_into_handlers: a list of tuples of
-  (url, script, app).
+
+  Args:
+    handlers: a list of handlers as produced by
+      wsgi_utils.load_user_scripts_into_handlers: a list of tuples of
+      (url, script, app).
+
+  Returns:
+    A WSGI app that dispatches to the user apps specified in the input.
   """
 
   def dispatch(env, start_response):
     """Handle one request."""
     request = Request(env)
-    for url, script, app in handlers: # Closure over parent func's handlers.
+    for url, script, app in handlers:  # Closure over parent func's handlers.
       matcher = re.match(url, request.path)
       if matcher and matcher.end() == len(request.path):
         if script:
@@ -28,12 +37,12 @@ def dispatcher(handlers):
             return ['<h1>500 Internal Server Error</h1>\n']
         # This is a static file; normally these are handled by the appserver
         # but in development or for local queries they may end up here.
-        # TODO: support static files.
+        # TODO(apphosting): support static files.
         else:
-            logging.error('Static file serving is not supported: %s ',
-                          request.path)
-            start_response('500 Internal Server Error', [])
-            return ['<h1>500 Internal Server Error</h1>\n']
+          logging.error('Static file serving is not supported: %s ',
+                        request.path)
+          start_response('500 Internal Server Error', [])
+          return ['<h1>500 Internal Server Error</h1>\n']
     logging.error('No handler found for %s', request.path)
     start_response('404 Not Found', [])
     return ['<h1>404 Not Found</h1>\n']

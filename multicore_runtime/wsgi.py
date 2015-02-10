@@ -1,3 +1,13 @@
+# Copyright 2015 Google Inc. All Rights Reserved.
+
+"""Configure a user project and instantiate WSGI app meta_app to serve it.
+
+Importing this module will result in side-effects, such as registering the
+project's default ticket via vmstub.Register. This is a straightforward and
+compatible way to induce the webserver to run initialization code before
+starting to serve the WSGI app.
+"""
+
 import logging
 
 from dispatcher import dispatcher
@@ -22,7 +32,7 @@ preloaded_handlers = load_user_scripts_into_handlers(appinfo_external.handlers)
 
 # Now that all scripts are fully imported, it is safe to use asynchronous
 # API calls.
-# TODO: change this to use an env variable instead of module state
+# TODO(apphosting): change this to use an env variable instead of module state
 vmstub.app_is_loaded = True
 
 # Create a "meta app" that dispatches requests based on handlers.

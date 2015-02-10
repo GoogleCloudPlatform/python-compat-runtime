@@ -1,3 +1,6 @@
+# Copyright 2015 Google Inc. All Rights Reserved.
+# pylint: disable=g-import-not-at-top
+
 import unittest
 from mock import MagicMock
 from mock import patch
@@ -15,7 +18,7 @@ HELLO_STRING = 'Hello World!'
 
 
 @Request.application
-def hello_world(request):
+def hello_world(request):  # pylint: disable=unused-argument
   return Response(HELLO_STRING)
 
 
@@ -23,12 +26,13 @@ class MetaAppTestCase(unittest.TestCase):
 
   def setUp(self):
     # Pre-import modules to patch them in advance.
-    from google.appengine.ext.vmruntime import vmconfig
+    from google.appengine.ext.vmruntime import vmconfig  # pylint: disable=unused-variable
 
     # Instantiate an app with a simple fake configuration.
     with patch('wsgi_utils.get_module_config_filename'):
-      with patch('wsgi_utils.get_module_config', return_value=MagicMock(handlers=FAKE_HANDLERS)):
-        with patch('google.appengine.ext.vmruntime.vmconfig.BuildVmAppengineEnvConfig'):
+      with patch('wsgi_utils.get_module_config',
+                 return_value=MagicMock(handlers=FAKE_HANDLERS)):
+        with patch('google.appengine.ext.vmruntime.vmconfig.BuildVmAppengineEnvConfig'):  # pylint: disable=line-too-long
           import wsgi
           self.app = wsgi.meta_app
     self.client = Client(self.app, Response)
