@@ -27,9 +27,9 @@ from wsgi_utils import get_module_config
 from wsgi_utils import get_module_config_filename
 from wsgi_utils import load_user_scripts_into_handlers
 
+from google.appengine.ext.vmruntime import middlewares
 from google.appengine.ext.vmruntime import vmconfig
 from google.appengine.ext.vmruntime import vmstub
-
 
 logging.basicConfig(level=logging.INFO)
 
@@ -49,3 +49,19 @@ vmstub.app_is_loaded = True
 
 # Create a "meta app" that dispatches requests based on handlers.
 meta_app = dispatcher(preloaded_handlers)
+
+# Wrap meta_app in middleware. The first statement in this section is the
+# innermost layer of the middleware, and the last statement is the outermost
+# layer (the middleware code that will process a request first). Inside the
+# innermost layer is the actual dispatcher, above.
+
+# Adjust SERVER_NAME and SERVER_PORT env vars to hide the service bridge.
+meta_app = middlewares.FixServerEnvVarsMiddleware(meta_app)
+
+# Patch os.environ to be thread local, and stamp it with default values based
+# on the app configuration. This is for backwards compatibility with GAE's use
+# of environment variables to store request data.
+# Note: gunicorn "gevent" or "eventlet" workers, if selected, will
+# automatically monkey-patch the threading module to make this compatible with
+# green threads.
+meta_app = middlewares.OsEnvSetupMiddleware(meta_app, appengine_config)
