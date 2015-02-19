@@ -15,19 +15,23 @@
 """Configure a user project and instantiate WSGI app meta_app to serve it.
 
 Importing this module will result in side-effects, such as registering the
-project's default ticket via vmstub.Register. This is a straightforward and
-compatible way to induce the webserver to run initialization code before
-starting to serve the WSGI app.
+project's default ticket via vmstub.Register. This is a broadly compatible way
+to induce the webserver to run initialization code before starting to serve the
+WSGI app.
 """
 
 import logging
+import os
 
 from dispatcher import dispatcher
-from wsgi_utils import get_module_config
-from wsgi_utils import get_module_config_filename
-from wsgi_utils import load_user_scripts_into_handlers
+from middleware import reset_environment_middleware
+from wsgi_config import env_vars_from_appengine_config
+from wsgi_config import get_module_config
+from wsgi_config import get_module_config_filename
+from wsgi_config import load_user_scripts_into_handlers
+from wsgi_config import ThreadLocalDict
+from wsgi_config import user_env_vars_from_appinfo_external
 
-from google.appengine.ext.vmruntime import middlewares
 from google.appengine.ext.vmruntime import vmconfig
 from google.appengine.ext.vmruntime import vmstub
 
@@ -39,13 +43,37 @@ appengine_config = vmconfig.BuildVmAppengineEnvConfig()
 # Ensure API requests include a valid ticket by default.
 vmstub.Register(vmstub.VMStub(appengine_config.default_ticket))
 
-# Load user code
+# Load user code.
 preloaded_handlers = load_user_scripts_into_handlers(appinfo_external.handlers)
 
 # Now that all scripts are fully imported, it is safe to use asynchronous
 # API calls.
 # TODO(apphosting): change this to use an env variable instead of module state
 vmstub.app_is_loaded = True
+
+# Take an immutable snapshot of the environment's current state, which we will
+# use to refresh the environment (via `reset_environment_middleware`) at the
+# beginning of each request.
+frozen_environment = tuple(os.environ.iteritems())
+
+# Also freeze user env vars specified in app.yaml. Later steps to modify the
+# environment such as env_vars_from_appengine_config and request middleware
+# will overwrite these changes. This is added to the environment in
+# `reset_environment_middleware`.
+frozen_user_env = tuple(
+    user_env_vars_from_appinfo_external(appinfo_external).iteritems())
+
+# Also freeze environment data from appengine_config. This is added to the
+# environment in `reset_environment_middleware`.
+frozen_appengine_config_env = tuple(
+    env_vars_from_appengine_config(appengine_config).iteritems())
+
+# Monkey-patch os.environ to be thread-local. This is for backwards
+# compatibility with GAE's use of environment variables to store request data.
+# Note: gunicorn "gevent" or "eventlet" workers, if selected, will
+# automatically monkey-patch the threading module to make this work with green
+# threads.
+os.environ = ThreadLocalDict()
 
 # Create a "meta app" that dispatches requests based on handlers.
 meta_app = dispatcher(preloaded_handlers)
@@ -55,13 +83,7 @@ meta_app = dispatcher(preloaded_handlers)
 # layer (the middleware code that will process a request first). Inside the
 # innermost layer is the actual dispatcher, above.
 
-# Adjust SERVER_NAME and SERVER_PORT env vars to hide the service bridge.
-meta_app = middlewares.FixServerEnvVarsMiddleware(meta_app)
-
-# Patch os.environ to be thread local, and stamp it with default values based
-# on the app configuration. This is for backwards compatibility with GAE's use
-# of environment variables to store request data.
-# Note: gunicorn "gevent" or "eventlet" workers, if selected, will
-# automatically monkey-patch the threading module to make this compatible with
-# green threads.
-meta_app = middlewares.OsEnvSetupMiddleware(meta_app, appengine_config)
+# Reset os.environ to the frozen state and add request-specific data.
+meta_app = reset_environment_middleware(meta_app, frozen_environment,
+                                        frozen_user_env,
+                                        frozen_appengine_config_env)
