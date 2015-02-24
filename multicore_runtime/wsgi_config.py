@@ -45,11 +45,43 @@ def app_for_script(script):
       logging.exception('Failed to import %s: %s', script, err)
       return None
     else:
-      return app
+      return app_wrapped_in_user_middleware(app)
+
+
+def app_wrapped_in_user_middleware(app):
+  """Returns the input WSGI app, wrapped in appengine_config middleware."""
+  add_middleware = get_add_middleware_from_appengine_config()
+  if add_middleware:
+    return add_middleware(app)
+  else:
+    return app
+
+
+def get_add_middleware_from_appengine_config():
+  """Tries to import appengine_config and return middleware; fails silently.
+
+  `appengine_config` is optionally part of GAE-compatible user code.
+  If the user chooses to define the `webapp_add_wsgi_middleware` function
+  there, then we will use it to wrap app scripts. This is used for e.g.
+  appstats. Many user apps do not have or need appengine_config, so failure
+  to import it or failure to find `webapp_add_wsgi_middleware` is not an
+  error.
+
+  Returns:
+    The appengine_config.webapp_add_wsgi_middleware function or None.
+  """
+  try:
+    import appengine_config  # pylint: disable=g-import-not-at-top
+    try:
+      return appengine_config.webapp_add_wsgi_middleware
+    except AttributeError:
+      return None
+  except ImportError:
+    return None
 
 
 def load_user_scripts_into_handlers(handlers):
-  """Preloads user scripts.
+  """Preloads user scripts, wrapped in appengine_config middleware if present.
 
   Args:
     handlers: appinfo_external.handlers data as provided by get_module_config()
