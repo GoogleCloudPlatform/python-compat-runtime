@@ -19,7 +19,8 @@ import os
 import threading
 from UserDict import UserDict
 
-from google.appengine.api import appinfo_includes
+import yaml
+
 from google.appengine.runtime import wsgi
 
 
@@ -33,7 +34,7 @@ def get_module_config_filename():
 def get_module_config(filename):
   """Returns the parsed module config."""
   with open(filename) as f:
-    return appinfo_includes.Parse(f)
+    return yaml.load(f)
 
 
 def app_for_script(script):
