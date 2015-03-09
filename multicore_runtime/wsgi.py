@@ -25,26 +25,26 @@ import os
 
 from dispatcher import dispatcher
 from middleware import reset_environment_middleware
-from wsgi_config import env_vars_from_appengine_config
+from wsgi_config import env_vars_from_env_config
 from wsgi_config import get_module_config
 from wsgi_config import get_module_config_filename
 from wsgi_config import load_user_scripts_into_handlers
 from wsgi_config import ThreadLocalDict
-from wsgi_config import user_env_vars_from_appinfo_external
+from wsgi_config import user_env_vars_from_appinfo
 
 from google.appengine.ext.vmruntime import vmconfig
 from google.appengine.ext.vmruntime import vmstub
 
 logging.basicConfig(level=logging.INFO)
 
-appinfo_external = get_module_config(get_module_config_filename())
-appengine_config = vmconfig.BuildVmAppengineEnvConfig()
+appinfo = get_module_config(get_module_config_filename())
+env_config = vmconfig.BuildVmAppengineEnvConfig()
 
 # Ensure API requests include a valid ticket by default.
-vmstub.Register(vmstub.VMStub(appengine_config.default_ticket))
+vmstub.Register(vmstub.VMStub(env_config.default_ticket))
 
 # Load user code.
-preloaded_handlers = load_user_scripts_into_handlers(appinfo_external.handlers)
+preloaded_handlers = load_user_scripts_into_handlers(appinfo.handlers)
 
 # Now that all scripts are fully imported, it is safe to use asynchronous
 # API calls.
@@ -57,16 +57,16 @@ vmstub.app_is_loaded = True
 frozen_environment = tuple(os.environ.iteritems())
 
 # Also freeze user env vars specified in app.yaml. Later steps to modify the
-# environment such as env_vars_from_appengine_config and request middleware
+# environment such as env_vars_from_env_config and request middleware
 # will overwrite these changes. This is added to the environment in
 # `reset_environment_middleware`.
 frozen_user_env = tuple(
-    user_env_vars_from_appinfo_external(appinfo_external).iteritems())
+    user_env_vars_from_appinfo(appinfo).iteritems())
 
-# Also freeze environment data from appengine_config. This is added to the
+# Also freeze environment data from env_config. This is added to the
 # environment in `reset_environment_middleware`.
-frozen_appengine_config_env = tuple(
-    env_vars_from_appengine_config(appengine_config).iteritems())
+frozen_env_config_env = tuple(
+    env_vars_from_env_config(env_config).iteritems())
 
 # Monkey-patch os.environ to be thread-local. This is for backwards
 # compatibility with GAE's use of environment variables to store request data.
@@ -86,4 +86,4 @@ meta_app = dispatcher(preloaded_handlers)
 # Reset os.environ to the frozen state and add request-specific data.
 meta_app = reset_environment_middleware(meta_app, frozen_environment,
                                         frozen_user_env,
-                                        frozen_appengine_config_env)
+                                        frozen_env_config_env)
