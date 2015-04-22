@@ -34,7 +34,7 @@ RESERVED_ENV_KEYS = {
 
 
 def reset_environment_middleware(app, frozen_environment, frozen_user_env,
-                                 frozen_appengine_config_env):
+                                 frozen_env_config_env):
   """Replace the contents of os.environ with a frozen env + request data.
 
   This requires a single-threaded webserver, or for os.environ to be patched to
@@ -47,7 +47,7 @@ def reset_environment_middleware(app, frozen_environment, frozen_user_env,
       `tuple(os.environ.iteritems())` produces appropriate output.
     frozen_user_env: An iterable of (key, value) tuples that can be used to
       populate os.environ with environment variables specified in app.yaml.
-    frozen_appengine_config_env: An iterable of (key, value) tuples that can be
+    frozen_env_config_env: An iterable of (key, value) tuples that can be
       used to populate os.environ with configuration-dependent env variables.
 
   Returns:
@@ -71,8 +71,8 @@ def reset_environment_middleware(app, frozen_environment, frozen_user_env,
     # Add in wsgi_env data, including request headers.
     os.environ.update(request_environment_for_wsgi_env(wsgi_env))
 
-    # Add in configuration data from appengine_config.
-    os.environ.update(frozen_appengine_config_env)
+    # Add in configuration data from env_config.
+    os.environ.update(frozen_env_config_env)
 
     # Add reserved keys, which draw from wsgi_env as well. These have a very
     # high priority and so are added nearly last.
