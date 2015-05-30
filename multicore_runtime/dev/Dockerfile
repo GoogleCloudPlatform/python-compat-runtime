@@ -1,26 +1,20 @@
-# Base Dockerfile for all AppEngine runtime implementations.
-FROM google/debian:wheezy
-# Clean any CMD that might be inherited from previous image, because that
-# will pollute our ENTRYPOINT, see
-# http://docs.docker.io/en/latest/reference/builder/#entrypoint.
-CMD []
-ENV DEBIAN_FRONTEND noninteractive
-RUN apt-get -q update && \
-  apt-get install --no-install-recommends -y -q ca-certificates net-tools lsof \
-    python2.7 python-pip python-gevent python-greenlet && \
-  apt-get -y -q upgrade && apt-get clean && rm /var/lib/apt/lists/*_*
+FROM gcr.io/google_appengine/base
 
-ADD python_vm_runtime.tar.gz /home/vmagent/python_vm_runtime
+RUN apt-get -q update && \
+  apt-get install --no-install-recommends -y -q \
+    python2.7 python-pip python-gevent python-greenlet && \
+  apt-get clean && rm /var/lib/apt/lists/*_*
+
+COPY python-runtime-0.1.tar.gz /home/vmagent/python-runtime.tar.gz
+
+RUN pip install --upgrade pip>=6.1.1 gunicorn==19.1.1
+RUN pip install /home/vmagent/python-runtime.tar.gz
 
 EXPOSE 8080
 
 RUN ln -s /home/vmagent/app /app
 WORKDIR /app
 
-RUN ln -s /home/vmagent/python_vm_runtime/google /home/vmagent/app/google
+ENTRYPOINT ["/usr/bin/env", "gunicorn", "-w", "4", "-k", "gevent", "-b", "0.0.0.0:8080", "google.appengine.vmruntime.wsgi:meta_app", "--log-file=-"]
 
-ENTRYPOINT ["/usr/bin/env", "gunicorn", "-w", "4", "-k", "gevent", "-b", "0.0.0.0:8080", "wsgi:meta_app", "--log-file=-"]
-
-ADD . /home/vmagent/app/
-
-RUN pip install -r base_requirements.txt
+ADD . /app
