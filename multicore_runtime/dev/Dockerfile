@@ -5,7 +5,7 @@ RUN apt-get -q update && \
     python2.7 python-pip python-gevent python-greenlet && \
   apt-get clean && rm /var/lib/apt/lists/*_*
 
-COPY python-runtime-0.1.tar.gz /home/vmagent/python-runtime.tar.gz
+COPY appengine-python-vm-runtime-0.1.tar.gz /home/vmagent/python-runtime.tar.gz
 
 RUN pip install --upgrade pip>=6.1.1 gunicorn==19.1.1
 RUN pip install /home/vmagent/python-runtime.tar.gz

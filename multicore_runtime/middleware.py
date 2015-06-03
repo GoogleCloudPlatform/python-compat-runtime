@@ -17,6 +17,9 @@
 import logging
 import os
 
+from werkzeug.wrappers import Request
+from werkzeug.wrappers import Response
+
 
 RESERVED_ENV_KEYS = {
     'AUTH_DOMAIN': 'gmail.com',  # Default auth domain must be set.
@@ -160,3 +163,23 @@ def get_env_to_hide_service_bridge(wsgi_env):
                     'SERVER_PORT', https)
 
   return output
+
+
+def health_check_middleware(app):
+  """Intercept requests to /_ah/health and respond healthy (200 OK).
+
+  Args:
+    app: The WSGI app to wrap.
+
+  Returns:
+    The wrapped app, also a WSGI app.
+  """
+
+  def health_check_intercept_wrapper(wsgi_env, start_response):  # pylint: disable=missing-docstring
+    request = Request(wsgi_env)
+    if request.path == '/_ah/health':  # Only intercept exact matches.
+      return Response('healthy', status=200)(wsgi_env, start_response)
+    else:
+      return app(wsgi_env, start_response)
+
+  return health_check_intercept_wrapper

@@ -25,6 +25,7 @@ import os
 
 from dispatcher import dispatcher
 from middleware import reset_environment_middleware
+from middleware import health_check_middleware
 from wsgi_config import env_vars_from_env_config
 from wsgi_config import get_module_config
 from wsgi_config import get_module_config_filename
@@ -82,6 +83,10 @@ meta_app = dispatcher(preloaded_handlers)
 # innermost layer of the middleware, and the last statement is the outermost
 # layer (the middleware code that will process a request first). Inside the
 # innermost layer is the actual dispatcher, above.
+
+# Intercept health check requests on /_ah/health. This is a temporary measure
+# until container-level health check handlers are in place and turned on.
+meta_app = health_check_middleware(meta_app)
 
 # Reset os.environ to the frozen state and add request-specific data.
 meta_app = reset_environment_middleware(meta_app, frozen_environment,
