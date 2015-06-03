@@ -282,9 +282,8 @@ final class CloudStorageWriteClient extends CloudStorageClient {
         for ($i = 0; $i < $object_length; $i += parent::DEFAULT_READ_SIZE) {
           $range = $this->getRangeHeader($i,
                                          $i + parent::DEFAULT_READ_SIZE - 1);
-          $key_names[] = sprintf(parent::MEMCACHE_KEY_FORMAT,
-                                 $this->url,
-                                 $range['Range']);
+          $key_names[] = static::getReadMemcacheKey($this->url,
+                                                    $range['Range']);
         }
         $memcached = new \Memcached();
         $memcached->deleteMulti($key_names);

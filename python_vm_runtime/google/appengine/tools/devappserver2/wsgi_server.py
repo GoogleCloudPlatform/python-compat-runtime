@@ -33,6 +33,7 @@ from cherrypy import wsgiserver
 
 from google.appengine.tools.devappserver2 import errors
 from google.appengine.tools.devappserver2 import http_runtime_constants
+from google.appengine.tools.devappserver2 import shutdown
 from google.appengine.tools.devappserver2 import thread_executor
 
 
@@ -139,7 +140,9 @@ class SelectThread(object):
       self._file_descriptor_to_callback = new_file_descriptor_to_callback
 
   def _loop_forever(self):
-    while True:
+    while shutdown and not shutdown.shutting_down():
+      # Check shutdown as it may be gc-ed during shutdown. See
+      # http://stackoverflow.com/questions/17084260/imported-modules-become-none-when-running-a-function
       self._select()
 
   def _select(self):

@@ -40,6 +40,10 @@ final class CloudStorageDeleteClient extends CloudStorageClient {
       return false;
     }
 
+    // Unlinking the file also removes it from the stat cache.
+    // See: http://php.net/manual/en/function.clearstatcache.php
+    clearstatcache(true, $this->filename);
+
     if ($http_response['status_code'] === HttpResponse::NO_CONTENT) {
       return true;
     } else {

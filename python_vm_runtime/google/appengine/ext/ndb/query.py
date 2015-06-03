@@ -1722,6 +1722,9 @@ class QueryIterator(object):
     if self._lookahead:
       return True
     if self._batch is not None:
+      # Check if the next element is part of the current batch.
+      if self._index + 1 < len(self._batch.results):
+        return True
       return self._batch.more_results
     return self.has_next()
 

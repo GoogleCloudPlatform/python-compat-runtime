@@ -263,7 +263,10 @@ class IntervalTimeSpecification(TimeSpecification):
     """
     if self.start_time is None:
 
-      return start + datetime.timedelta(seconds=self.seconds)
+
+
+      result = start + datetime.timedelta(seconds=self.seconds)
+      return result - datetime.timedelta(seconds=result.second)
 
 
     t = _ToTimeZone(start, self.timezone)
@@ -558,10 +561,6 @@ class SpecificTimeSpecification(TimeSpecification):
           == (start_time.year, start_time.month)):
 
         day_matches = [x for x in day_matches if x >= start_time.day]
-
-        while (day_matches and day_matches[0] == start_time.day
-               and start_time.time() >= self.time):
-          day_matches.pop(0)
       while day_matches:
 
         out = candidate_month.replace(day=day_matches[0], hour=self.time.hour,
@@ -577,27 +576,26 @@ class SpecificTimeSpecification(TimeSpecification):
 
 
 
-
           try:
             out = self.timezone.localize(out, is_dst=None)
           except AmbiguousTimeError:
 
-            out = self.timezone.localize(out)
+
+
+
+            start_utc = _ToTimeZone(start, pytz.utc)
+            dst_doubled_time_first_match_utc = _ToTimeZone(
+                self.timezone.localize(out, is_dst=True), pytz.utc)
+            if start_utc < dst_doubled_time_first_match_utc:
+              out = self.timezone.localize(out, is_dst=True)
+            else:
+              out = self.timezone.localize(out, is_dst=False)
           except NonExistentTimeError:
+            day_matches.pop(0)
+            continue
 
 
-
-
-
-
-            for _ in range(24):
-
-
-              out += datetime.timedelta(minutes=60)
-              try:
-                out = self.timezone.localize(out)
-              except NonExistentTimeError:
-
-                continue
-              break
-        return _ToTimeZone(out, start.tzinfo)
+        if start < _ToTimeZone(out, start.tzinfo):
+          return _ToTimeZone(out, start.tzinfo)
+        else:
+          day_matches.pop(0)

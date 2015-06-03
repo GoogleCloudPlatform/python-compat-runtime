@@ -31,6 +31,7 @@ import multiprocessing.dummy
 import os
 import sys
 import threading
+import traceback
 import urlparse
 
 from google.appengine.api import apiproxy_rpc
@@ -43,10 +44,6 @@ from google.appengine.runtime import apiproxy_errors
 
 
 requests = imp.load_module('requests_nologs', *imp.find_module('requests'))
-
-
-
-del sys.modules['requests_nologs']
 
 
 
@@ -69,9 +66,9 @@ SERVICE_DEADLINE_HEADER = 'X-Google-RPC-Service-Deadline'
 SERVICE_ENDPOINT_HEADER = 'X-Google-RPC-Service-Endpoint'
 SERVICE_METHOD_HEADER = 'X-Google-RPC-Service-Method'
 RPC_CONTENT_TYPE = 'application/octet-stream'
-DEFAULT_TIMEOUT = 5
+DEFAULT_TIMEOUT = 60
 
-DEADLINE_DELTA_SECONDS = 5
+DEADLINE_DELTA_SECONDS = 1
 
 
 
@@ -123,6 +120,39 @@ _DEADLINE_EXCEEDED_EXCEPTION = _EXCEPTIONS_MAP[
 
 
 
+app_is_loaded = False
+
+
+def CaptureStacktrace(func, *args, **kwargs):
+  """Ensure the trace is not discarded by appending it to the error message."""
+  try:
+    return func(*args, **kwargs)
+  except Exception as e:
+
+    raise type(e)(''.join(traceback.format_exception(*sys.exc_info())))
+
+
+class SyncResult(object):
+  """A class that emulates multiprocessing.AsyncResult.
+
+  This allows us to use the same API for getting results from both sync and
+  async API calls.
+  """
+
+  def __init__(self, value, success):
+    self.value = value
+    self.success = success
+
+  def get(self):
+    if self.success:
+      return self.value
+    else:
+      raise self.value
+
+
+
+
+
 
 class VMEngineRPC(apiproxy_rpc.RPC):
   """A class representing an RPC to a remote server."""
@@ -160,6 +190,12 @@ class VMEngineRPC(apiproxy_rpc.RPC):
     (multiprocessing.dummy.Pool). The thread pool restricts the number of
     concurrent requests to MAX_CONCURRENT_API_CALLS, so this method will
     block if that limit is exceeded, until other asynchronous calls resolve.
+
+    If the main thread holds the import lock, waiting on thread work can cause
+    a deadlock:
+    https://docs.python.org/2/library/threading.html#importing-in-threaded-code
+
+    Therefore, we try to detect this error case and fall back to sync calls.
     """
     assert self._state == apiproxy_rpc.RPC.IDLE, self._state
 
@@ -220,8 +256,20 @@ class VMEngineRPC(apiproxy_rpc.RPC):
 
 
 
-    self._result_future = self.stub.thread_pool.apply_async(
-        requests.post, kwds=request_kwargs)
+    if imp.lock_held() and not app_is_loaded:
+      try:
+        value = CaptureStacktrace(requests.post, **request_kwargs)
+        success = True
+      except Exception as e:
+        value = e
+        success = False
+      self._result_future = SyncResult(value, success)
+
+    else:
+
+
+      self._result_future = self.stub.thread_pool.apply_async(
+          CaptureStacktrace, args=[requests.post], kwds=request_kwargs)
 
   def _WaitImpl(self):
 
@@ -259,6 +307,9 @@ class VMEngineRPC(apiproxy_rpc.RPC):
 
 
         raise self._ErrorException(*_DEADLINE_EXCEEDED_EXCEPTION)
+      except requests.exceptions.RequestException:
+
+        raise self._ErrorException(*_DEFAULT_EXCEPTION)
 
 
       parsed_response = remote_api_pb.Response(response.content)

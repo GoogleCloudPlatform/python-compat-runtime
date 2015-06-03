@@ -160,8 +160,9 @@ class Win32FileWatcher(object):
     """Stop watching the directory for changes."""
     self._stop.set()
     # Note: this will unlock the blocking ReadDirectoryChangesW call.
-    ctypes.windll.kernel32.CloseHandle(self._directory_handle)
+    ctypes.windll.kernel32.CancelIoEx(self._directory_handle, None)
     self._thread.join()
+    ctypes.windll.kernel32.CloseHandle(self._directory_handle)
 
   def changes(self, timeout_ms=0):
     """Returns the paths changed in the watched directory since the last call.

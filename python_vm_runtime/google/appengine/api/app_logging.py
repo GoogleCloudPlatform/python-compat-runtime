@@ -16,9 +16,6 @@
 #
 
 
-
-
-
 """Logging utilities for use by applications.
 
 Classes defined here:
@@ -31,6 +28,7 @@ Classes defined here:
 
 
 
+import inspect
 import logging
 
 from google.appengine import runtime
@@ -41,6 +39,7 @@ from google.appengine.runtime import features
 
 
 NEWLINE_REPLACEMENT = "\0"
+
 
 class AppLogsHandler(logging.Handler):
   """Logging handler that will direct output to a persistent store of
@@ -67,12 +66,17 @@ class AppLogsHandler(logging.Handler):
     """Emit a record.
 
     This implementation is based on the implementation of
-    StreamHandler.emit()."""
+    StreamHandler.emit().
+
+    Args:
+      record: A Python logging.LogRecord object.
+    """
     try:
       if features.IsEnabled("LogServiceWriteRecord"):
         logservice.write_record(self._AppLogsLevel(record.levelno),
                                 record.created,
-                                self.format(record))
+                                self.format(record),
+                                self._AppLogsLocation())
       else:
         message = self._AppLogsMessage(record)
         if isinstance(message, unicode):
@@ -99,7 +103,7 @@ class AppLogsHandler(logging.Handler):
                                message)
 
   def _AppLogsLevel(self, level):
-    """Converts the logging level used in Python to the API logging level"""
+    """Converts the logging level used in Python to the API logging level."""
     if level >= logging.CRITICAL:
       return 4
     elif level >= logging.ERROR:
@@ -110,3 +114,18 @@ class AppLogsHandler(logging.Handler):
       return 1
     else:
       return 0
+
+  def _AppLogsLocation(self):
+    """Find the source location responsible for calling the logging API."""
+    if not features.IsEnabled("LogsWriteSourceLocation"):
+      return None
+
+    def IsLogging(f):
+      return f.f_code.co_filename.endswith("/logging/__init__.py")
+
+    f = inspect.currentframe()
+    while f and not IsLogging(f):
+      f = f.f_back
+    while f and IsLogging(f):
+      f = f.f_back
+    return inspect.getframeinfo(f)[:3] if f else None

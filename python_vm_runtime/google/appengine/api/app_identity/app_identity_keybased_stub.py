@@ -51,6 +51,9 @@ from google.appengine.api.app_identity import app_identity_stub
 from google.appengine.runtime import apiproxy_errors
 
 
+_DEFAULT_OAUTH_URL = 'https://accounts.google.com/o/oauth2/token'
+
+
 def BitStringToByteString(bs):
   """Convert a pyasn1.type.univ.BitString object to a string of bytes."""
   def BitsToInt(bits):
@@ -67,7 +70,8 @@ class KeyBasedAppIdentityServiceStub(app_identity_stub.AppIdentityServiceStub):
   THREADSAFE = True
 
   def __init__(self, service_name='app_identity_service',
-               email_address=None, private_key_path=None):
+               email_address=None, private_key_path=None,
+               oauth_url=None):
     """Constructor."""
     super(KeyBasedAppIdentityServiceStub, self).__init__(service_name)
     self.__x509_init_lock = threading.Lock()
@@ -94,6 +98,7 @@ class KeyBasedAppIdentityServiceStub(app_identity_stub.AppIdentityServiceStub):
     self.__access_token_cache = {}
     self.__x509 = None
     self.__signing_key = None
+    self.__oauth_url = oauth_url or _DEFAULT_OAUTH_URL
 
   def _PopulateX509(self):
     with self.__x509_init_lock:
@@ -195,7 +200,7 @@ class KeyBasedAppIdentityServiceStub(app_identity_stub.AppIdentityServiceStub):
           base64.urlsafe_b64encode(json.dumps({
               'iss': self.__email_address,
               'scope': scope,
-              'aud': 'https://accounts.google.com/o/oauth2/token',
+              'aud': self.__oauth_url,
               'exp': now + (60 * 60),
               'iat': now
           }).encode('UTF-8')).rstrip('='))
@@ -211,7 +216,7 @@ class KeyBasedAppIdentityServiceStub(app_identity_stub.AppIdentityServiceStub):
       })
 
       resp = urlfetch.fetch(
-          url='https://accounts.google.com/o/oauth2/token',
+          url=self.__oauth_url,
           validate_certificate=True,
           payload=message,
           method=urlfetch.POST,

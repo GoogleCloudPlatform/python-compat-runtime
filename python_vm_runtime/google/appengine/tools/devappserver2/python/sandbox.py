@@ -158,45 +158,26 @@ def enable_sandbox(config):
     if any(module_path.startswith(path) for module_path in module_paths):
       python_lib_paths.append(path)
   python_lib_paths.extend(_enable_libraries(config.libraries))
-  for name in list(sys.modules):
-    if not _should_keep_module(name):
-      _removed_modules.append(sys.modules[name])
-      del sys.modules[name]
+  # Note that the above code (see _find_shared_object_c_module) imports modules
+  # that must be pruned so please use care if you move the call to
+  # _prune_sys_modules.
+  _prune_sys_modules()
   path_override_hook = PathOverrideImportHook(
       set(_THIRD_PARTY_LIBRARY_NAME_OVERRIDES.get(lib.name, lib.name)
           for lib in config.libraries).intersection(_C_MODULES))
   python_lib_paths.extend(path_override_hook.extra_sys_paths)
-  stubs.FakeFile.set_allowed_paths(config.application_root,
-                                   python_lib_paths[1:] +
-                                   path_override_hook.extra_accessible_paths)
-  stubs.FakeFile.set_skip_files(config.skip_files)
-  stubs.FakeFile.set_static_files(config.static_files)
-  __builtin__.file = stubs.FakeFile
-  __builtin__.open = stubs.FakeFile
-  types.FileType = stubs.FakeFile
-  if _open_hooks:
-    for install_open_hook in _open_hooks:
-      install_open_hook()
-    # Assume installed open hooks don't enforce the sandbox path restrictions
-    # and install a final hook to do that (the goal of hooks is to allow
-    # alternate open techniques, not to circumvent the sandbox). It does mean
-    # that open requests that make it to FakeFile have their path checked
-    # twice but that doesn't break anything.
-    __builtin__.open = stubs.RestrictedPathFunction(__builtin__.open, IOError)
+  if not config.vm:
+    _install_fake_file(config, python_lib_paths, path_override_hook)
+    _install_open_hooks()
   sys.platform = 'linux3'
-  enabled_library_regexes = [
-      NAME_TO_CMODULE_WHITELIST_REGEX[lib.name] for lib in config.libraries
-      if lib.name in NAME_TO_CMODULE_WHITELIST_REGEX]
-  sys.meta_path = [
-      StubModuleImportHook(),
-      ModuleOverrideImportHook(_MODULE_OVERRIDE_POLICIES),
-      CModuleImportHook(enabled_library_regexes),
-      path_override_hook,
-      PyCryptoRandomImportHook,
-      PathRestrictingImportHook(enabled_library_regexes)
-      ]
+  _install_import_hooks(config, path_override_hook)
   sys.path_importer_cache = {}
-  sys.path = python_lib_paths[:]
+  if not config.vm:
+    sys.path = python_lib_paths[:]
+  else:
+    # Use anything present on the sys.path if the runtime is on a vm.
+    # This lets users use deps installed with pip.
+    sys.path.extend(python_lib_paths)
 
   thread = __import__('thread')
   __import__('%s.threading' % dist27.__name__)
@@ -217,6 +198,77 @@ def enable_sandbox(config):
   pdb_sandbox.install(config)
   sys.stdin = devnull
   sys.stdout = sys.stderr
+
+
+def _prune_sys_modules():
+  """Prune sandboxed modules from sys.modules."""
+  for name in list(sys.modules):
+    if not _should_keep_module(name):
+      _removed_modules.append(sys.modules[name])
+      del sys.modules[name]
+
+
+def _install_import_hooks(config, path_override_hook):
+  """Install runtime's import hooks.
+
+  These hooks customize the import process as per
+  https://docs.python.org/2/library/sys.html#sys.meta_path .
+
+  Args:
+    config: An apphosting/tools/devappserver2/runtime_config.proto
+        for this instance.
+    path_override_hook: A hook for importing special appengine
+        versions of select libraries from the libraries
+        section of the current module's app.yaml file.
+  """
+  if not config.vm:
+    enabled_library_regexes = [
+        NAME_TO_CMODULE_WHITELIST_REGEX[lib.name] for lib in config.libraries
+        if lib.name in NAME_TO_CMODULE_WHITELIST_REGEX]
+    sys.meta_path = [
+        StubModuleImportHook(),
+        ModuleOverrideImportHook(_MODULE_OVERRIDE_POLICIES),
+        CModuleImportHook(enabled_library_regexes),
+        path_override_hook,
+        PyCryptoRandomImportHook,
+        PathRestrictingImportHook(enabled_library_regexes)]
+  else:
+    sys.meta_path = [
+        # Picks up custom versions of certain system libraries.
+        StubModuleImportHook(),
+        # Picks up custom versions of certain libraries in the libraries section
+        #     of app.yaml
+        path_override_hook,
+        # Picks up a custom version of Crypto.Random.OSRNG.posix.
+        # TODO: Investigate removing this as it may not be needed
+        #     for vms since they are able to read /dev/urandom, I left it for
+        #     consistency.
+        PyCryptoRandomImportHook]
+
+
+def _install_fake_file(config, python_lib_paths, path_override_hook):
+  """Install a stub file implementation to enforce sandbox rules."""
+  stubs.FakeFile.set_allowed_paths(config.application_root,
+                                   python_lib_paths[1:] +
+                                   path_override_hook.extra_accessible_paths)
+  stubs.FakeFile.set_skip_files(config.skip_files)
+  stubs.FakeFile.set_static_files(config.static_files)
+  __builtin__.file = stubs.FakeFile
+  __builtin__.open = stubs.FakeFile
+  types.FileType = stubs.FakeFile
+
+
+def _install_open_hooks():
+  """Install open hooks for sandbox."""
+  if _open_hooks:
+    for install_open_hook in _open_hooks:
+      install_open_hook()
+    # Assume installed open hooks don't enforce the sandbox path restrictions
+    # and install a final hook to do that (the goal of hooks is to allow
+    # alternate open techniques, not to circumvent the sandbox). It does mean
+    # that open requests that make it to FakeFile have their path checked
+    # twice but that doesn't break anything.
+    __builtin__.open = stubs.RestrictedPathFunction(__builtin__.open, IOError)
 
 
 def _find_shared_object_c_module():

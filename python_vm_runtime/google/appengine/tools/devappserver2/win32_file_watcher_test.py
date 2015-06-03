@@ -50,6 +50,7 @@ class Win32FileWatcherTest(unittest.TestCase):
     ctypes.windll.kernel32 = self.mox.CreateMockAnything()
     ctypes.windll.kernel32.CreateFileW = self.mox.CreateMockAnything()
     ctypes.windll.kernel32.ReadDirectoryChangesW = self.mox.CreateMockAnything()
+    ctypes.windll.kernel32.CancelIoEx = self.mox.CreateMockAnything()
     ctypes.windll.kernel32.CloseHandle = self.mox.CreateMockAnything()
     ctypes.WinError = WinError
 
@@ -107,6 +108,7 @@ class Win32FileWatcherTest(unittest.TestCase):
         None,
         None).WithSideEffects(found_something).AndReturn(1)
 
+    ctypes.windll.kernel32.CancelIoEx(31415, None)
     ctypes.windll.kernel32.CloseHandle(31415)
 
     self.mox.ReplayAll()
@@ -143,6 +145,7 @@ class Win32FileWatcherTest(unittest.TestCase):
         None,
         None).WithSideEffects(found_nothing).AndReturn(-1)
 
+    ctypes.windll.kernel32.CancelIoEx(31415, None)
     ctypes.windll.kernel32.CloseHandle(31415)
 
     self.mox.ReplayAll()

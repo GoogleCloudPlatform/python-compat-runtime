@@ -26,7 +26,9 @@ one important one being a simple integration point for OAuth2 integration.
 import cStringIO
 import logging
 import os
+import random
 import re
+import time
 import types
 import urllib
 import urllib2
@@ -90,7 +92,7 @@ class HttpRpcServerHttpLib2(object):
   def __init__(self, host, auth_function, user_agent, source,
                host_override=None, extra_headers=None, save_cookies=False,
                auth_tries=None, account_type=None, debug_data=True, secure=True,
-               ignore_certs=False, rpc_tries=3):
+               ignore_certs=False, rpc_tries=3, conflict_max_errors=10):
     """Creates a new HttpRpcServerHttpLib2.
 
     Args:
@@ -110,6 +112,8 @@ class HttpRpcServerHttpLib2(object):
       ignore_certs: If the certificate mismatches should be ignored.
       rpc_tries: The number of rpc retries upon http server error (i.e.
         Response code >= 500 and < 600) before failing.
+      conflict_max_errors: The number of rpc retries upon http server error
+        (i.e. Response code 409) before failing.
     """
     self.host = host
     self.auth_function = auth_function
@@ -118,13 +122,14 @@ class HttpRpcServerHttpLib2(object):
     self.host_override = host_override
     self.extra_headers = extra_headers or {}
     self.save_cookies = save_cookies
-    self.auth_tries = auth_tries
+    self.auth_max_errors = auth_tries
     self.account_type = account_type
     self.debug_data = debug_data
     self.secure = secure
     self.ignore_certs = ignore_certs
-    self.rpc_tries = rpc_tries
+    self.rpc_max_errors = rpc_tries
     self.scheme = secure and 'https' or 'http'
+    self.conflict_max_errors = conflict_max_errors
 
     self.certpath = None
     self.cert_file_available = False
@@ -208,18 +213,21 @@ class HttpRpcServerHttpLib2(object):
     if self.host_override:
       headers['Host'] = self.host_override
 
-    tries = 0
-    auth_tries = [0]
+    rpc_errors = 0
+    auth_errors = [0]
+    conflict_errors = 0
 
     def NeedAuth():
       """Marker that we need auth; it'll actually be tried next time around."""
-      auth_tries[0] += 1
-      if auth_tries[0] > self.auth_tries:
+      auth_errors[0] += 1
+      logger.debug('Attempting to auth. This is try %s of %s.',
+                   auth_errors[0], self.auth_max_errors)
+      if auth_errors[0] > self.auth_max_errors:
         RaiseHttpError(url, response_info, response, 'Too many auth attempts.')
 
-    while tries < self.rpc_tries:
-      tries += 1
-      self._Authenticate(self.http, auth_tries[0] > 0)
+    while (rpc_errors < self.rpc_max_errors and
+           conflict_errors < self.conflict_max_errors):
+      self._Authenticate(self.http, auth_errors[0] > 0)
       logger.debug('Sending request to %s headers=%s body=%s',
                    url, headers,
                    self.debug_data and payload or payload and 'ELIDED' or '')
@@ -236,13 +244,23 @@ class HttpRpcServerHttpLib2(object):
       status = response_info.status
       if status == 200:
         return response
-      logger.debug('Got http error %s, this is try #%s',
-                   response_info.status, tries)
+      logger.debug('Got http error %s.', response_info.status)
       if status == 401:
         NeedAuth()
         continue
+      elif status == 409:
+        conflict_errors += 1
+
+        wait_time = random.randint(0, 10)
+        logger.debug('Got conflict error %s of %s. Retrying in %s seconds.',
+                     conflict_errors, self.conflict_max_errors, wait_time)
+        time.sleep(wait_time)
+        continue
       elif status >= 500 and status < 600:
 
+        rpc_errors += 1
+        logger.debug('Retrying. This is attempt %s of %s.',
+                     rpc_errors, self.rpc_max_errors)
         continue
       elif status == 302:
 
@@ -302,10 +320,19 @@ class HttpRpcServerOAuth2(HttpRpcServerHttpLib2):
       self.token_uri = token_uri
       self.credentials = credentials
 
+  class FlowFlags(object):
+
+    def __init__(self, options):
+      self.logging_level = logging.getLevelName(logging.getLogger().level)
+      self.noauth_local_webserver = (not options.auth_local_webserver
+                                     if options else True)
+      self.auth_host_port = [8080, 8090]
+      self.auth_host_name = 'localhost'
+
   def __init__(self, host, oauth2_parameters, user_agent, source,
                host_override=None, extra_headers=None, save_cookies=False,
                auth_tries=None, account_type=None, debug_data=True, secure=True,
-               ignore_certs=False, rpc_tries=3):
+               ignore_certs=False, rpc_tries=3, options=None):
     """Creates a new HttpRpcServerOAuth2.
 
     Args:
@@ -327,6 +354,7 @@ class HttpRpcServerOAuth2(HttpRpcServerHttpLib2):
       ignore_certs: If the certificate mismatches should be ignored.
       rpc_tries: The number of rpc retries upon http server error (i.e.
         Response code >= 500 and < 600) before failing.
+      options: the command line options.
     """
     super(HttpRpcServerOAuth2, self).__init__(
         host, None, user_agent, source, host_override=host_override,
@@ -363,6 +391,8 @@ class HttpRpcServerOAuth2(HttpRpcServerHttpLib2):
           self.user_agent)
     else:
       self.credentials = self.storage.get()
+
+    self.flags = self.FlowFlags(options)
 
   def _Authenticate(self, http, needs_auth):
     """Pre or Re-auth stuff...
@@ -406,7 +436,7 @@ class HttpRpcServerOAuth2(HttpRpcServerHttpLib2):
           client_secret=self.oauth2_parameters.client_secret,
           scope=_ScopesToString(self.oauth2_parameters.scope),
           user_agent=self.user_agent)
-      self.credentials = tools.run(flow, self.storage)
+      self.credentials = tools.run_flow(flow, self.storage, self.flags)
     if self.credentials and not self.credentials.invalid:
 
 

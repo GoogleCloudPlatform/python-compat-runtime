@@ -322,7 +322,8 @@ class URLFetchServiceStub(apiproxy_stub.APIProxyStub):
 
       adjusted_headers = {
           'User-Agent':
-          'AppEngine-Google; (+http://code.google.com/appengine)',
+          ('AppEngine-Google; (+http://code.google.com/appengine; appid: %s)'
+           % os.getenv('APPLICATION_ID')),
           'Host': host,
           'Accept-Encoding': 'gzip',
       }

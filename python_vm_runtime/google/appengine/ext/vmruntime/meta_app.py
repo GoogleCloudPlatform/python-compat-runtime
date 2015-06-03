@@ -34,6 +34,8 @@ import time
 import urlparse
 from wsgiref import handlers
 
+import requests
+
 from google.appengine.api import appinfo
 from google.appengine.api import appinfo_includes
 
@@ -41,6 +43,7 @@ from google.appengine.api import appinfo_includes
 from google.appengine.api.runtime import runtime
 
 from google.appengine.ext.vmruntime import middlewares
+from google.appengine.ext.vmruntime import vmstub
 from google.appengine.ext.webapp import util as webapp_util
 
 from google.appengine.runtime import wsgi
@@ -115,7 +118,11 @@ ENV_KEYS = [
     ]
 
 
+
 X_APPENGINE_USER_IP_ENV_KEY = 'HTTP_X_APPENGINE_USER_IP'
+
+X_GOOGLE_REAL_IP_ENV_KEY = 'HTTP_X_GOOGLE_REAL_IP'
+
 WSGI_REMOTE_ADDR_ENV_KEY = 'REMOTE_ADDR'
 
 
@@ -130,6 +137,16 @@ def _HandleShutdown():
 
   logging.info('Shutdown request received.')
   runtime.__BeginShutdown()
+
+
+def _QueryHealthCheckPath(app_health_check_path, headers):
+  parsed_path = urlparse.urlparse(app_health_check_path)
+  app_health_check_url = urlparse.urlunparse(
+      ('http', '127.0.0.1:8080', parsed_path.path,
+       parsed_path.params, parsed_path.query, parsed_path.fragment)
+  )
+  return requests.get(app_health_check_url, allow_redirects=False,
+                      headers=headers)
 
 
 class StopHandler(webapp2.RequestHandler):
@@ -390,12 +407,17 @@ class MetaWSGIApp(object):
 
     vm_runtime = self.appinfo_external.vm_settings.get('vm_runtime')
     if vm_runtime in ['python27', 'custom']:
-      return _AppFrom27StyleScript(script)
+      app = _AppFrom27StyleScript(script)
     elif vm_runtime == 'python':
       with _MockedWsgiHandler.python_25_app_lock:
-        return _AppFrom25StyleScript(script)
+        app = _AppFrom25StyleScript(script)
     else:
       raise ValueError('Unexpected runtime: %s' % vm_runtime)
+
+
+    vmstub.app_is_loaded = True
+
+    return app
 
 
 
@@ -403,10 +425,10 @@ class MetaWSGIApp(object):
     """Handle one request."""
 
 
-    remote_addr = env.get(WSGI_REMOTE_ADDR_ENV_KEY, '')
+    remote_addr = (env.get(X_GOOGLE_REAL_IP_ENV_KEY, '') or
+                   env.get(WSGI_REMOTE_ADDR_ENV_KEY, ''))
     path = env['PATH_INFO']
-    if remote_addr == '127.0.0.1' and path == '/_ah/stop':
-
+    if path == '/_ah/stop':
 
 
       return self.ServeApp(internal_app, 'internal', env, start_response)
@@ -451,14 +473,16 @@ class MetaWSGIApp(object):
   def ServeHealthCheck(self, env, start_response, remote_addr):
     """Serve health checks.
 
-    It handles two cases:
-    1. The request comes locally:
+    It handles three cases:
+    1. MVM agent is handling health check complexity:
+       (1) Return ok with a 200.
+    2. The request comes locally:
        (1) The IsLastSuccessful parameter will be ignored.
        (2) If there is no the previous remote check with IsLastHealthy, or that
            check has passed longer than self.check_interval_sec, it will return
            unhealthy.
        (3) Otherwise, returns status based value of self.is_last_successful.
-    2. The request comes remotely:
+    3. The request comes remotely:
        (1) If there is no IsLastSuccessful parameter, just return status from
            HealthHandler.
        (2) Otherwise, it sets self.is_last_successful based on the value of
@@ -473,6 +497,9 @@ class MetaWSGIApp(object):
     Returns:
       The WSGI body text iterable.
     """
+    if os.environ.get('USE_MVM_AGENT') == 'true':
+      start_response('200 OK', [])
+      return ['ok']
     query_string = env.get('QUERY_STRING', '')
     parameters = urlparse.parse_qs(query_string)
 
@@ -501,6 +528,7 @@ class MetaWSGIApp(object):
         if not remote_check_valid:
           logging.warning('unhealthy because remote health check is not valid.')
         return ['unhealthy']
+
     else:
       if is_last_successful_list is not None:
         if is_last_successful_list[0].lower() == 'yes':

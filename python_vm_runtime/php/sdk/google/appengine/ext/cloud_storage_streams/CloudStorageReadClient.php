@@ -142,7 +142,7 @@ final class CloudStorageReadClient extends CloudStorageClient {
         $whence = SEEK_SET;
         $offset = $this->object_total_length + $offset;
       } else {
-        trigger_error("Unable to seek from end for objects with unkonwn size",
+        trigger_error("Unable to seek from end for objects with unknown size",
                       E_USER_WARNING);
         return false;
       }
@@ -225,7 +225,7 @@ final class CloudStorageReadClient extends CloudStorageClient {
       return parent::makeHttpRequest($url, $method, $headers, $body);
     }
 
-    $cache_key = sprintf(parent::MEMCACHE_KEY_FORMAT, $url, $headers['Range']);
+    $cache_key = static::getReadMemcacheKey($url, $headers['Range']);
     $cache_obj = $this->memcache_client->get($cache_key);
     if (false !== $cache_obj) {
       if ($this->context_options['enable_optimistic_cache']) {

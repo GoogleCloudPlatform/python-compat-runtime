@@ -73,7 +73,7 @@ class _HealthCheckState(object):
 class HealthChecker(object):
   """A class to perform health checks for an instance.
 
-  This class uses the settings specified in appinfo.VmHealthCheck and the
+  This class uses the settings specified in appinfo.HealthCheck and the
   callback specified to check the health of the specified instance. When
   appropriate, this class changes the state of the specified instance so it is
   placed into or taken out of load balancing. This class will also use another
@@ -85,7 +85,7 @@ class HealthChecker(object):
 
     Args:
       instance: An instance.Instance object.
-      config: An appinfo.VmHealthCheck object.
+      config: An appinfo.HealthCheck object.
       send_request: A function to call that makes the health check request.
       restart: A function to call that restarts the instance.
     """
@@ -159,7 +159,7 @@ class HealthChecker(object):
     logging.debug('Health check response %s and status %s for instance %s.',
                   response, start_response.status, self._instance.instance_id)
 
-    return response == ['ok'] and start_response.status == '200 OK'
+    return start_response.status.split()[0] == '200'
 
   def _restart_instance(self):
     """Restarts the running instance, and stops the current health checker."""

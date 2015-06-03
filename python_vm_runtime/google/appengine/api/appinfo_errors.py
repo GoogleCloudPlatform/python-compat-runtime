@@ -43,6 +43,14 @@ class MultipleConfigurationFile(Error):
   """Tried to load configuration file with multiple AppInfo objects"""
 
 
+class MultipleProjectNames(Error):
+  """Configuration file had both "application:" and "project:" fields.
+
+  A configuration file can specify the project name using either the old-style
+  "application: name" syntax or the newer "project: name" syntax, but not both.
+  """
+
+
 class UnknownHandlerType(Error):
   """Raised when it is not possible to determine URL mapping type."""
 

@@ -29,6 +29,7 @@ import copy
 import json
 import logging
 import urllib
+import zlib
 
 from google.appengine.tools.devappserver2 import util
 
@@ -57,6 +58,10 @@ class ApiRequest(object):
     self.path = environ['PATH_INFO']
     self.query = environ.get('QUERY_STRING')
     self.body = environ['wsgi.input'].read()
+    if self.body and self.headers.get('CONTENT-ENCODING') == 'gzip':
+      # Increasing wbits to 16 + MAX_WBITS is necessary to be able to decode
+      # gzipped content (as opposed to zlib-encoded content).
+      self.body = zlib.decompress(self.body, 16 + zlib.MAX_WBITS)
     self.source_ip = environ.get('REMOTE_ADDR')
     self.relative_url = self._reconstruct_relative_url(environ)
 

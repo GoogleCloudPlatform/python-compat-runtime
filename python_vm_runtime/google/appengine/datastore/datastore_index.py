@@ -14,8 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-
-
 """Primitives for dealing with datastore indexes.
 
 Example index.yaml file:
@@ -48,14 +46,9 @@ indexes:
 - kind: Mountain
   properties:
   - name: name
-    mode: segment
   - name: location
     mode: geospatial
 """
-
-
-
-
 
 
 
@@ -80,44 +73,40 @@ from google.appengine.api import yaml_object
 from google.appengine.datastore import datastore_pb
 
 
+
+
+
+
+
 class Property(validation.Validated):
   """Representation for an individual property of an index.
-
-  This class must be kept in sync with
-  java/com/google/apphosting/utils/config/IndexYamlReader.java.
 
   Attributes:
     name: Name of attribute to sort by.
     direction: Direction of sort.
-    mode: How the property is indexed. Either 'geospatial', 'segment'
+    mode: How the property is indexed. Either 'geospatial'
         or None (unspecified).
   """
 
   ATTRIBUTES = {
       'name': validation.Type(str, convert=False),
-      'direction': validation.Options(('asc', ('ascending',)),
-                                      ('desc', ('descending',)),
-                                      default='asc'),
-      'mode': validation.Optional(['geospatial', 'segment']),
+      'direction': validation.Optional([('asc', ('ascending',)),
+                                        ('desc', ('descending',))]),
+      'mode': validation.Optional(['geospatial'])
   }
 
-  def __init__(self, **attributes):
-
-    object.__setattr__(self, '_is_set', set([]))
-    super(Property, self).__init__(**attributes)
-
-  def __setattr__(self, key, value):
-    self._is_set.add(key)
-    super(Property, self).__setattr__(key, value)
-
   def IsAscending(self):
+
+
+
+
     return self.direction != 'desc'
 
   def CheckInitialized(self):
-    if ('direction' in self._is_set and
-        self.mode in ['geospatial', 'segment']):
-      raise validation.ValidationError('Direction on a %s-mode '
-                                       'property is not allowed.' % self.mode)
+    if self.direction is not None and self.mode is not None:
+      raise validation.ValidationError(
+          'direction and mode are mutually exclusive')
+    super(Property, self).CheckInitialized()
 
 
 def _PropertyPresenter(dumper, prop):
@@ -137,13 +126,12 @@ def _PropertyPresenter(dumper, prop):
 
   prop_copy = copy.copy(prop)
 
-  del prop_copy._is_set
 
-
-  if prop.mode is not None:
-    del prop_copy.direction
-  else:
+  if prop.mode is None:
     del prop_copy.mode
+
+  if prop.direction is None:
+    del prop_copy.direction
 
   return dumper.represent_object(prop_copy)
 
@@ -153,12 +141,12 @@ yaml.add_representer(Property, _PropertyPresenter)
 class Index(validation.Validated):
   """Individual index definition.
 
-  Order of the properties determines a given indexes sort priority.
+  Order of the properties determines a given index's sort priority.
 
   Attributes:
     kind: Datastore kind that index belongs to.
     ancestors: Include ancestors in index.
-    properties: Properties to sort on.
+    properties: Properties to be included.
   """
 
   ATTRIBUTES = {
@@ -166,6 +154,24 @@ class Index(validation.Validated):
       'ancestor': validation.Type(bool, convert=False, default=False),
       'properties': validation.Optional(validation.Repeated(Property)),
   }
+
+  def CheckInitialized(self):
+    self._Normalize()
+    super(Index, self).CheckInitialized()
+
+  def _Normalize(self):
+    if self.properties is None:
+      return
+    is_geo = any(x.mode == 'geospatial' for x in self.properties)
+    for p in self.properties:
+      if is_geo:
+        if p.direction is not None:
+          raise validation.ValidationError(
+              'direction not supported in a geospatial index')
+      else:
+
+        if p.IsAscending():
+          p.direction = 'asc'
 
 
 class IndexDefinitions(validation.Validated):
@@ -850,14 +856,19 @@ def IndexDefinitionToProto(app_id, index_definition):
   definition_proto.set_ancestor(index_definition.ancestor)
 
   if index_definition.properties is not None:
+    is_geo = any(x.mode == 'geospatial' for x in index_definition.properties)
     for prop in index_definition.properties:
       prop_proto = definition_proto.add_property()
       prop_proto.set_name(prop.name)
 
       if prop.mode == 'geospatial':
         prop_proto.set_mode(entity_pb.Index_Property.GEOSPATIAL)
-      elif prop.mode == 'segment':
-        prop_proto.set_mode(entity_pb.Index_Property.SEGMENT)
+      elif is_geo:
+
+
+
+
+        pass
       elif prop.IsAscending():
         prop_proto.set_direction(entity_pb.Index_Property.ASCENDING)
       else:
@@ -897,8 +908,6 @@ def ProtoToIndexDefinition(proto):
 
     if prop_proto.mode() == entity_pb.Index_Property.GEOSPATIAL:
       prop_definition.mode = 'geospatial'
-    elif prop_proto.mode() == entity_pb.Index_Property.SEGMENT:
-      prop_definition.mode = 'segment'
     elif prop_proto.direction() == entity_pb.Index_Property.DESCENDING:
       prop_definition.direction = 'desc'
     elif prop_proto.direction() == entity_pb.Index_Property.ASCENDING:

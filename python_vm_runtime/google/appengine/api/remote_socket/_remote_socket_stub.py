@@ -207,7 +207,7 @@ class RemoteSocketServiceStub(apiproxy_stub.APIProxyStub):
     if request.has_remote_ip():
       sock.connect(self._AddressPortTupleFromProto(family, request.remote_ip()))
 
-    descriptor = str(uuid.uuid1())
+    descriptor = str(uuid.uuid4())
     state = SocketState(family, protocol, sock, self._time())
     with self._mutex:
       self._descriptor_to_socket_state[descriptor] = state

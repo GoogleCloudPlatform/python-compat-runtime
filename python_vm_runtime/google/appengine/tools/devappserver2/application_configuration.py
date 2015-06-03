@@ -144,6 +144,13 @@ class ModuleConfiguration(object):
 
     self._forwarded_ports = {}
     if self.runtime == 'vm':
+      # Java uses an api_version of 1.0 where everyone else uses just 1.
+      # That doesn't matter much elsewhere, but it does pain us with VMs
+      # because they recognize api_version 1 not 1.0.
+      # TODO: sort out this situation better, probably by changing
+      # Java to use 1 like everyone else.
+      if self._api_version == '1.0':
+        self._api_version = '1'
       vm_settings = self._app_info_external.vm_settings
       ports = None
       if vm_settings:
@@ -151,17 +158,26 @@ class ModuleConfiguration(object):
       if not ports:
         if (self._app_info_external.network and
             self._app_info_external.network.forwarded_ports):
-          ports = ','.join(self._app_info_external.network.forwarded_ports)
+          # Depending on the YAML formatting, these may be strings or ints.
+          # Force them to be strings.
+          ports = ','.join(
+              str(p) for p in self._app_info_external.network.forwarded_ports)
       if ports:
         logging.debug('setting forwarded ports %s', ports)
         pm = port_manager.PortManager()
         pm.Add(ports, 'forwarded')
-        self._forwarded_ports = pm.GetAllMappedPorts()
+        self._forwarded_ports = pm.GetAllMappedPorts()['tcp']
 
     self._translate_configuration_files()
 
-    self._vm_health_check = _set_health_check_defaults(
-        self._app_info_external.vm_health_check)
+    # vm_health_check is deprecated but it still needs to be taken into account
+    # if it is populated.
+    if self._app_info_external.health_check is not None:
+      health_check = self._app_info_external.health_check
+    else:
+      health_check = self._app_info_external.vm_health_check
+
+    self._health_check = _set_health_check_defaults(health_check)
 
   @property
   def application_root(self):
@@ -274,8 +290,8 @@ class ModuleConfiguration(object):
     return self._config_path
 
   @property
-  def vm_health_check(self):
-    return self._vm_health_check
+  def health_check(self):
+    return self._health_check
 
   def check_for_updates(self):
     """Return any configuration changes since the last check_for_updates call.
@@ -452,24 +468,24 @@ class ModuleConfiguration(object):
         f.write(queue_yaml)
 
 
-def _set_health_check_defaults(vm_health_check):
-  """Sets default values for any missing attributes in VmHealthCheck.
+def _set_health_check_defaults(health_check):
+  """Sets default values for any missing attributes in HealthCheck.
 
   These defaults need to be kept up to date with the production values in
-  vm_health_check.cc
+  health_check.cc
 
   Args:
-    vm_health_check: An instance of appinfo.VmHealthCheck or None.
+    health_check: An instance of appinfo.HealthCheck or None.
 
   Returns:
-    An instance of appinfo.VmHealthCheck
+    An instance of appinfo.HealthCheck
   """
-  if not vm_health_check:
-    vm_health_check = appinfo.VmHealthCheck()
+  if not health_check:
+    health_check = appinfo.HealthCheck()
   for k, v in _HEALTH_CHECK_DEFAULTS.iteritems():
-    if getattr(vm_health_check, k) is None:
-      setattr(vm_health_check, k, v)
-  return vm_health_check
+    if getattr(health_check, k) is None:
+      setattr(health_check, k, v)
+  return health_check
 
 
 class BackendsConfiguration(object):
@@ -673,8 +689,8 @@ class BackendConfiguration(object):
     return self._module_configuration.config_path
 
   @property
-  def vm_health_check(self):
-    return self._module_configuration.vm_health_check
+  def health_check(self):
+    return self._module_configuration.health_check
 
   def check_for_updates(self):
     """Return any configuration changes since the last check_for_updates call.
@@ -750,6 +766,8 @@ class ApplicationConfiguration(object):
           or to directories containing them.
       app_id: A string that is the application id, or None if the application id
           from the yaml or xml file should be used.
+    Raises:
+      InvalidAppConfigError: On invalid configuration.
     """
     self.modules = []
     self.dispatch = None
@@ -838,6 +856,9 @@ class ApplicationConfiguration(object):
 
     Args:
       dir_path: a string that is the path to a directory.
+
+    Raises:
+      AppConfigNotFoundError: If the application configuration is not found.
 
     Returns:
       A list of strings that are file paths.

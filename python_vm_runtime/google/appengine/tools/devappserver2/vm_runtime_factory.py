@@ -23,7 +23,6 @@ import google
 from google.appengine.api import appinfo
 from google.appengine.tools.devappserver2 import instance
 from google.appengine.tools.devappserver2 import vm_runtime_proxy
-from google.appengine.tools.devappserver2 import vm_runtime_proxy_dart
 from google.appengine.tools.devappserver2 import vm_runtime_proxy_go
 from google.appengine.tools.docker import containers
 
@@ -45,7 +44,6 @@ class VMRuntimeInstanceFactory(instance.InstanceFactory):
       login='admin')
 
   RUNTIME_SPECIFIC_PROXY = {
-      'dart': vm_runtime_proxy_dart.DartVMRuntimeProxy,
       'go': vm_runtime_proxy_go.GoVMRuntimeProxy,
   }
 

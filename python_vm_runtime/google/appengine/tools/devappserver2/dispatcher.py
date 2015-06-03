@@ -76,13 +76,15 @@ class Dispatcher(request_info.Dispatcher):
                php_config,
                python_config,
                java_config,
+               custom_config,
                cloud_sql_config,
                vm_config,
                module_to_max_instances,
                use_mtime_file_watcher,
                automatic_restart,
                allow_skipped_files,
-               module_to_threadsafe_override):
+               module_to_threadsafe_override,
+               external_port):
     """Initializer for Dispatcher.
 
     Args:
@@ -103,6 +105,9 @@ class Dispatcher(request_info.Dispatcher):
           used.
       java_config: A runtime_config_pb2.JavaConfig instance containing Java
           runtime-specific configuration. If None then defaults are used.
+      custom_config: A runtime_config_pb2.CustomConfig instance. If None, or
+          'custom_entrypoint' is not set, then attempting to instantiate a
+          custom runtime module will result in an error.
       cloud_sql_config: A runtime_config_pb2.CloudSQL instance containing the
           required configuration for local Google Cloud SQL development. If None
           then Cloud SQL will not be available.
@@ -116,18 +121,23 @@ class Dispatcher(request_info.Dispatcher):
           monitor file changes even if other options are available on the
           current platform.
       automatic_restart: If True then instances will be restarted when a
-          file or configuration change that effects them is detected.
+          file or configuration change that affects them is detected.
       allow_skipped_files: If True then all files in the application's directory
           are readable, even if they appear in a static handler or "skip_files"
           directive.
       module_to_threadsafe_override: A mapping between the module name and what
           to override the module's YAML threadsafe configuration (so modules
           not named continue to use their YAML configuration).
+      external_port: The port on which the single external module is expected
+          to listen, or None if there are no external modules. This will later
+          be changed so that the association between external modules and their
+          ports is more flexible.
     """
     self._configuration = configuration
     self._php_config = php_config
     self._python_config = python_config
     self._java_config = java_config
+    self._custom_config = custom_config
     self._cloud_sql_config = cloud_sql_config
     self._vm_config = vm_config
     self._request_data = None
@@ -152,6 +162,7 @@ class Dispatcher(request_info.Dispatcher):
     self._module_to_threadsafe_override = module_to_threadsafe_override
     self._executor = scheduled_executor.ScheduledExecutor(_THREAD_POOL)
     self._port_registry = PortRegistry()
+    self._external_port = external_port
 
   def start(self, api_host, api_port, request_data):
     """Starts the configured modules.
@@ -228,40 +239,45 @@ class Dispatcher(request_info.Dispatcher):
         module_configuration.module_name)
     threadsafe_override = self._module_to_threadsafe_override.get(
         module_configuration.module_name)
-    module_args = (module_configuration,
-                   self._host,
-                   port,
-                   self._api_host,
-                   self._api_port,
-                   self._auth_domain,
-                   self._runtime_stderr_loglevel,
-                   self._php_config,
-                   self._python_config,
-                   self._java_config,
-                   self._cloud_sql_config,
-                   self._vm_config,
-                   self._port,
-                   self._port_registry,
-                   self._request_data,
-                   self,
-                   max_instances,
-                   self._use_mtime_file_watcher,
-                   self._automatic_restart,
-                   self._allow_skipped_files,
-                   threadsafe_override)
 
-    # TODO: Remove this 'or' statement when we support auto-scaled VMs.
-    if (module_configuration.manual_scaling or
-        module_configuration.runtime == 'vm'):
-      _module = module.ManualScalingModule(*module_args)
+    if self._external_port:
+      # TODO: clean this up
+      module_configuration.external_port = self._external_port
+      module_class = module.ExternalModule
+    elif (module_configuration.manual_scaling or
+          module_configuration.runtime == 'vm'):
+      # TODO: Remove this 'or' when we support auto-scaled VMs.
+      module_class = module.ManualScalingModule
     elif module_configuration.basic_scaling:
-      _module = module.BasicScalingModule(*module_args)
+      module_class = module.BasicScalingModule
     else:
-      _module = module.AutoScalingModule(*module_args)
+      module_class = module.AutoScalingModule
 
-    if port != 0:
-      port += 1
-    return _module, port
+    module_instance = module_class(
+        module_configuration=module_configuration,
+        host=self._host,
+        balanced_port=port,
+        api_host=self._api_host,
+        api_port=self._api_port,
+        auth_domain=self._auth_domain,
+        runtime_stderr_loglevel=self._runtime_stderr_loglevel,
+        php_config=self._php_config,
+        python_config=self._python_config,
+        custom_config=self._custom_config,
+        java_config=self._java_config,
+        cloud_sql_config=self._cloud_sql_config,
+        vm_config=self._vm_config,
+        default_version_port=self._port,
+        port_registry=self._port_registry,
+        request_data=self._request_data,
+        dispatcher=self,
+        max_instances=max_instances,
+        use_mtime_file_watcher=self._use_mtime_file_watcher,
+        automatic_restarts=self._automatic_restart,
+        allow_skipped_files=self._allow_skipped_files,
+        threadsafe_override=threadsafe_override)
+
+    return module_instance, (0 if port == 0 else port + 1)
 
   @property
   def modules(self):
@@ -633,9 +649,13 @@ class Dispatcher(request_info.Dispatcher):
                                     start_response,
                                     _module,
                                     inst)
+
+    # merged_response can have side effects which modify start_response.*, so
+    # we cannot safely inline it into the ResponseTuple initialization below.
+    merged = start_response.merged_response(response)
     return request_info.ResponseTuple(start_response.status,
                                       start_response.response_headers,
-                                      start_response.merged_response(response))
+                                      merged)
 
   def _resolve_target(self, hostname, path):
     """Returns the module and instance that should handle this request.

@@ -98,7 +98,7 @@ class ProtocolMessage:
 
     try:
       return self._CEncode()
-    except NotImplementedError:
+    except (NotImplementedError, AttributeError):
       e = Encoder()
       self.Output(e)
       return e.buffer().tostring()
@@ -159,7 +159,7 @@ class ProtocolMessage:
 
     try:
       self._CMergeFromString(s)
-    except NotImplementedError:
+    except (NotImplementedError, AttributeError):
 
 
       a = array.array('B')
