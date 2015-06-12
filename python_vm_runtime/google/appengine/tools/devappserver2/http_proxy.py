@@ -36,7 +36,8 @@ from google.appengine.tools.devappserver2 import util
 class HttpProxy:
   """Forwards HTTP requests to an application instance."""
   def __init__(self, host, port, instance_died_unexpectedly,
-               instance_logs_getter, error_handler_file, prior_error=None):
+               instance_logs_getter, error_handler_file, prior_error=None,
+               request_id_header_name=None):
     """Initializer for HttpProxy.
 
     Args:
@@ -53,6 +54,8 @@ class HttpProxy:
           instance). In case prior_error is not None handle will always return
           corresponding error message without even trying to connect to the
           instance.
+      request_id_header_name: Optional string name used to pass request ID to
+          API server.  Defaults to http_runtime_constants.REQUEST_ID_HEADER.
     """
     self._host = host
     self._port = port
@@ -60,6 +63,9 @@ class HttpProxy:
     self._instance_logs_getter = instance_logs_getter
     self._error_handler_file = error_handler_file
     self._prior_error = prior_error
+    self.request_id_header_name = request_id_header_name
+    if self.request_id_header_name is None:
+      self.request_id_header_name = http_runtime_constants.REQUEST_ID_HEADER
 
   def _respond_with_error(self, message, start_response):
     instance_logs = self._instance_logs_getter()
@@ -135,7 +141,7 @@ class HttpProxy:
       headers['CONTENT-LENGTH'] = environ['CONTENT_LENGTH']
       data = environ['wsgi.input'].read(int(environ['CONTENT_LENGTH']))
     else:
-      data = ''
+      data = None
 
     cookies = environ.get('HTTP_COOKIE')
     user_email, admin, user_id = login.get_user_info(cookies)
@@ -144,7 +150,7 @@ class HttpProxy:
     else:
       nickname = ''
       organization = ''
-    headers[http_runtime_constants.REQUEST_ID_HEADER] = request_id
+    headers[self.request_id_header_name] = request_id
     headers[http_runtime_constants.APPENGINE_HEADER_PREFIX + 'User-Id'] = (
         user_id)
     headers[http_runtime_constants.APPENGINE_HEADER_PREFIX + 'User-Email'] = (

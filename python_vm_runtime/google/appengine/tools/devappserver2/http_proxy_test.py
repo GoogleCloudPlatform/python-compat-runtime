@@ -106,7 +106,7 @@ class HttpProxyTest(wsgi_test_utils.WSGITestCase):
     login.get_user_info(None).AndReturn(('', False, ''))
     httplib.HTTPConnection.connect()
     httplib.HTTPConnection.request(
-        'GET', '/get%20request?key=value', '',
+        'GET', '/get%20request?key=value', None,
         {'HEADER': 'value',
          http_runtime_constants.REQUEST_ID_HEADER: 'request id',
          'X-AppEngine-Country': 'ZZ',
@@ -203,7 +203,7 @@ class HttpProxyTest(wsgi_test_utils.WSGITestCase):
     login.get_user_info(None).AndReturn(('', False, ''))
     httplib.HTTPConnection.connect()
     httplib.HTTPConnection.request(
-        'GET', '/get%20error', '',
+        'GET', '/get%20error', None,
         {'HEADER': 'value',
          http_runtime_constants.REQUEST_ID_HEADER: 'request id',
          'X-AppEngine-Country': 'ZZ',
@@ -251,7 +251,7 @@ class HttpProxyTest(wsgi_test_utils.WSGITestCase):
     login.get_user_info(None).AndReturn(('', False, ''))
     httplib.HTTPConnection.connect()
     httplib.HTTPConnection.request(
-        'GET', '/get%20error', '',
+        'GET', '/get%20error', None,
         {'HEADER': 'value',
          http_runtime_constants.REQUEST_ID_HEADER: 'request id',
          'X-AppEngine-Country': 'ZZ',
@@ -298,7 +298,7 @@ class HttpProxyTest(wsgi_test_utils.WSGITestCase):
     login.get_user_info(None).AndReturn(('', False, ''))
     httplib.HTTPConnection.connect()
     httplib.HTTPConnection.request(
-        'GET', '/get%20error', '',
+        'GET', '/get%20error', None,
         {'HEADER': 'value',
          http_runtime_constants.REQUEST_ID_HEADER: 'request id',
          'X-AppEngine-Country': 'ZZ',
@@ -349,7 +349,7 @@ class HttpProxyTest(wsgi_test_utils.WSGITestCase):
     login.get_user_info(None).AndReturn(('', False, ''))
     httplib.HTTPConnection.connect()
     httplib.HTTPConnection.request(
-        'GET', '/get%20request?key=value', '',
+        'GET', '/get%20request?key=value', None,
         {'HEADER': 'value',
          http_runtime_constants.REQUEST_ID_HEADER: 'request id',
          'X-AppEngine-Country': 'ZZ',
@@ -403,7 +403,7 @@ class HttpProxyTest(wsgi_test_utils.WSGITestCase):
     login.get_user_info(None).AndReturn(('', False, ''))
     httplib.HTTPConnection.connect()
     httplib.HTTPConnection.request(
-        'GET', '/get%20request?key=value', '',
+        'GET', '/get%20request?key=value', None,
         {'HEADER': 'value',
          http_runtime_constants.REQUEST_ID_HEADER: 'request id',
          'X-AppEngine-Country': 'ZZ',
@@ -485,7 +485,7 @@ class HttpProxyTest(wsgi_test_utils.WSGITestCase):
     login.get_user_info(None).AndReturn(('', False, ''))
     httplib.HTTPConnection.connect()
     httplib.HTTPConnection.request(
-        'GET', '/get%20request?key=value', '',
+        'GET', '/get%20request?key=value', None,
         {'HEADER': 'value',
          http_runtime_constants.REQUEST_ID_HEADER: 'request id',
          'X-AppEngine-Country': 'ZZ',

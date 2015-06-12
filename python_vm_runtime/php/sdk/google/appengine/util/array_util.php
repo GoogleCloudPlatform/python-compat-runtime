@@ -22,7 +22,8 @@ namespace google\appengine\util;
 
 final class ArrayUtil {
   /**
-   * Find an item in a hash table by a key value, or return null if not found.
+   * Find an item in an associative array by a key value, or return null if not
+   * found.
    *
    * @param array $array - The array to search
    * @param mixed $key - The key to search for.
@@ -31,9 +32,25 @@ final class ArrayUtil {
    * or null if not found.
    */
   public static function findByKeyOrNull($array, $key) {
+    return static::findByKeyOrDefault($array, $key, null);
+  }
+
+  /**
+   * Find an item in an associative array by a key value, or return default if
+   * not found.
+   *
+   * @param array $array - The array to search
+   * @param mixed $key - The key to search for.
+   * @param mixed $default - The value to return if key is not found.
+   *
+   * @return mixed The value of the item in the array with the given key,
+   * or the given default if not found.
+   */
+  public static function findByKeyOrDefault($array, $key, $default) {
     if (array_key_exists($key, $array)) {
       return $array[$key];
     }
-    return null;
+    return $default;
   }
+
 }

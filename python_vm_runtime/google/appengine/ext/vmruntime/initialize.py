@@ -19,6 +19,7 @@
 import json
 import logging
 import logging.handlers
+import math
 import sys
 import traceback
 
@@ -55,8 +56,13 @@ class JsonFormatter(logging.Formatter):
     Returns:
       A json string to log.
     """
+    float_frac_sec, float_sec = math.modf(record.created)
+
     data = {'thread': record.thread,
-            'timeNanos': int(record.created * 1000000000)}
+            'timestamp': {
+                'seconds': int(float_sec),
+                'nanos': int(float_frac_sec * 1000000000)}}
+
     if record.exc_info:
 
       data['message'] = '%s\n%s' % (record.getMessage(),

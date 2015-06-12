@@ -253,7 +253,9 @@ def RequestLoggingMiddleware(app):
 
   def LogRequestWrapper(wsgi_env, start_response):
     """The middleware WSGI app."""
-    client = wsgi_env.get('REMOTE_ADDR', '-')
+    client = wsgi_env.get('HTTP_X_GOOGLE_REAL_IP')
+    if not client:
+      client = wsgi_env.get('REMOTE_ADDR', '-')
     method = wsgi_env.get('REQUEST_METHOD', '-')
     path = wsgi_env.get('PATH_INFO', '-')
     stamp = time.strftime('%Y-%m-%d %H:%M:%S]')

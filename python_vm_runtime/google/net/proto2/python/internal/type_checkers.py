@@ -45,6 +45,8 @@ from google.net.proto2.python.public import descriptor
 
 _FieldDescriptor = descriptor.FieldDescriptor
 
+def SupportsOpenEnums(field_descriptor):
+  return field_descriptor.containing_type.syntax == "proto3"
 
 def GetTypeChecker(field):
   """Returns a type checker for a message field of the specified types.
@@ -60,7 +62,11 @@ def GetTypeChecker(field):
       field.type == _FieldDescriptor.TYPE_STRING):
     return UnicodeValueChecker()
   if field.cpp_type == _FieldDescriptor.CPPTYPE_ENUM:
-    return EnumValueChecker(field.enum_type)
+    if SupportsOpenEnums(field):
+
+      return _VALUE_CHECKERS[_FieldDescriptor.CPPTYPE_INT32]
+    else:
+      return EnumValueChecker(field.enum_type)
   return _VALUE_CHECKERS[field.cpp_type]
 
 

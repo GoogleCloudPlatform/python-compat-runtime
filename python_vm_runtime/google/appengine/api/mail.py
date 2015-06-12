@@ -399,7 +399,7 @@ def send_mail(sender,
   kw['subject'] = subject
   kw['body'] = body
   message = EmailMessage(**kw)
-  message.send(make_sync_call)
+  message.send(make_sync_call=make_sync_call)
 
 
 SendMail = send_mail
@@ -427,7 +427,7 @@ def send_mail_to_admins(sender,
   kw['subject'] = subject
   kw['body'] = body
   message = AdminEmailMessage(**kw)
-  message.send(make_sync_call)
+  message.send(make_sync_call=make_sync_call)
 
 
 SendMailToAdmins = send_mail_to_admins
@@ -593,8 +593,8 @@ def _decode_and_join_header(header, separator=u' '):
   if not header:
 
     return header
-  return separator.join(unicode(s, c or 'us-ascii')
-                        for s, c in email.header.decode_header(header))
+  return separator.join(s.decode(charset or 'us-ascii', 'replace')
+                        for s, charset in email.header.decode_header(header))
 
 
 def _decode_address_list_field(address_list):

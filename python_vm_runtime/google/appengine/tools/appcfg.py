@@ -162,12 +162,21 @@ SERVICE_ACCOUNT_BASE = (
 
 APP_YAML_FILENAME = 'app.yaml'
 
+_OAUTH2_WARNING = (
+    '####################################################\n'
+    'OAuth2 is now the default authentication method.\n'
+    'The --no_oauth2 flag will stop working in release 1.9.21.\n'
+    '####################################################')
+
 
 
 
 GO_APP_BUILDER = os.path.join('goroot', 'bin', 'go-app-builder')
 if sys.platform.startswith('win'):
   GO_APP_BUILDER += '.exe'
+
+GCLOUD_ONLY_RUNTIMES = set(['custom', 'nodejs'])
+
 
 
 augment_mimetypes.init()
@@ -243,8 +252,11 @@ def JavaSupported():
   """True if Java is supported by this SDK."""
 
 
-  tools_java_dir = os.path.join(os.path.dirname(appcfg_java.__file__), 'java')
-  return os.path.isdir(tools_java_dir)
+  if appcfg_java:
+    tools_java_dir = os.path.join(os.path.dirname(appcfg_java.__file__), 'java')
+    return os.path.isdir(tools_java_dir)
+  else:
+    return False
 
 
 @contextlib.contextmanager
@@ -1821,13 +1833,15 @@ class AppVersionUpload(object):
     deployed: True iff the Deploy method has been called.
     started: True iff the StartServing method has been called.
     logging_context: The _ClientDeployLoggingContext for this upload.
+    ignore_endpoints_failures: True to finish deployment even if there are
+      errors updating the Google Cloud Endpoints configuration (if there is
+      one). False if these errors should cause a failure/rollback.
   """
 
   def __init__(self, rpcserver, config, module_yaml_path='app.yaml',
                backend=None,
                error_fh=None,
-               get_version=sdk_update_checker.GetVersionObject,
-               usage_reporting=False):
+               usage_reporting=False, ignore_endpoints_failures=True):
     """Creates a new AppVersionUpload.
 
     Args:
@@ -1840,9 +1854,10 @@ class AppVersionUpload(object):
       backend: If specified, indicates the update applies to the given backend.
         The backend name must match an entry in the backends: stanza.
       error_fh: Unexpected HTTPErrors are printed to this file handle.
-      get_version: Method for determining the current SDK version. The override
-        is used for testing.
       usage_reporting: Whether or not to report usage.
+      ignore_endpoints_failures: True to finish deployment even if there are
+        errors updating the Google Cloud Endpoints configuration (if there is
+        one). False if these errors should cause a failure/rollback.
     """
     self.rpcserver = rpcserver
     self.config = config
@@ -1886,13 +1901,9 @@ class AppVersionUpload(object):
       self.config.vm_settings = appinfo.VmSettings()
     self.config.vm_settings['module_yaml_path'] = module_yaml_path
 
-    if not self.config.vm_settings.get('image'):
-      sdk_version = get_version()
-      if sdk_version and sdk_version.get('release'):
-        self.config.vm_settings['image'] = sdk_version['release']
-
     if not self.config.auto_id_policy:
       self.config.auto_id_policy = appinfo.DATASTORE_ID_POLICY_DEFAULT
+    self.ignore_endpoints_failures = ignore_endpoints_failures
 
   def AddFile(self, path, file_handle):
     """Adds the provided file to the list to be pushed to the server.
@@ -2175,17 +2186,11 @@ class AppVersionUpload(object):
 
       check_config_updated = response.get('check_endpoints_config')
       if check_config_updated:
-        unused_done, last_state = RetryWithBackoff(
+        unused_done, (last_state, user_error) = RetryWithBackoff(
             self.IsEndpointsConfigUpdated,
             PrintRetryMessage, 1, 2, 60, 20)
         if last_state != EndpointsState.SERVING:
-          error_message = (
-              'Failed to update Endpoints configuration (last result %s).  '
-              'Check the app\'s AppEngine logs for errors: %s' %
-              (last_state, self.GetLogUrl()))
-          StatusUpdate(error_message, self.error_fh)
-          logging.warning(error_message)
-          raise RuntimeError(error_message)
+          self.HandleEndpointsError(user_error)
       self.in_transaction = False
 
     return app_summary
@@ -2312,7 +2317,7 @@ class AppVersionUpload(object):
     """
     response_dict = yaml.safe_load(resp)
 
-    if 'updated' not in response_dict and 'updatedDetail' not in response_dict:
+    if 'updated' not in response_dict and 'updatedDetail2' not in response_dict:
       return None
     return response_dict
 
@@ -2354,8 +2359,9 @@ class AppVersionUpload(object):
     if result is None:
       raise CannotStartServingError(
           'Internal error: Could not parse IsEndpointsConfigUpdated response.')
-    if 'updatedDetail' in result:
-      updated_state = EndpointsState.Parse(result['updatedDetail'])
+    if 'updatedDetail2' in result:
+      updated_state = EndpointsState.Parse(result['updatedDetail2'])
+      user_error = result.get('errorMessage')
     else:
 
 
@@ -2364,7 +2370,37 @@ class AppVersionUpload(object):
 
       updated_state = (EndpointsState.SERVING if result['updated']
                        else EndpointsState.PENDING)
-    return updated_state != EndpointsState.PENDING, updated_state
+      user_error = None
+    return updated_state != EndpointsState.PENDING, (updated_state, user_error)
+
+  def HandleEndpointsError(self, user_error):
+    """Handle an error state returned by IsEndpointsConfigUpdated.
+
+    Args:
+      user_error: Either None or a string with a message from the server
+        that indicates what the error was and how the user should resolve it.
+
+    Raises:
+      RuntimeError: The update state is fatal and the user hasn't chosen
+        to ignore Endpoints errors.
+    """
+    detailed_error = user_error or (
+        "Check the app's AppEngine logs for errors: %s" % self.GetLogUrl())
+    error_message = ('Failed to update Endpoints configuration.  %s' %
+                     detailed_error)
+    StatusUpdate(error_message, self.error_fh)
+
+
+    doc_link = ('https://developers.google.com/appengine/docs/python/'
+                'endpoints/test_deploy#troubleshooting_a_deployment_failure')
+    StatusUpdate('See the deployment troubleshooting documentation for more '
+                 'information: %s' % doc_link, self.error_fh)
+
+    if self.ignore_endpoints_failures:
+      StatusUpdate('Ignoring Endpoints failure and proceeding with update.',
+                   self.error_fh)
+    else:
+      raise RuntimeError(error_message)
 
   def Rollback(self, force_rollback=False):
     """Rolls back the transaction if one is in progress."""
@@ -2875,6 +2911,10 @@ class AppCfgApp(object):
         appinfo.AppInfoExternal.ATTRIBUTES[appinfo.RUNTIME] = (
             '|'.join(appinfo.GetAllRuntimes()))
 
+    if self.options.redundant_oauth2:
+      print >>sys.stderr, (
+          '\nNote: the --oauth2 flag is now the default and can be omitted.\n')
+
     action = self.args.pop(0)
 
     def RaiseParseError(actionname, action):
@@ -3112,9 +3152,12 @@ class AppCfgApp(object):
     parser.add_option('-R', '--allow_any_runtime', action='store_true',
                       dest='allow_any_runtime', default=False,
                       help='Do not validate the runtime in app.yaml')
-    parser.add_option('--oauth2', action='store_true', dest='oauth2',
-                      default=False,
-                      help='Use OAuth2 instead of password auth.')
+    parser.add_option('--oauth2', action='store_true',
+                      dest='redundant_oauth2', default=False,
+                      help='Ignored (OAuth2 is the default).')
+    parser.add_option('--no_oauth2', action='store_false',
+                      dest='oauth2', default=True,
+                      help='Use password auth instead of OAuth2.')
     parser.add_option('--oauth2_refresh_token', action='store',
                       dest='oauth2_refresh_token', default=None,
                       help='An existing OAuth2 refresh token to use. Will '
@@ -3143,6 +3186,14 @@ class AppCfgApp(object):
                       'during OAuth authorization.')
     parser.add_option('--called_by_gcloud',
                       action='store_true', default=False,
+                      help=optparse.SUPPRESS_HELP)
+
+
+    parser.add_option('--ignore_endpoints_failures', action='store_true',
+                      dest='ignore_endpoints_failures', default=True,
+                      help=optparse.SUPPRESS_HELP)
+    parser.add_option('--no_ignore_endpoints_failures', action='store_false',
+                      dest='ignore_endpoints_failures',
                       help=optparse.SUPPRESS_HELP)
     return parser
 
@@ -3208,6 +3259,7 @@ class AppCfgApp(object):
 
 
     dev_appserver = self.options.host == 'localhost'
+
     if self.options.oauth2 and not dev_appserver:
       if not appengine_rpc_httplib2:
 
@@ -3225,12 +3277,12 @@ class AppCfgApp(object):
               refresh_token=self.options.oauth2_refresh_token,
               credential_file=self.options.oauth2_credential_file,
               token_uri=self._GetTokenUri()))
-
-      if hasattr(appengine_rpc_httplib2.tools, 'FLAGS'):
-        appengine_rpc_httplib2.tools.FLAGS.auth_local_webserver = (
-            self.options.auth_local_webserver)
     else:
       if not self.rpc_server_class:
+        if not dev_appserver and not self.options.oauth2:
+          print >> self.error_fh, _OAUTH2_WARNING
+
+          time.sleep(5)
         self.rpc_server_class = appengine_rpc.HttpRpcServerWithOAuth2Suggestion
         if hasattr(self, 'runtime'):
           self.rpc_server_class.RUNTIME = self.runtime
@@ -3268,7 +3320,8 @@ class AppCfgApp(object):
                                  auth_tries=auth_tries,
                                  account_type='HOSTED_OR_GOOGLE',
                                  secure=self.options.secure,
-                                 ignore_certs=self.options.ignore_certs)
+                                 ignore_certs=self.options.ignore_certs,
+                                 options=self.options)
 
   def _GetTokenUri(self):
     """Returns the OAuth2 token_uri, or None to use the default URI.
@@ -3353,8 +3406,9 @@ class AppCfgApp(object):
                             'configuration file nor a WEB-INF subdirectory '
                             'with web.xml and appengine-web.xml.' % basename)
       else:
-        self.parser.error('Directory does not contain an %s.yaml configuration '
-                          'file' % basename)
+        self.parser.error('Directory %r does not contain configuration file '
+                          '%s.yaml' %
+                          (os.path.abspath(basepath), basename))
 
     orig_application = appyaml.application
     orig_module = appyaml.module
@@ -3646,6 +3700,10 @@ class AppCfgApp(object):
           appinfo.JAVA_PRECOMPILED not in (appyaml.derived_file_type or [])):
       self.options.precompilation = False
 
+    if runtime in GCLOUD_ONLY_RUNTIMES:
+      raise RuntimeError('The runtime: \'%s\' is only supported with '
+                         'gcloud.' % runtime)
+
     if self.options.precompilation:
       if not appyaml.derived_file_type:
         appyaml.derived_file_type = []
@@ -3655,7 +3713,10 @@ class AppCfgApp(object):
     paths = self.file_iterator(basepath, appyaml.skip_files, appyaml.runtime)
     openfunc = lambda path: self.opener(os.path.join(basepath, path), 'rb')
 
-    if appyaml.GetEffectiveRuntime() == 'go':
+
+    if (appyaml.GetEffectiveRuntime() == 'go' and
+        not (appyaml.runtime == 'vm' and
+             'GAE_LOCAL_VM_RUNTIME' in os.environ)):
 
       sdk_base = os.path.normpath(os.path.join(
           google.appengine.__file__, '..', '..', '..'))
@@ -3682,6 +3743,7 @@ class AppCfgApp(object):
                              '(-nobuild_files applied)')
         gab_argv = [
             gab,
+            '-api_version', appyaml.api_version,
             '-app_base', self.basepath,
             '-arch', '6',
             '-gopath', gopath,
@@ -3720,12 +3782,14 @@ class AppCfgApp(object):
         paths = app_paths + overlay.keys()
         openfunc = Open
 
-    appversion = AppVersionUpload(rpcserver,
-                                  appyaml,
-                                  module_yaml_path=module_yaml_path,
-                                  backend=backend,
-                                  error_fh=self.error_fh,
-                                  usage_reporting=self.options.usage_reporting)
+    appversion = AppVersionUpload(
+        rpcserver,
+        appyaml,
+        module_yaml_path=module_yaml_path,
+        backend=backend,
+        error_fh=self.error_fh,
+        usage_reporting=self.options.usage_reporting,
+        ignore_endpoints_failures=self.options.ignore_endpoints_failures)
     return appversion.DoUpload(paths, openfunc)
 
   def UpdateUsingSpecificFiles(self):
@@ -3870,12 +3934,28 @@ class AppCfgApp(object):
 
     if cron_yaml:
       cron_upload = CronEntryUpload(rpcserver, cron_yaml, self.error_fh)
-      cron_upload.DoUpload()
+      try:
+        cron_upload.DoUpload()
+      except urllib2.HTTPError, e:
+        ErrorUpdate('Error %d: --- begin server output ---\n'
+                    '%s\n--- end server output ---' %
+                    (e.code, e.read().rstrip('\n')))
+        print >> self.error_fh, (
+            'Your app was updated, but there was an error updating your '
+            'cron tasks. Please retry later with appcfg.py update_cron.')
 
 
     if queue_yaml:
       queue_upload = QueueEntryUpload(rpcserver, queue_yaml, self.error_fh)
-      queue_upload.DoUpload()
+      try:
+        queue_upload.DoUpload()
+      except urllib2.HTTPError, e:
+        ErrorUpdate('Error %d: --- begin server output ---\n'
+                    '%s\n--- end server output ---' %
+                    (e.code, e.read().rstrip('\n')))
+        print >> self.error_fh, (
+            'Your app was updated, but there was an error updating your '
+            'queues. Please retry later with appcfg.py update_queues.')
 
 
     if dos_yaml:
@@ -4041,7 +4121,7 @@ class AppCfgApp(object):
     Args:
       appyaml: A parsed app.yaml file.
     """
-    if appyaml.runtime == 'php':
+    if appyaml.runtime.startswith('php'):
       _PrintErrorAndExit(
           self.error_fh,
           'Error: Backends are not supported with the PHP runtime. '
@@ -4490,9 +4570,11 @@ class AppCfgApp(object):
 
   def MigrateTraffic(self):
     """Migrates traffic."""
+    module = 'default'
     if len(self.args) == 1:
       appyaml = self._ParseAppInfoFromYaml(self.args[0])
       app_id = appyaml.application
+      module = appyaml.module or 'default'
       version = appyaml.version
     elif not self.args:
       if not (self.options.app_id and self.options.version):
@@ -4505,8 +4587,15 @@ class AppCfgApp(object):
 
     if self.options.app_id:
       app_id = self.options.app_id
+    if self.options.module:
+      module = self.options.module
     if self.options.version:
       version = self.options.version
+
+    if module not in ['', 'default']:
+      StatusUpdate('migrate_traffic does not support non-default module at '
+                   'this time.')
+      return
 
     traffic_migrator = TrafficMigrator(
         self._GetRpcServer(), app_id, version, self.error_fh)

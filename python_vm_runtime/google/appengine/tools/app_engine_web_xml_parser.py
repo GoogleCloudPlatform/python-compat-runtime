@@ -401,7 +401,7 @@ class AppEngineWebXmlParser(object):
     network = Network()
     for child in node:
       tag = xml_parser_utils.GetTag(child)
-      if tag == 'instance-tag':
+      if tag in ('instance-tag', 'name'):
         text = child.text or ''
         setattr(network, tag.replace('-', '_'), text)
       elif tag == 'forwarded-port':
@@ -505,10 +505,11 @@ class AppEngineWebXml(ValueMixin):
 
   def IncludesStatic(self, path):
     """Checks whether a given file should be classified as a static file."""
+    path = self._UrlifyPath(path)
     if not self.static_include_pattern:
 
       includes_list = ([inc.pattern for inc in self.static_file_includes]
-                       or [os.path.join(self.public_root, '**')])
+                       or [self.public_root + '/**'])
       self.static_include_pattern = self._CreatePatternListRegex(includes_list)
 
     if self.static_file_excludes:
@@ -522,6 +523,7 @@ class AppEngineWebXml(ValueMixin):
 
   def IncludesResource(self, path):
     """Checks whether a given file should be classified as a resource file."""
+    path = self._UrlifyPath(path)
     if not self.resource_include_pattern:
       includes = self.resource_file_includes or ['**']
       self.resource_include_pattern = self._CreatePatternListRegex(includes)
@@ -534,6 +536,27 @@ class AppEngineWebXml(ValueMixin):
         return False
 
     return self.resource_include_pattern.match(path)
+
+  @staticmethod
+  def _UrlifyPath(path):
+    r"""Convert the path into a form compatible with URLs.
+
+    On Unix-like systems, a path looks like foo/bar/baz.png, which is already
+    compatible with the path part of a URL like
+    http://myapp.appspot.com/foo/bar/baz.png
+    But on Windows, a path can also look like foo\bar\baz.png, which will fail
+    if we naively try to match it against a URL-style pattern like foo/**.png.
+    So we convert \ into / in that case. On Windows, / is also accepted as
+    a separator, so it is correct for that inputs foo\bar\baz.png
+    and foo/bar/baz.png both produce output foo/bar/baz.png.
+
+    Args:
+      path: the path to a file
+
+    Returns:
+      The input path, but using / as separator even if the OS uses \.
+    """
+    return path if os.path.sep == '/' else path.replace(os.path.sep, '/')
 
   def _CreatePatternListRegex(self, patterns):
     """Converts a list of patterns into a regex.
@@ -555,7 +578,7 @@ class AppEngineWebXml(ValueMixin):
     regexed_patterns = [self._CreateFileNameRegex(_StripLeadingSlashes(pat))
                         for pat in patterns]
 
-    app_root_regex = self._CreateFileNameRegex(self.app_root)
+    app_root_regex = self._CreateFileNameRegex(self._UrlifyPath(self.app_root))
     regexed_patterns = ['^%s\\/%s$' % (app_root_regex, pattern_regex)
                         for pattern_regex in regexed_patterns]
     return re.compile('(%s)' % '|'.join(regexed_patterns))

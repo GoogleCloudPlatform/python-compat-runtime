@@ -285,7 +285,7 @@ class AppYamlTranslator(object):
       return []
 
     statements = ['network:']
-    for attr in ('instance_tag',):
+    for attr in ('instance_tag', 'name'):
       value = getattr(network, attr, None)
       if value is not None:
         statements.append('  %s: %s' % (attr, value))

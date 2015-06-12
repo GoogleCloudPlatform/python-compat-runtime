@@ -16,7 +16,6 @@
 #
 """Manages a VM Runtime process running inside of a docker container."""
 
-import datetime
 import logging
 import os
 import socket
@@ -38,8 +37,6 @@ _APP_ENGINE_PREFIX = 'google.appengine'
 _CLEANUP_DELAY_SEC = 10.0
 
 _DOCKER_IMAGE_NAME_FORMAT = '{display}.{module}.{version}'
-_DOCKER_CONTAINER_NAME_FORMAT = (
-    _APP_ENGINE_PREFIX + '.{image_name}.{instance_id}.{timestamp}')
 
 # This is the number of containers the cleanup process will leave on docker for
 # investigation purposes.
@@ -98,13 +95,10 @@ def _ContainerName(image_name, instance_id, timestamp=None):
   Returns:
     the generated container name.
   """
-  if timestamp is None:
-    # ":" is not allowed in the container names but are optional in
-    # ISO8601.
-    timestamp = datetime.datetime.utcnow().strftime('%Y-%m-%dT%H%M%S.%fZ')
-
-  return _DOCKER_CONTAINER_NAME_FORMAT.format(
-      image_name=image_name, instance_id=instance_id, timestamp=timestamp)
+  return containers.CleanableContainerName(_APP_ENGINE_PREFIX,
+                                           base_name='%s.%s' % (image_name,
+                                                                instance_id),
+                                           timestamp=timestamp)
 
 
 class VMRuntimeProxy(instance.RuntimeProxy):
@@ -181,7 +175,7 @@ class VMRuntimeProxy(instance.RuntimeProxy):
   def _escape_domain(self, application_external_name):
     return application_external_name.replace(':', '.')
 
-  def start(self, dockerfile_dir=None):
+  def start(self, dockerfile_dir=None, request_id_header_name=None):
     runtime_config = self._runtime_config_getter()
 
     if not self._module_configuration.major_version:
@@ -309,13 +303,14 @@ class VMRuntimeProxy(instance.RuntimeProxy):
         instance_died_unexpectedly=self._instance_died_unexpectedly,
         instance_logs_getter=self.get_instance_logs,
         error_handler_file=application_configuration.get_app_error_file(
-            self._module_configuration))
+            self._module_configuration),
+        request_id_header_name=request_id_header_name)
 
     # If forwarded ports are used we do not really have to serve on 8080.
     # We'll log /_ah/start request fail, but with health-checks disabled
     # we should ignore that and continue working (accepting requests on
     # our forwarded ports outside of dev server control).
-    health_check = self._module_configuration.vm_health_check
+    health_check = self._module_configuration.health_check
     health_check_enabled = health_check and health_check.enable_health_check
 
     if health_check_enabled or not self._module_configuration.forwarded_ports:

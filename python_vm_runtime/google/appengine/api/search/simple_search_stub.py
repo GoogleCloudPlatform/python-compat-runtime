@@ -362,6 +362,10 @@ class RamInvertedIndex(object):
     """Returns the schema for the index."""
     return self._schema
 
+  def DeleteSchema(self):
+    """Deletes the schema for the index."""
+    self._schema = FieldTypesDict()
+
   def __repr__(self):
     return search_util.Repr(self, [('_inverted_index', self._inverted_index),
                                    ('_schema', self._schema),
@@ -615,6 +619,10 @@ class SimpleIndex(object):
     """Returns the schema for the index."""
     return self._inverted_index.GetSchema()
 
+  def DeleteSchema(self):
+    """Deletes the schema for the index."""
+    self._inverted_index.DeleteSchema()
+
   def __repr__(self):
     return search_util.Repr(self, [('_index_spec', self._index_spec),
                                    ('_documents', self._documents),
@@ -792,6 +800,9 @@ class SearchServiceStub(apiproxy_stub.APIProxyStub):
 
     params = request.params()
     for index_spec in params.index_spec_list():
+      index = self._GetIndex(index_spec)
+      if index is not None:
+        index.DeleteSchema()
       response.add_status().set_code(search_service_pb.SearchServiceError.OK)
 
   def _AddSchemaInformation(self, index, metadata_pb):

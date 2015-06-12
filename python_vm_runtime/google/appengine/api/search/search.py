@@ -32,6 +32,7 @@ Contains API classes that forward to apiproxy.
 import base64
 import datetime
 import logging
+import math
 import re
 import string
 import sys
@@ -136,12 +137,12 @@ MAXIMUM_QUERY_LENGTH = 2000
 MAXIMUM_DOCUMENTS_RETURNED_PER_SEARCH = 1000
 MAXIMUM_DEPTH_FOR_FACETED_SEARCH = 10000
 MAXIMUM_FACETS_TO_RETURN = 100
-MAXIMUM_FACET_VALUES_TO_RETURN = 100
+MAXIMUM_FACET_VALUES_TO_RETURN = 20
 MAXIMUM_SEARCH_OFFSET = 1000
 
 MAXIMUM_SORTED_DOCUMENTS = 10000
-MAXIMUM_NUMBER_FOUND_ACCURACY = 10000
-MAXIMUM_FIELDS_RETURNED_PER_SEARCH = 100
+MAXIMUM_NUMBER_FOUND_ACCURACY = 25000
+MAXIMUM_FIELDS_RETURNED_PER_SEARCH = 1000
 MAXIMUM_INDEXES_RETURNED_PER_GET_REQUEST = 1000
 MAXIMUM_GET_INDEXES_OFFSET = 1000
 
@@ -280,6 +281,17 @@ class _WrappedValueFuture(object):
 
   def get_result(self):
     return self._result
+
+
+def _ConvertToUTF8(value):
+  if isinstance(value, float):
+    value = repr(value)
+    value = {'inf': 'Infinity',
+             '-inf': '-Infinity',
+             'nan': 'NaN'}.get(value, value)
+  elif isinstance(value, (int, long)):
+    value = str(value)
+  return _ConvertToUnicode(value).encode("utf-8")
 
 
 class OperationResult(object):
@@ -466,22 +478,26 @@ def _CheckEnum(value, name, values=None):
   return value
 
 
-def _CheckNumber(value, name):
-  """Checks whether value is a number.
+def _CheckNumber(value, name, should_be_finite=False):
+  """Checks whether number value is of valid type and (optionally) finite.
 
   Args:
     value: The value to check.
     name: The name of the value, to use in error messages.
+    should_be_finite: make sure the value is a finite number.
 
   Returns:
     The checked value.
 
   Raises:
     TypeError: If the value is not a number.
+    ValueError: If should_be_finite is set and the value is not finite.
   """
   if not isinstance(value, (int, long, float)):
     raise TypeError('%s must be a int, long or float, got %s' %
                     (name, value.__class__.__name__))
+  if should_be_finite and (math.isnan(value) or math.isinf(value)):
+    raise ValueError('%s must be a finite value (got %f)' % (name, value))
   return value
 
 
@@ -974,7 +990,8 @@ class Facet(object):
     """Returns the value of the facet."""
     return self._value
 
-  def _CheckValue(self, value):
+  @classmethod
+  def _CheckValue(cls, value):
     """Checks the value is valid for the given type.
 
     Args:
@@ -1034,7 +1051,8 @@ class AtomFacet(Facet):
     """
     Facet.__init__(self, name, _ConvertToUnicode(value))
 
-  def _CheckValue(self, value):
+  @classmethod
+  def _CheckValue(cls, value):
     return _CheckAtom(value)
 
   def _CopyValueToProtocolBuffer(self, facet_value_pb):
@@ -1062,16 +1080,17 @@ class NumberFacet(Facet):
     """
     Facet.__init__(self, name, value)
 
-  def _CheckValue(self, value):
-    value = _CheckNumber(value, 'facet value')
-    if value < MIN_NUMBER_VALUE or value > MAX_NUMBER_VALUE:
-      raise ValueError('value, %d must be between %d and %d' %
-                       (value, MIN_NUMBER_VALUE, MAX_NUMBER_VALUE))
-    return value
+  @classmethod
+  def _CheckValue(cls, value):
+    _CheckNumber(value, "number facet value", True)
+    if value >= MIN_NUMBER_VALUE and value <= MAX_NUMBER_VALUE:
+      return value
+    raise ValueError('value must be between %f and %f (got %f)' %
+                     (MIN_NUMBER_VALUE, MAX_NUMBER_VALUE, value))
 
   def _CopyValueToProtocolBuffer(self, facet_value_pb):
     facet_value_pb.set_type(document_pb.FacetValue.NUMBER)
-    facet_value_pb.set_string_value(str(self.value))
+    facet_value_pb.set_string_value(_ConvertToUTF8(self.value))
 
 
 def _NewFacetFromPb(pb):
@@ -1117,6 +1136,10 @@ class FacetRange(object):
     none_or_numeric_type = (type(None), int, float, long)
     self._start = _CheckType(start, none_or_numeric_type, 'start')
     self._end = _CheckType(end, none_or_numeric_type, 'end')
+    if self._start is not None:
+      NumberFacet._CheckValue(self._start)
+    if self._end is not None:
+      NumberFacet._CheckValue(self._end)
 
   @property
   def start(self):
@@ -1127,6 +1150,16 @@ class FacetRange(object):
   def end(self):
     """Returns exclusive end of the range."""
     return self._end
+
+  def __repr__(self):
+    return _Repr(self, [('start', self.start),
+                        ('end', self.end)])
+
+  def _CopyToProtocolBuffer(self, range_pb):
+    if self.start is not None:
+      range_pb.set_start(_ConvertToUTF8(self.start))
+    if self.end is not None:
+      range_pb.set_end(_ConvertToUTF8(self.end))
 
 
 class FacetRequest(object):
@@ -1170,6 +1203,9 @@ class FacetRequest(object):
         ranges, FacetRange, 'ranges')
     self._values = _ConvertToListAndCheckType(
         values, (basestring, int, float, long), 'values')
+    for value in self._values:
+      if isinstance(value, (int, float, long)):
+        NumberFacet._CheckValue(value)
 
   @property
   def name(self):
@@ -1197,13 +1233,15 @@ class FacetRequest(object):
     request_param_pb = facet_request_pb.mutable_params()
     request_param_pb.set_value_limit(self.value_limit)
     for facet_range in self.ranges:
-      range_pb = request_param_pb.add_range()
-      if facet_range.start is not None:
-        range_pb.set_start(str(facet_range.start))
-      if facet_range.end is not None:
-        range_pb.set_end(str(facet_range.end))
+      facet_range._CopyToProtocolBuffer(request_param_pb.add_range())
     for constraint in self.values:
-      request_param_pb.add_value_constraint(constraint)
+      request_param_pb.add_value_constraint(_ConvertToUTF8(constraint))
+
+  def __repr__(self):
+    return _Repr(self, [('name', self.name),
+                        ('value_limit', self.value_limit),
+                        ('ranges', self.ranges),
+                        ('values', self.values)])
 
 
 class FacetRefinement(object):
@@ -1305,14 +1343,15 @@ class FacetRefinement(object):
     """Copies This object to a search_service_pb.FacetRefinement."""
     facet_refinement_pb.set_name(self.name)
     if self.value is not None:
-      facet_refinement_pb.set_value(str(self.value))
+      facet_refinement_pb.set_value(_ConvertToUTF8(self.value))
     if self.facet_range is not None:
-      if self.facet_range.start:
-        facet_refinement_pb.mutable_range().set_start(
-            str(self.facet_range.start))
-      if self.facet_range.end:
-        facet_refinement_pb.mutable_range().set_end(
-            str(self.facet_range.end))
+      self.facet_range._CopyToProtocolBuffer(
+          facet_refinement_pb.mutable_range())
+
+  def __repr__(self):
+    return _Repr(self, [('name', self.name),
+                        ('value', self.value),
+                        ('facet_range', self.facet_range)])
 
 
 def _CopyFieldToProtocolBuffer(field, pb):
@@ -1462,7 +1501,7 @@ class NumberField(Field):
     Field.__init__(self, name, value)
 
   def _CheckValue(self, value):
-    value = _CheckNumber(value, 'field value')
+    value = _CheckNumber(value, 'field value', True)
     if value is not None and (value < MIN_NUMBER_VALUE or
                               value > MAX_NUMBER_VALUE):
       raise ValueError('value, %d must be between %d and %d' %
@@ -1505,14 +1544,14 @@ class GeoPoint(object):
     return self._longitude
 
   def _CheckLatitude(self, value):
-    _CheckNumber(value, 'latitude')
+    _CheckNumber(value, 'latitude', True)
     if value < -90.0 or value > 90.0:
       raise ValueError('latitude must be between -90 and 90 degrees '
                        'inclusive, was %f' % value)
     return value
 
   def _CheckLongitude(self, value):
-    _CheckNumber(value, 'longitude')
+    _CheckNumber(value, 'longitude', True)
     if value < -180.0 or value > 180.0:
       raise ValueError('longitude must be between -180 and 180 degrees '
                        'inclusive, was %f' % value)
@@ -1639,9 +1678,11 @@ class Document(object):
   Document(doc_id='document_id',
            fields=[TextField(name='subject', value='going for dinner'),
                    HtmlField(name='body',
-                             value='<html>I found a place.</html>',
+                             value='<html>I found a place.</html>'),
                    TextField(name='signature', value='brzydka pogoda',
                              language='pl')],
+           facets=[AtomFacet(name='tag', value='food'),
+                   NumberFacet(name='priority', value=5.0)],
            language='en')
   """
   _FIRST_JAN_2011 = datetime.datetime(2011, 1, 1)
@@ -2668,9 +2709,9 @@ class FacetOptions(object):
     If you wish to discovering 5 facets with 10 values each in 6000 search
     results, you can use a FacetOption object like this:
 
-    facet_option = FacetOption(discover_facet_limit=5,
-                               discover_facet_value_limit=10,
-                               depth=6000)
+    facet_option = FacetOptions(discover_facet_limit=5,
+                                discover_facet_value_limit=10,
+                                depth=6000)
 
     Args:
       discovery_limit: Number of facets to discover if facet discovery is
@@ -2934,8 +2975,7 @@ def _CopyQueryOptionsToProtocolBuffer(
     for snippeted_field in snippeted_fields:
       expression = u'snippet(%s, %s)' % (_QuoteString(query), snippeted_field)
       _CopyFieldExpressionToProtocolBuffer(
-          FieldExpression(
-              name=snippeted_field, expression=expression.encode('utf-8')),
+          FieldExpression(name=snippeted_field, expression=expression),
           field_spec_pb.add_expression())
     for expression in returned_expressions:
       _CopyFieldExpressionToProtocolBuffer(
@@ -2995,19 +3035,19 @@ class Query(object):
     # included specific facets with search result
     results = index.search(
         Query(query_string='movies',
-              include_facets=['rating', 'shipping_method']))
+              return_facets=['rating', 'shipping_method']))
 
     # discover only 5 facets and two manual facets with customized value
     facet_option = FacetOption(discovery_limit=5)
     facet1 = FacetRequest('Rating', ranges=[
-        FacetRange(1.0, 2.0),
-        FacetRange(2.0, 3.5),
-        FacetRange(3.5, 4.0)]
+        FacetRange(start=1.0, end=2.0),
+        FacetRange(start=2.0, end=3.5),
+        FacetRange(start=3.5, end=4.0)]
     results = index.search(
         Query(query_string='movies',
               enable_facet_discovery=true,
               facet_option=facet_option,
-              include_facets=[facet1, 'shipping_method']))
+              return_facets=[facet1, 'shipping_method']))
 
     Args:
       query_string: The query to match against documents in the index. A query
@@ -3099,6 +3139,7 @@ def _CopyQueryToProtocolBuffer(query, params):
 
 
 def _CopyQueryObjectToProtocolBuffer(query, params):
+  """Copy a query object to search_service_pb.SearchParams object."""
   _CopyQueryToProtocolBuffer(query.query_string, params)
   for refinement in query.facet_refinements:
     refinement._CopyToProtocolBuffer(params.add_facet_refinement())

@@ -89,10 +89,14 @@ __all__ = [
 
 _ERROR_NAME_MAP = dict((httplib.responses[c.http_status], c) for c in [
     api_exceptions.BadRequestException,
-    api_exceptions.ForbiddenException,
-    api_exceptions.InternalServerErrorException,
-    api_exceptions.NotFoundException,
     api_exceptions.UnauthorizedException,
+    api_exceptions.ForbiddenException,
+    api_exceptions.NotFoundException,
+    api_exceptions.ConflictException,
+    api_exceptions.GoneException,
+    api_exceptions.PreconditionFailedException,
+    api_exceptions.RequestEntityTooLargeException,
+    api_exceptions.InternalServerErrorException
     ])
 
 _ALL_JSON_CONTENT_TYPES = frozenset(

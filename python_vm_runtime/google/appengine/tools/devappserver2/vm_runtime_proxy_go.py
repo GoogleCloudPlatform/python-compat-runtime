@@ -28,6 +28,7 @@ from google.appengine.tools.devappserver2 import go_application
 from google.appengine.tools.devappserver2 import instance
 from google.appengine.tools.devappserver2 import vm_runtime_proxy
 
+REQUEST_ID_HEADER_NAME = 'X-Appengine-Api-Ticket'
 DEBUG_PORT = 5858
 VM_SERVICE_PORT = 8181
 # TODO: Remove this when classic Go SDK is gone.
@@ -115,7 +116,9 @@ class GoVMRuntimeProxy(instance.RuntimeProxy):
             self._module_configuration.nobuild_files,
             self._module_configuration.skip_files)
 
-        self._vm_runtime_proxy.start(dockerfile_dir=dst_deployment_dir)
+        self._vm_runtime_proxy.start(
+            dockerfile_dir=dst_deployment_dir,
+            request_id_header_name=REQUEST_ID_HEADER_NAME)
 
       logging.info(
           'GoVM vmservice for module "%(module)s" available at '

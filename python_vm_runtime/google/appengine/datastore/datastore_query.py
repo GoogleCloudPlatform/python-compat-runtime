@@ -67,8 +67,9 @@ from google.appengine.datastore import datastore_index
 from google.appengine.datastore import datastore_pb
 from google.appengine.datastore import datastore_pbs
 from google.appengine.datastore import datastore_rpc
-from google.appengine.datastore import datastore_v4_pb
 
+if datastore_pbs._CLOUD_DATASTORE_ENABLED:
+  from google.appengine.datastore.datastore_pbs import googledatastore
 
 class _BaseComponent(object):
   """A base class for query components.
@@ -141,10 +142,6 @@ def _make_key_value_map(entity, property_names):
 
   return value_map
 
-
-
-_query_converter = datastore_pbs._QueryConverter(
-    datastore_pbs.get_entity_converter())
 
 class _PropertyComponent(_BaseComponent):
   """A component that operates on a specific set of properties."""
@@ -220,8 +217,12 @@ class FilterPredicate(_PropertyComponent):
     """Internal only function to generate a list of pbs."""
     return [self._to_pb()]
 
-  def _to_pb_v4(self):
-    """Internal only function to generate a v4 pb."""
+  def _to_pb_v1(self, adapter):
+    """Internal only function to generate a v1 pb.
+
+    Args:
+      adapter: A datastore_rpc.AbstractAdapter
+    """
     raise NotImplementedError(
         'This filter only supports in memory operations (%r)' % self)
 
@@ -366,12 +367,16 @@ class PropertyFilter(_SinglePropertyFilter):
     """Returns the internal only pb representation."""
     return self._filter
 
-  def _to_pb_v4(self):
-    """Returns a datastore_v4_pb.Filter representation of the filter."""
-    filter_pb = datastore_v4_pb.Filter()
-    prop_filter_pb = filter_pb.mutable_property_filter()
-    _query_converter._v3_filter_to_v4_property_filter(self._filter,
-                                                       prop_filter_pb)
+  def _to_pb_v1(self, adapter):
+    """Returns a googledatastore.Filter representation of the filter.
+
+    Args:
+      adapter: A datastore_rpc.AbstractAdapter
+    """
+    filter_pb = googledatastore.Filter()
+    prop_filter_pb = filter_pb.property_filter
+    adapter.get_query_converter()._v3_filter_to_v1_property_filter(
+        self._filter, prop_filter_pb)
     return filter_pb
 
   def __getstate__(self):
@@ -573,33 +578,37 @@ class _PropertyRangeFilter(_SinglePropertyFilter):
 
     return pbs
 
-  def _to_pb_v4(self):
-    """Returns a datastore_v4_pb.Filter representation of the filter."""
-    filter_pb = datastore_v4_pb.Filter()
-    composite_filter = filter_pb.mutable_composite_filter()
-    composite_filter.set_operator(datastore_v4_pb.CompositeFilter.AND)
+  def _to_pb_v1(self, adapter):
+    """Returns a googledatastore.Filter representation of the filter.
+
+    Args:
+      adapter: A datastore_rpc.AbstractAdapter.
+    """
+    filter_pb = googledatastore.Filter()
+    composite_filter = filter_pb.composite_filter
+    composite_filter.op = googledatastore.CompositeFilter.AND
 
     if self._start:
       if self._start_incl:
-        op = datastore_v4_pb.PropertyFilter.GREATER_THAN_OR_EQUAL
+        op = googledatastore.PropertyFilter.GREATER_THAN_OR_EQUAL
       else:
-        op = datastore_v4_pb.PropertyFilter.GREATER_THAN
-      pb = composite_filter.add_filter().mutable_property_filter()
-      pb.set_operator(op)
-      pb.mutable_property().set_name(self._start.name())
-      datastore_pbs.get_entity_converter().v3_property_to_v4_value(
-          self._start, True, pb.mutable_value())
+        op = googledatastore.PropertyFilter.GREATER_THAN
+      pb = composite_filter.filters.add().property_filter
+      pb.op = op
+      pb.property.name = self._start.name()
+      adapter.get_entity_converter().v3_property_to_v1_value(
+          self._start, True, pb.value)
 
     if self._end:
       if self._end_incl:
-        op = datastore_v4_pb.PropertyFilter.LESS_THAN_OR_EQUAL
+        op = googledatastore.PropertyFilter.LESS_THAN_OR_EQUAL
       else:
-        op = datastore_v4_pb.PropertyFilter.LESS_THAN
-      pb = composite_filter.add_filter().mutable_property_filter()
-      pb.set_operator(op)
-      pb.mutable_property().set_name(self._end.name())
-      datastore_pbs.get_entity_converter().v3_property_to_v4_value(
-          self._end, True, pb.mutable_value())
+        op = googledatastore.PropertyFilter.LESS_THAN
+      pb = composite_filter.filters.add().property_filter
+      pb.op = op
+      pb.property.name = self._end.name()
+      adapter.get_entity_converter().v3_property_to_v1_value(
+          self._end, True, pb.value)
     return filter_pb
 
   def __getstate__(self):
@@ -897,22 +906,26 @@ class CompositeFilter(FilterPredicate):
       pbs.extend(f._to_pbs())
     return pbs
 
-  def _to_pb_v4(self):
-    """Returns a datastore_v4_pb.Filter."""
+  def _to_pb_v1(self, adapter):
+    """Returns a googledatastore.Filter.
+
+    Args:
+      adapter: A datastore_rpc.AbstractAdapter
+    """
     if not self._filters:
       return None
     if len(self._filters) == 1:
-      return self._filters[0]._to_pb_v4()
+      return self._filters[0]._to_pb_v1(adapter)
 
-    pb = datastore_v4_pb.Filter()
-    comp_pb = pb.mutable_composite_filter()
+    pb = googledatastore.Filter()
+    comp_pb = pb.composite_filter
     if self.op == self.AND:
-      comp_pb.set_operator(datastore_v4_pb.CompositeFilter.AND)
+      comp_pb.op = googledatastore.CompositeFilter.AND
     else:
       raise datastore_errors.BadArgumentError(
           'Datastore V4 only supports CompositeFilter with AND operator.')
     for f in self._filters:
-      comp_pb.add_filter().CopyFrom(f._to_pb_v4())
+      comp_pb.filters.add().CopyFrom(f._to_pb_v1(adapter))
     return pb
 
   def __eq__(self, other):
@@ -953,109 +966,6 @@ class _DedupingFilter(_IgnoreFilter):
       self._keys.add(value)
       return True
     return False
-
-
-class _BoundingCircleFilter(_SinglePropertyFilter):
-  """An immutable bounding circle filter for geo locations.
-
-  An immutable filter predicate that constrains a geo location property to a
-  bounding circle region. The filter is inclusive at the border. The property
-  has to be of type V3 PointValue. V4 GeoPoints converts to this type.
-  """
-
-  def __init__(self, property_name, latitude, longitude, radius_meters):
-    self._property_name = property_name
-    self._lat_lng = geo_util.LatLng(latitude, longitude)
-    self._radius_meters = radius_meters
-
-    if not radius_meters >= 0:
-      raise datastore_errors.BadArgumentError(
-          'invalid radius: %r' % radius_meters)
-
-  @classmethod
-  def _from_v4_pb(cls, bounding_circle_v4_pb):
-    return _BoundingCircleFilter(bounding_circle_v4_pb.property().name(),
-                                 bounding_circle_v4_pb.center().latitude(),
-                                 bounding_circle_v4_pb.center().longitude(),
-                                 bounding_circle_v4_pb.radius_meters())
-
-  def _get_prop_name(self):
-    return self._property_name
-
-  def _apply_to_value(self, value):
-
-
-
-    if value[0] != entity_pb.PropertyValue.kPointValueGroup:
-      return False
-
-    _, latitude, longitude = value
-
-    lat_lng = geo_util.LatLng(latitude, longitude)
-
-    return self._lat_lng - lat_lng <= self._radius_meters
-
-
-class _BoundingBoxFilter(_SinglePropertyFilter):
-  """An immutable bounding box filter for geo locations.
-
-  An immutable filter predicate that constrains a geo location property to a
-  bounding box region. The filter is inclusive at the border. The property
-  has to be of type V3 PointValue. V4 GeoPoints converts to this type.
-  """
-
-  def __init__(self, property_name, southwest, northeast):
-    """Initializes a _BoundingBoxFilter.
-
-    Args:
-      property_name: the name of the property to filter on.
-      southwest: The south-west corner of the bounding box. The type is
-          datastore_types.GeoPt.
-      northeast: The north-east corner of the bounding box. The type is
-          datastore_types.GeoPt.
-
-    Raises:
-      datastore_errors.BadArgumentError if the south-west coordinate is on top
-      of the north-east coordinate.
-    """
-
-    if southwest.lat > northeast.lat:
-      raise datastore_errors.BadArgumentError(
-          'the south-west coordinate is on top of the north-east coordinate')
-
-    self._property_name = property_name
-    self._southwest = southwest
-    self._northeast = northeast
-
-  @classmethod
-  def _from_v4_pb(cls, bounding_box_v4_pb):
-    sw = datastore_types.GeoPt(bounding_box_v4_pb.southwest().latitude(),
-                               bounding_box_v4_pb.southwest().longitude())
-    ne = datastore_types.GeoPt(bounding_box_v4_pb.northeast().latitude(),
-                               bounding_box_v4_pb.northeast().longitude())
-    return _BoundingBoxFilter(bounding_box_v4_pb.property().name(), sw, ne)
-
-  def _get_prop_name(self):
-    return self._property_name
-
-  def _apply_to_value(self, value):
-
-
-
-    if value[0] != entity_pb.PropertyValue.kPointValueGroup:
-      return False
-
-    _, latitude, longitude = value
-
-    if not self._southwest.lat <= latitude <= self._northeast.lat:
-      return False
-
-
-    if self._southwest.lon > self._northeast.lon:
-      return (longitude <= self._northeast.lon
-              or longitude >= self._southwest.lon)
-    else:
-      return self._southwest.lon <= longitude <= self._northeast.lon
 
 
 class Order(_PropertyComponent):
@@ -1101,8 +1011,12 @@ class Order(_PropertyComponent):
     """Internal only function to generate a filter pb."""
     raise NotImplementedError
 
-  def _to_pb_v4(self):
-    """Internal only function to generate a v4 filter pb."""
+  def _to_pb_v1(self, adapter):
+    """Internal only function to generate a v1 filter pb.
+
+    Args:
+      adapter: A datastore_rpc.AbstractAdapter
+    """
     raise NotImplementedError
 
   def key_for_filter(self, filter_predicate):
@@ -1310,11 +1224,15 @@ class PropertyOrder(Order):
     """Returns the internal only pb representation."""
     return self.__order
 
-  def _to_pb_v4(self):
-    """Returns a datastore_v4_pb.PropertyOrder representation of the order."""
-    v4_order = datastore_v4_pb.PropertyOrder()
-    _query_converter.v3_order_to_v4_order(self.__order, v4_order)
-    return v4_order
+  def _to_pb_v1(self, adapter):
+    """Returns a googledatastore.PropertyOrder representation of the order.
+
+    Args:
+      adapter: A datastore_rpc.AbstractAdapter.
+    """
+    v1_order = googledatastore.PropertyOrder()
+    adapter.get_query_converter().v3_order_to_v1_order(self.__order, v1_order)
+    return v1_order
 
   def __getstate__(self):
     raise pickle.PicklingError(
@@ -1392,9 +1310,13 @@ class CompositeOrder(Order):
     """Returns an ordered list of internal only pb representations."""
     return [order._to_pb() for order in self._orders]
 
-  def _to_pb_v4s(self):
-    """Returns an ordered list of datastore_v4_pb.PropertyOrder."""
-    return [order._to_pb_v4() for order in self._orders]
+  def _to_pb_v1(self, adapter):
+    """Returns an ordered list of googledatastore.PropertyOrder.
+
+    Args:
+      adapter: A datastore_rpc.AbstractAdapter
+    """
+    return [order._to_pb_v1(adapter) for order in self._orders]
 
   def __eq__(self, other):
     if self.__class__ is other.__class__:
@@ -1876,33 +1798,36 @@ class _QueryKeyFilter(_BaseComponent):
       ancestor.CopyFrom(self.__ancestor)
     return pb
 
-  def _to_pb_v4(self):
-    """Returns a v4 internal proto representation of the query key filter.
+  def _to_pb_v1(self, adapter):
+    """Returns a v1 internal proto representation of the query key filter.
 
+    Args:
+      adapter: A datastore_rpc.AbstractAdapter.
     Returns:
-      A tuple (datastore_v4_pb.RunQueryRequest, datastore_v4_pb.Filter).
+      A tuple (googledatastore.RunQueryRequest, googledatastore.Filter).
 
     The second tuple value is a Filter representing the ancestor portion of the
     query. If there is no ancestor constraint, this value will be None
     """
-    pb = datastore_v4_pb.RunQueryRequest()
-    partition_id = pb.mutable_partition_id()
-    partition_id.set_dataset_id(self.__app)
+    pb = googledatastore.RunQueryRequest()
+    partition_id = pb.partition_id
+    partition_id.project_id = (
+        adapter.get_entity_converter().app_to_project_id(self.__app))
     if self.__namespace:
-      partition_id.set_namespace(self.__namespace)
+      partition_id.namespace_id = self.__namespace
     if self.__kind is not None:
-      pb.mutable_query().add_kind().set_name(self.__kind)
+      pb.query.kind.add().name = self.__kind
     ancestor_filter = None
     if self.__ancestor:
-      ancestor_filter = datastore_v4_pb.Filter()
-      ancestor_prop_filter = ancestor_filter.mutable_property_filter()
-      ancestor_prop_filter.set_operator(
-          datastore_v4_pb.PropertyFilter.HAS_ANCESTOR)
-      prop_pb = ancestor_prop_filter.mutable_property()
-      prop_pb.set_name(datastore_types.KEY_SPECIAL_PROPERTY)
-      datastore_pbs.get_entity_converter().v3_to_v4_key(
+      ancestor_filter = googledatastore.Filter()
+      ancestor_prop_filter = ancestor_filter.property_filter
+      ancestor_prop_filter.op = (
+          googledatastore.PropertyFilter.HAS_ANCESTOR)
+      prop_pb = ancestor_prop_filter.property
+      prop_pb.name = datastore_types.KEY_SPECIAL_PROPERTY
+      adapter.get_entity_converter().v3_to_v1_key(
           self.ancestor,
-          ancestor_prop_filter.mutable_value().mutable_key_value())
+          ancestor_prop_filter.value.key_value)
     return pb, ancestor_filter
 
 
@@ -2077,8 +2002,8 @@ class Query(_BaseQuery):
     if not start_cursor and query_options.produce_cursors:
       start_cursor = Cursor()
 
-    if conn._api_version == datastore_rpc._DATASTORE_V4:
-      req = self._to_pb_v4(conn, query_options)
+    if conn._api_version == datastore_rpc._CLOUD_DATASTORE_V1:
+      req = self._to_pb_v1(conn, query_options)
     else:
       req = self._to_pb(conn, query_options)
 
@@ -2115,50 +2040,50 @@ class Query(_BaseQuery):
                  order=order,
                  group_by=group_by)
 
-  def _to_pb_v4(self, conn, query_options):
-    """Returns a datastore_v4_pb.RunQueryRequest."""
-    v4_req, v4_ancestor_filter = self._key_filter._to_pb_v4()
-    v4_query = v4_req.mutable_query()
+  def _to_pb_v1(self, conn, query_options):
+    """Returns a googledatastore.RunQueryRequest."""
+    v1_req, v1_ancestor_filter = self._key_filter._to_pb_v1(conn.adapter)
+    v1_query = v1_req.query
 
     if self.filter_predicate:
-      filter_predicate_pb = self._filter_predicate._to_pb_v4()
+      filter_predicate_pb = self._filter_predicate._to_pb_v1(conn.adapter)
 
 
-    if self.filter_predicate and v4_ancestor_filter:
-      comp_filter_pb = v4_query.mutable_filter().mutable_composite_filter()
-      comp_filter_pb.set_operator(datastore_v4_pb.CompositeFilter.AND)
-      comp_filter_pb.add_filter().CopyFrom(filter_predicate_pb)
-      comp_filter_pb.add_filter().CopyFrom(v4_ancestor_filter)
+    if self.filter_predicate and v1_ancestor_filter:
+      comp_filter_pb = v1_query.filter.composite_filter
+      comp_filter_pb.operator = googledatastore.CompositeFilter.AND
+      comp_filter_pb.filter.add().CopyFrom(filter_predicate_pb)
+      comp_filter_pb.filter.add().CopyFrom(v1_ancestor_filter)
     elif self.filter_predicate:
-      v4_query.mutable_filter().CopyFrom(filter_predicate_pb)
-    elif v4_ancestor_filter:
-      v4_query.mutable_filter().CopyFrom(v4_ancestor_filter)
+      v1_query.filter.CopyFrom(filter_predicate_pb)
+    elif v1_ancestor_filter:
+      v1_query.filter.CopyFrom(v1_ancestor_filter)
 
 
     if self._order:
-      for order in self._order._to_pb_v4s():
-        v4_query.add_order().CopyFrom(order)
+      for order in self._order._to_pb_v1(conn.adapter):
+        v1_query.order.add().CopyFrom(order)
 
 
     if QueryOptions.keys_only(query_options, conn.config):
-      prop_ref_pb = v4_query.add_projection().mutable_property()
-      prop_ref_pb.set_name(datastore_pbs.PROPERTY_NAME_KEY)
+      prop_ref_pb = v1_query.projection.add().property
+      prop_ref_pb.name = datastore_pbs.PROPERTY_NAME_KEY
 
     projection = QueryOptions.projection(query_options, conn.config)
     self._validate_projection_and_group_by(projection, self._group_by)
 
     if projection:
       for prop in projection:
-        prop_ref_pb = v4_query.add_projection().mutable_property()
-        prop_ref_pb.set_name(prop)
+        prop_ref_pb = v1_query.projection.add().property
+        prop_ref_pb.name = prop
 
     if self._group_by:
       for group_by in self._group_by:
-        v4_query.add_group_by().set_name(group_by)
+        v1_query.distinct_on.add().name = group_by
 
     limit = QueryOptions.limit(query_options, conn.config)
     if limit is not None:
-      v4_query.set_limit(limit)
+      v1_query.limit.value = limit
 
 
 
@@ -2168,27 +2093,28 @@ class Query(_BaseQuery):
     if count is None:
       count = QueryOptions.prefetch_size(query_options, conn.config)
     if count is not None:
-      v4_req.set_suggested_batch_size(count)
+
+      pass
 
 
     if query_options.offset:
-      v4_query.set_offset(query_options.offset)
+      v1_query.offset = query_options.offset
 
 
     if query_options.start_cursor is not None:
-      v4_query.set_start_cursor(query_options.start_cursor.to_bytes())
+      v1_query.start_cursor = query_options.start_cursor.to_bytes()
 
 
     if query_options.end_cursor is not None:
-      v4_query.set_end_cursor(query_options.end_cursor.to_bytes())
+      v1_query.end_cursor = query_options.end_cursor.to_bytes()
 
 
 
 
-    conn._set_request_read_policy(v4_req, query_options)
-    conn._set_request_transaction(v4_req)
+    conn._set_request_read_policy(v1_req, query_options)
+    conn._set_request_transaction(v1_req)
 
-    return v4_req
+    return v1_req
 
   def _to_pb(self, conn, query_options):
     """Returns the internal only pb representation."""
@@ -2241,7 +2167,7 @@ class Query(_BaseQuery):
         pb.mutable_compiled_cursor().ParseFromString(
             query_options.start_cursor.to_bytes())
       except ProtocolBuffer.ProtocolBufferDecodeError:
-        raise datastore_errors.BadRequestError('invalid cursor')
+        raise datastore_errors.BadValueError('invalid cursor')
 
 
     if query_options.end_cursor is not None:
@@ -2249,7 +2175,7 @@ class Query(_BaseQuery):
         pb.mutable_end_compiled_cursor().ParseFromString(
             query_options.end_cursor.to_bytes())
       except ProtocolBuffer.ProtocolBufferDecodeError:
-        raise datastore_errors.BadRequestError('invalid cursor')
+        raise datastore_errors.BadValueError('invalid cursor')
 
 
     if ((query_options.hint == QueryOptions.ORDER_FIRST and pb.order_size()) or
@@ -2470,8 +2396,8 @@ class _AugmentedQuery(_BaseQuery):
       in_memory_limit = None
 
     modified_query_options = QueryOptions(config=query_options, **changes)
-    if conn._api_version == datastore_rpc._DATASTORE_V4:
-      req = self._query._to_pb_v4(conn, modified_query_options)
+    if conn._api_version == datastore_rpc._CLOUD_DATASTORE_V1:
+      req = self._query._to_pb_v1(conn, modified_query_options)
     else:
       req = self._query._to_pb(conn, modified_query_options)
 
@@ -2479,7 +2405,7 @@ class _AugmentedQuery(_BaseQuery):
     if not start_cursor and query_options.produce_cursors:
       start_cursor = Cursor()
 
-    return _AugmentedBatch.create_async(self, query_options, conn, req,
+    return _AugmentedBatch.create_async(self, modified_query_options, conn, req,
                                         in_memory_offset=in_memory_offset,
                                         in_memory_limit=in_memory_limit,
                                         start_cursor=start_cursor)
@@ -2550,6 +2476,7 @@ class _BatchShared(object):
     if initial_offset is None:
       initial_offset = query_options.offset or 0
     self.__expected_offset = initial_offset
+    self.__remaining_limit = query_options.limit
 
   @property
   def query(self):
@@ -2580,6 +2507,10 @@ class _BatchShared(object):
     return self.__expected_offset
 
   @property
+  def remaining_limit(self):
+    return self.__remaining_limit
+
+  @property
   def index_list(self):
     """Returns the list of indexes used by the query.
     Possibly None when the adapter does not implement pb_to_index.
@@ -2587,14 +2518,22 @@ class _BatchShared(object):
     return self.__index_list
 
   def process_batch(self, batch):
-    self.__expected_offset -= batch.skipped_results()
+    if self.conn._api_version == datastore_rpc._CLOUD_DATASTORE_V1:
+      skipped_results = batch.skipped_results
+      num_results = len(batch.entity_results)
+    else:
+      skipped_results = batch.skipped_results()
+      num_results = batch.result_size()
+    self.__expected_offset -= skipped_results
+    if self.__remaining_limit is not None:
+      self.__remaining_limit -= num_results
 
 
     if not self.__was_first_result_processed:
       self.__was_first_result_processed = True
-      if self.conn._api_version == datastore_rpc._DATASTORE_V4:
-        result_type = batch.entity_result_type()
-        self.__keys_only = result_type == datastore_v4_pb.EntityResult.KEY_ONLY
+      if self.conn._api_version == datastore_rpc._CLOUD_DATASTORE_V1:
+        result_type = batch.entity_result_type
+        self.__keys_only = result_type == googledatastore.EntityResult.KEY_ONLY
         self.__compiled_query = None
 
         self.__index_list = None
@@ -2831,29 +2770,26 @@ class Batch(object):
     requested_offset = 0
     if fetch_options is not None and fetch_options.offset is not None:
       requested_offset = fetch_options.offset
-
-    if conn._api_version == datastore_rpc._DATASTORE_V4:
-      if (self._batch_shared.expected_offset != requested_offset):
+    if conn._api_version == datastore_rpc._CLOUD_DATASTORE_V1:
+      if self._batch_shared.expected_offset != requested_offset:
         raise datastore_errors.BadArgumentError(
             'Cannot request the next batch with a different offset than '
             ' expected. Expected: %s, Got: %s.'
             % (self._batch_shared.expected_offset, requested_offset))
-      else:
-
-        next_batch.__datastore_cursor = self.__datastore_cursor
-        result = next_batch._make_next_rpc_call(config, self._to_pb_v4())
+      limit = self._batch_shared.remaining_limit
+      next_options = QueryOptions(offset=self._batch_shared.expected_offset,
+                                  limit=limit,
+                                  start_cursor=self.__datastore_cursor)
+      config = config.merge(next_options)
+      result = next_batch._make_query_rpc_call(
+          config,
+          self._batch_shared.query._to_pb_v1(conn, config))
     else:
       result = next_batch._make_next_rpc_call(config,
                                               self._to_pb(fetch_options))
 
     self.__datastore_cursor = None
     return result
-
-  def _to_pb_v4(self):
-    """Returns a datastore_v4_pb.ContinueQueryRequest."""
-    req = datastore_v4_pb.ContinueQueryRequest()
-    req.set_query_handle(self.__datastore_cursor)
-    return req
 
   def _to_pb(self, fetch_options=None):
     req = datastore_pb.NextRequest()
@@ -2899,17 +2835,18 @@ class Batch(object):
     Returns:
       A UserRPC object that can be used to fetch the result of the RPC.
     """
-    if self._batch_shared.conn._api_version == datastore_rpc._DATASTORE_V4:
+    _api_version = self._batch_shared.conn._api_version
+    if _api_version == datastore_rpc._CLOUD_DATASTORE_V1:
       return self._batch_shared.conn._make_rpc_call(
-          config, 'RunQuery', req, datastore_v4_pb.RunQueryResponse(),
-          self.__v4_run_query_response_hook)
+          config, 'RunQuery', req, googledatastore.RunQueryResponse(),
+          self.__v1_run_query_response_hook)
 
     return self._batch_shared.conn._make_rpc_call(config, 'RunQuery', req,
                                                   datastore_pb.QueryResult(),
                                                   self.__query_result_hook)
 
   def _make_next_rpc_call(self, config, req):
-    """Makes either a Next or ContinueQuery call that will modify the instance.
+    """Makes a Next call that will modify the instance.
 
     Args:
       config: The datastore_rpc.Configuration to use for the call.
@@ -2918,53 +2855,40 @@ class Batch(object):
     Returns:
       A UserRPC object that can be used to fetch the result of the RPC.
     """
-    if self._batch_shared.conn._api_version == datastore_rpc._DATASTORE_V4:
-      return self._batch_shared.conn._make_rpc_call(
-          config, 'ContinueQuery', req,
-          datastore_v4_pb.ContinueQueryResponse(),
-          self.__v4_continue_query_response_hook)
     return self._batch_shared.conn._make_rpc_call(config, 'Next', req,
                                                   datastore_pb.QueryResult(),
                                                   self.__query_result_hook)
 
   _need_index_header = 'The suggested index for this query is:'
 
-  def __v4_run_query_response_hook(self, rpc):
+  def __v1_run_query_response_hook(self, rpc):
     try:
       self._batch_shared.conn.check_rpc_success(rpc)
-    except datastore_errors.NeedIndexError, exc:
+    except datastore_errors.NeedIndexError:
 
       raise
-    if rpc.response.has_query_handle():
-      self.__datastore_cursor = rpc.response.query_handle()
-    return self.__process_v4_query_batch(rpc.response.batch())
 
-  def __v4_continue_query_response_hook(self, rpc):
-    self._batch_shared.conn.check_rpc_success(rpc)
-    return self.__process_v4_query_batch(rpc.response.batch())
-
-  def __process_v4_query_batch(self, batch):
-    """Internal method to handle QueryResultBatchs from a V4 Query."""
+    batch = rpc.response.batch
     self._batch_shared.process_batch(batch)
 
-    if batch.has_skipped_cursor():
-      self.__skipped_cursor = Cursor(_cursor_bytes=batch.skipped_cursor())
+    if batch.skipped_cursor:
+      self.__skipped_cursor = Cursor(_cursor_bytes=batch.skipped_cursor)
 
-    self.__result_cursors = [Cursor(_cursor_bytes=result.cursor())
-                             for result in batch.entity_result_list()
-                             if result.has_cursor()]
+    self.__result_cursors = [Cursor(_cursor_bytes=result.cursor)
+                             for result in batch.entity_results
+                             if result.cursor]
 
-    if batch.has_end_cursor():
-      self.__end_cursor = Cursor(_cursor_bytes=batch.end_cursor())
+    if batch.end_cursor:
+      self.__end_cursor = Cursor(_cursor_bytes=batch.end_cursor)
 
-    self._skipped_results = batch.skipped_results()
+    self._skipped_results = batch.skipped_results
 
-    if batch.more_results() != datastore_v4_pb.QueryResultBatch.NOT_FINISHED:
-      self._end()
-    else:
+    if batch.more_results == googledatastore.QueryResultBatch.NOT_FINISHED:
       self.__more_results = True
-
-    self.__results = self._process_v4_results(batch.entity_result_list())
+      self.__datastore_cursor = self.__end_cursor or self.__skipped_cursor
+    else:
+      self._end()
+    self.__results = self._process_v1_results(batch.entity_results)
     return self
 
   def __query_result_hook(self, rpc):
@@ -3046,17 +2970,17 @@ class Batch(object):
     return [converter(result, self._batch_shared.query_options)
             for result in results]
 
-  def _process_v4_results(self, results):
+  def _process_v1_results(self, results):
     """Converts the datastore results into results returned to the user.
 
     Args:
-      results: A list of datastore_v4_pb.EntityResults.
+      results: A list of googledatastore.EntityResults.
 
     Returns:
       A list of results that should be returned to the user.
     """
-    converter = self._batch_shared.conn.adapter.pb_v4_to_query_result
-    return [converter(result.entity(), self._batch_shared.query_options)
+    converter = self._batch_shared.conn.adapter.pb_v1_to_query_result
+    return [converter(result.entity, self._batch_shared.query_options)
             for result in results]
 
   def __getstate__(self):
@@ -3115,15 +3039,14 @@ class _AugmentedBatch(Batch):
     self.__in_memory_offset = next_batch.__in_memory_offset
     self.__next_index = next_batch.__next_index
 
-  def _process_v4_results(self, results):
+  def _process_v1_results(self, results):
     """Process V4 results by converting to V3 and calling _process_results."""
     v3_results = []
     is_projection = bool(self.query_options.projection)
-    for v4_result in results:
+    for v1_result in results:
       v3_entity = entity_pb.EntityProto()
-      datastore_pbs.get_entity_converter().v4_to_v3_entity(v4_result.entity(),
-                                                           v3_entity,
-                                                           is_projection)
+      self._batch_shared.conn.adapter.get_entity_converter().v1_to_v3_entity(
+          v1_result.entity, v3_entity, is_projection)
       v3_results.append(v3_entity)
     return self._process_results(v3_results)
 

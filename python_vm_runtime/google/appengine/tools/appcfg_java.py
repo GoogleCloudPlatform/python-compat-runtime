@@ -137,6 +137,8 @@ class JavaAppUpdate(object):
 
       self.options.no_symlinks = True
 
+
+
     java_home, exec_suffix = java_utils.JavaHomeAndSuffix()
     self.java_command = os.path.join(java_home, 'bin', 'java' + exec_suffix)
     self.javac_command = os.path.join(java_home, 'bin', 'javac' + exec_suffix)
@@ -489,6 +491,7 @@ class JavaAppUpdate(object):
         self.javac_command,
         '-classpath', classpath,
         '-d', jsp_class_dir,
+        '-target', '1.7',
         '-encoding', self.options.compile_encoding,
     ] + java_files
 

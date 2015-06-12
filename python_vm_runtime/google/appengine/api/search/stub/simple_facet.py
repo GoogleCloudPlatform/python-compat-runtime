@@ -14,25 +14,77 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-"""A Simple facet analyzer."""
+"""A simple working model of facted search backend used in Search API stub."""
 
 from google.appengine.datastore import document_pb
 
 
 class SimpleFacet(object):
-  """A Simple facet analyzer."""
+  """A simple facet analyzer.
+
+    This is a simple working model of facted search backend used in Search Api
+  stub. It has two parts, one for aggregating facet information and add them to
+  the response(FillFacetResponse) and the other for refining the search results
+  based on requested facet refinements(RefineResults).
+  """
 
   def __init__(self, params):
+    """Initializer.
+
+    Args:
+      params: A SearchParams protocol buffer object contain facet request
+        parameters.
+    """
     self._params = params
 
   def FillFacetResponse(self, results, response):
-    """Extract facet results and add them to the response."""
+    """Extract facet results and add them to the response.
+
+    This method goes through all facets and add aggregated facet information to
+    the search response according to facet request parameters.
+
+    Args:
+      results: Search Query result set.
+      response: Search Query response protocol buffer objects. Facet results
+        will be added to this response.
+    Raises:
+      ValueError: if a facet type is invalid or facet request has invalid
+        values.
+    """
 
 
-    manual_facet_map = {}
-    manual_facets = {}
+    if (not self._params.include_facet_list()
+        and not self._params.auto_discover_facet_count()):
+      return
+    self._PreprocessManualFacets()
+    self._discovered_facets = {}
+
+
+
+    for result in results[:self._params.facet_depth()]:
+      for facet in result.document.facet_list():
+        if facet.value().type() == document_pb.FacetValue.ATOM:
+          self._ProcessAtomFacet(facet)
+        elif facet.value().type() == document_pb.FacetValue.NUMBER:
+          self._ProcessNumberFacet(facet)
+        else:
+          raise ValueError('Facet type %d is not supported' %
+                           facet.value().type())
+
+
+
+    for facet in self._manual_facets.values():
+      self._FillResponseForSingleFacet(facet, response.add_facet_result())
+    for facet in _GetTopN(self._discovered_facets.values(),
+                          self._params.auto_discover_facet_count()):
+      self._FillResponseForSingleFacet(facet, response.add_facet_result())
+
+  def _PreprocessManualFacets(self):
+    """Create a map for manual facets to be accessed easier by name later."""
+    self._manual_facets = {}
+    self._manual_facet_map = {}
     for manual_facet in self._params.include_facet_list():
-      manual_facet_map[manual_facet.name()] = manual_facet.params()
+      self._manual_facet_map[manual_facet.name()] = manual_facet.params()
 
 
       if (manual_facet.params().range_list() and
@@ -44,138 +96,127 @@ class SimpleFacet(object):
           (manual_facet.params().value_limit()
            if manual_facet.params().has_value_limit()
            else self._params.facet_auto_detect_param().value_limit()))
-      manual_facets[manual_facet.name()] = facet_obj
+      self._manual_facets[manual_facet.name()] = facet_obj
 
 
       for value in manual_facet.params().value_constraint_list():
         facet_obj.AddValue(value, 0)
 
 
-      for range_pb in manual_facet.params().range_list():
+      for range_request in manual_facet.params().range_list():
         range_pair = (
-            float(range_pb.start()) if range_pb.has_start() else None,
-            float(range_pb.end()) if range_pb.has_end() else None)
-        facet_obj.AddValue(self._GetFacetLabel(range_pb),
+            float(range_request.start()) if range_request.has_start() else None,
+            float(range_request.end()) if range_request.has_end() else None)
+        facet_obj.AddValue(self._GetFacetLabel(range_request),
                            0, refinement=range_pair)
 
-    if not manual_facet_map and not self._params.auto_discover_facet_count():
-      return
-    discovered_facets = {}
+  def _ProcessAtomFacet(self, facet):
+    """Aggregate an atom facet values for manual or auto-discovery facets."""
+
+    if facet.name() in self._manual_facet_map:
+      manual_facet_req = self._manual_facet_map[facet.name()]
+      facet_obj = self._manual_facets[facet.name()]
 
 
 
-    for result in results[:self._params.facet_depth()]:
-      for facet in result.document.facet_list():
+      if not manual_facet_req.range_list() and (
+          not manual_facet_req.value_constraint_list() or
+          facet.value().string_value() in
+          manual_facet_req.value_constraint_list()):
+        facet_obj.AddValue(facet.value().string_value())
+    elif self._params.auto_discover_facet_count():
+      if facet.name() in self._discovered_facets:
+        facet_obj = self._discovered_facets[facet.name()]
+      else:
+        facet_obj = self._discovered_facets[facet.name()] = _Facet(
+            facet.name(),
+            self._params.facet_auto_detect_param().value_limit())
+      facet_obj.AddValue(facet.value().string_value())
 
-        if facet.value().type() == document_pb.FacetValue.ATOM:
+  def _ProcessNumberFacet(self, facet):
+    """Aggregate a number facet values for manual or auto-discovery facets."""
+    facet_value = float(facet.value().string_value())
 
-          if facet.name() in manual_facet_map:
-            manual_facet_req = manual_facet_map[facet.name()]
-            facet_obj = manual_facets[facet.name()]
+    if facet.name() in self._manual_facet_map:
+      manual_facet_req = self._manual_facet_map[facet.name()]
+      facet_obj = self._manual_facets[facet.name()]
+      if manual_facet_req.range_list():
+        for range_request in manual_facet_req.range_list():
+          range_pair = (
+              float(range_request.start())
+              if range_request.has_start() else None,
+              float(range_request.end())
+              if range_request.has_end() else None)
+          if ((range_pair[0] is None or facet_value >= range_pair[0]) and
+              (range_pair[1] is None or facet_value < range_pair[1])):
+            facet_obj.AddValue(self._GetFacetLabel(range_request),
+                               refinement=range_pair)
+      elif manual_facet_req.value_constraint_list():
+        for constraint in manual_facet_req.value_constraint_list():
+          if facet_value == float(constraint):
+            facet_obj.AddValue(constraint)
+      else:
+        facet_obj.AddNumericValue(facet_value)
+    elif self._params.auto_discover_facet_count():
+      if facet.name() in self._discovered_facets:
+        facet_obj = self._discovered_facets[facet.name()]
+      else:
+        facet_obj = self._discovered_facets[facet.name()] = _Facet(
+            facet.name(),
+            self._params.facet_auto_detect_param().value_limit())
+      facet_obj.AddNumericValue(facet_value)
 
-
-
-            if not manual_facet_req.range_list() and (
-                not manual_facet_req.value_constraint_list() or
-                facet.value().string_value() in
-                manual_facet_req.value_constraint_list()):
-              facet_obj.AddValue(facet.value().string_value())
-          elif self._params.auto_discover_facet_count():
-            if facet.name() in discovered_facets:
-              facet_obj = discovered_facets[facet.name()]
-            else:
-              facet_obj = discovered_facets[facet.name()] = _Facet(
-                  facet.name(),
-                  self._params.facet_auto_detect_param().value_limit())
-            facet_obj.AddValue(facet.value().string_value())
-
-        elif facet.value().type() == document_pb.FacetValue.NUMBER:
-          facet_value = float(facet.value().string_value())
-          if facet.name() in manual_facet_map:
-            manual_facet_req = manual_facet_map[facet.name()]
-            facet_obj = manual_facets[facet.name()]
-            if manual_facet_req.range_list():
-              for range_pb in manual_facet_req.range_list():
-                range_pair = (
-                    float(range_pb.start()) if range_pb.has_start() else None,
-                    float(range_pb.end()) if range_pb.has_end() else None)
-                if ((range_pair[0] is None or facet_value >= range_pair[0]) and
-                    (range_pair[1] is None or facet_value < range_pair[1])):
-                  facet_obj.AddValue(self._GetFacetLabel(range_pb),
-                                     refinement=range_pair)
-            elif manual_facet_req.value_constraint_list():
-              for constraint in manual_facet_req.value_constraint_list():
-                if facet_value == float(constraint):
-                  facet_obj.AddValue(constraint)
-            else:
-              facet_obj.AddNumericValue(facet_value)
-          elif self._params.auto_discover_facet_count():
-            if facet.name() in discovered_facets:
-              facet_obj = discovered_facets[facet.name()]
-            else:
-              facet_obj = discovered_facets[facet.name()] = _Facet(
-                  facet.name(),
-                  self._params.facet_auto_detect_param().value_limit())
-            facet_obj.AddNumericValue(facet_value)
-        else:
-          raise ValueError('Facet type %d is not supported' %
-                           facet.value().type())
+  def _FillResponseForSingleFacet(self, facet, facet_response):
+    """Convert a single _Facet to a SearchResponse.facet_result."""
 
 
-
-    for facet in manual_facets.values():
-      self._FillResponseForSingleFacet(facet, response.add_facet_result())
-    for facet in  _GetTopN(discovered_facets.values(),
-                           self._params.auto_discover_facet_count()):
-      self._FillResponseForSingleFacet(facet, response.add_facet_result())
-
-  def _FillResponseForSingleFacet(self, facet, facet_result_pb):
-    """Convert a single _Facet to a facet_result_pb."""
-
-
-    if facet.min is not None:
-      facet.AddValue('[%s,%s)' % (facet.min, facet.max), facet.min_max_count,
+    if isinstance(facet.min, float) and isinstance(facet.max, float):
+      facet.AddValue('[%r,%r)' % (facet.min, facet.max), facet.min_max_count,
                      (facet.min, facet.max))
-    facet_result_pb.set_name(facet.name)
+    facet_response.set_name(facet.name)
     for value in facet.GetTopValues(facet.value_limit):
-      value_pb = facet_result_pb.add_value()
-      ref_pb = value_pb.mutable_refinement()
+      resp_value = facet_response.add_value()
+      resp_ref = resp_value.mutable_refinement()
 
 
-      if value.refinement is not None:
+      if value.refinement:
         if value.refinement[0] is not None:
-          ref_pb.mutable_range().set_start(str(value.refinement[0]))
+          resp_ref.mutable_range().set_start(repr(value.refinement[0]))
         if value.refinement[1] is not None:
-          ref_pb.mutable_range().set_end(str(value.refinement[1]))
+          resp_ref.mutable_range().set_end(repr(value.refinement[1]))
       else:
 
 
-        ref_pb.set_value(str(value.label))
-      ref_pb.set_name(facet.name)
-      value_pb.set_name(str(value.label))
-      value_pb.set_count(value.count)
+        resp_ref.set_value(value.label)
+      resp_ref.set_name(facet.name)
+      resp_value.set_name(value.label)
+      resp_value.set_count(value.count)
 
-  def _GetFacetLabel(self, range_pb):
-    if range_pb.has_name():
-      return range_pb.name()
+  def _GetFacetLabel(self, facet_range):
+    """Creates an forced (by the backend) lable for facet ranges."""
+    if facet_range.has_name():
+      return facet_range.name()
     else:
-      return '[%s,%s)' % (str(float(range_pb.start()))
-                          if range_pb.has_start() else '-Infinity',
-                          str(float(range_pb.end()))
-                          if range_pb.has_end() else 'Infinity')
+      return '[%s,%s)' % (repr(float(facet_range.start()))
+                          if facet_range.has_start() else '-Infinity',
+                          repr(float(facet_range.end()))
+                          if facet_range.has_end() else 'Infinity')
 
   def RefineResults(self, results):
-    """Returns refined results using facet refinement parameters."""
+    """Returns refined results using facet refinement parameters.
+
+    Args:
+      results: Search Query result set.
+    Returns:
+      The filtered result.
+    """
     if not self._params.facet_refinement_list():
       return results
 
 
     ref_groups = {}
     for refinement in self._params.facet_refinement_list():
-      if refinement.name() in ref_groups:
-        ref_groups[refinement.name()].append(refinement)
-      else:
-        ref_groups[refinement.name()] = [refinement]
+      ref_groups.setdefault(refinement.name(), []).append(refinement)
 
     return [doc for doc in results
             if self._MatchFacetRefinements(doc, ref_groups)]
@@ -183,13 +224,12 @@ class SimpleFacet(object):
   def _MatchFacetRefinements(self, doc, ref_groups):
 
 
-    return all([self._MatchFacetRefinementSameName(doc, ref_same_names)
-                for ref_same_names in ref_groups.values()])
+    return all((self._MatchFacetRefinementSameName(doc, ref_same_names)
+                for ref_same_names in ref_groups.values()))
 
   def _MatchFacetRefinementSameName(self, doc, ref_same_names):
 
-    return any([self._MatchFacetRefinement(doc, ref)
-                for ref in ref_same_names])
+    return any((self._MatchFacetRefinement(doc, ref) for ref in ref_same_names))
 
   def _MatchFacetRefinement(self, doc, refinement):
 
@@ -198,11 +238,11 @@ class SimpleFacet(object):
     for facet in doc.document.facet_list():
       if facet.name() == refinement.name():
         doc_facets.append(facet)
-    return any([self._MatchSingleFacetRefinement(doc_facet, refinement)
-                for doc_facet in doc_facets])
+    return any((self._MatchSingleFacetRefinement(doc_facet, refinement)
+                for doc_facet in doc_facets))
 
   def _MatchSingleFacetRefinement(self, doc_facet, refinement):
-
+    """Matches a single document facet with a single refinement."""
     if refinement.has_value():
       if refinement.has_range():
         raise ValueError('Refinement request for facet %s should either '
@@ -213,31 +253,31 @@ class SimpleFacet(object):
         return float(facet_value) == float(refinement.value())
       else:
         return facet_value == refinement.value()
-    else:
-      if not refinement.has_range():
-        raise ValueError('Refinement request for facet %s should specify '
-                         'range or value constraint.' % refinement.name())
+    if not refinement.has_range():
+      raise ValueError('Refinement request for facet %s should specify '
+                       'range or value constraint.' % refinement.name())
 
 
-      if doc_facet.value().type() != document_pb.FacetValue.NUMBER:
-        return False
-      facet_value = float(doc_facet.value().string_value())
-      ref_range = refinement.range()
-      start = float(ref_range.start()) if ref_range.has_start() else None
-      end = float(ref_range.end()) if ref_range.has_end() else None
-      return ((start is None or facet_value >= start) and
-              (end is None or facet_value < end))
+    if doc_facet.value().type() != document_pb.FacetValue.NUMBER:
+      return False
+    facet_value = float(doc_facet.value().string_value())
+    ref_range = refinement.range()
+    start = float(ref_range.start()) if ref_range.has_start() else None
+    end = float(ref_range.end()) if ref_range.has_end() else None
+    return ((start is None or facet_value >= start) and
+            (end is None or facet_value < end))
 
 
 class _FacetValue(object):
   """A representation of a single facet value."""
 
   def __init__(self, label, count=0, refinement=None):
-    """Initilizer.
+    """Initializer.
 
     Args:
-      label: label of this value. can be the actual value or a custom label for
-        ranges. If this is a custom label, refinement should be set.
+      label: label (of string type) of this value. can be the actual value or a
+        custom label for ranges. If this is a custom label, refinement should
+        be set.
       count: Initial number of facets with this value. This number can be
         increased later.
       refinement: If this value does not need a custom refinement, this value
@@ -273,7 +313,7 @@ class _Facet(object):
   """Simple facet implementation that holds values and overall count."""
 
   def __init__(self, name, value_limit):
-    """Initilizer.
+    """Initializer.
 
     Args:
       name: The name of the facet.

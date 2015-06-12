@@ -20,7 +20,7 @@ import collections
 import os
 import urllib2
 
-_METADATA_BASE_PATH = 'http://metadata/0.1/meta-data/attributes'
+_METADATA_BASE_PATH = 'http://metadata/computeMetadata/v1/instance/attributes'
 
 
 def _MetadataGetter(key):
@@ -32,7 +32,9 @@ def _MetadataGetter(key):
   Returns:
     The metadata value as a string.
   """
-  return urllib2.urlopen('%s/%s' % (_METADATA_BASE_PATH, key)).read()
+  req = urllib2.Request('%s/%s' % (_METADATA_BASE_PATH, key))
+  req.add_header('Metadata-Flavor', 'Google')
+  return urllib2.urlopen(req).read()
 
 
 VmAppengineEnvConfig = collections.namedtuple(

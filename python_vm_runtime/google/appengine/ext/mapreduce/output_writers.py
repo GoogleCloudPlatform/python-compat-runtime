@@ -81,13 +81,13 @@ from google.appengine.ext.mapreduce import shard_life_cycle
 try:
 
   cloudstorage = None
-  from google.appengine.ext import cloudstorage
+  from google.appengine._internal import cloudstorage
   if hasattr(cloudstorage, "_STUB"):
     cloudstorage = None
 
   if cloudstorage:
-    from google.appengine.ext.cloudstorage import cloudstorage_api
-    from google.appengine.ext.cloudstorage import errors as cloud_errors
+    from google.appengine._internal.cloudstorage import cloudstorage_api
+    from google.appengine._internal.cloudstorage import errors as cloud_errors
 except ImportError:
   pass
 
@@ -1437,17 +1437,41 @@ class GoogleCloudStorageConsistentOutputWriter(
     except cloud_errors.NotFoundError:
       pass
 
+  def _exists_in_gcs(self, filename, _account_id=None):
+    """Checks if file exists in GCS already."""
+    try:
+      with cloudstorage_api.open(filename, _account_id=_account_id):
+        return True
+    except cloud_errors.NotFoundError:
+      return False
+
   def _rewrite_tmpfile(self, mainfile, tmpfile, writer_spec):
     """Copies contents of tmpfile (name) to mainfile (buffer)."""
-    if mainfile.closed:
-
-      return
 
     account_id = self._get_tmp_account_id(writer_spec)
-    f = cloudstorage_api.open(tmpfile, _account_id=account_id)
+    try:
+
+      f = cloudstorage_api.open(tmpfile, _account_id=account_id)
+    except cloud_errors.NotFoundError:
+
+
+
+
+
+
+
+
+
+
+
+      if self._exists_in_gcs(mainfile.name, _account_id=account_id):
+        return
+      raise
+
 
     data = f.read(self._REWRITE_BLOCK_SIZE)
     while data:
+
       mainfile.write(data)
       data = f.read(self._REWRITE_BLOCK_SIZE)
     f.close()
@@ -1479,11 +1503,16 @@ class GoogleCloudStorageConsistentOutputWriter(
       self._remove_tmpfile(status.tmpfile_1ago.name, writer_spec)
 
 
+
+
+    files_to_keep = []
     if status.tmpfile:
       self._rewrite_tmpfile(status.mainfile, status.tmpfile.name, writer_spec)
+      files_to_keep.append(status.tmpfile.name)
 
 
-    self._try_to_clean_garbage(writer_spec)
+    self._try_to_clean_garbage(
+        writer_spec, exclude_list=files_to_keep)
 
 
     status.tmpfile_1ago = status.tmpfile
@@ -1508,7 +1537,14 @@ class GoogleCloudStorageConsistentOutputWriter(
     super(GoogleCloudStorageConsistentOutputWriter, self).write(data)
     self._data_written_to_slice = True
 
-  def _try_to_clean_garbage(self, writer_spec):
+  def _try_to_clean_garbage(self, writer_spec, exclude_list=()):
+    """Tries to remove any files created by this shard that aren't needed.
+
+    Args:
+      writer_spec: writer_spec for the MR.
+      exclude_list: A list of filenames (strings) that should not be
+        removed.
+    """
 
 
     tmpl = string.Template(self._TMPFILE_PREFIX)
@@ -1518,7 +1554,8 @@ class GoogleCloudStorageConsistentOutputWriter(
     account_id = self._get_tmp_account_id(writer_spec)
     for f in cloudstorage.listbucket("/%s/%s" % (bucket, prefix),
                                      _account_id=account_id):
-      self._remove_tmpfile(f.filename, self.status.writer_spec)
+      if f.filename not in exclude_list:
+        self._remove_tmpfile(f.filename, self.status.writer_spec)
 
   def finalize(self, ctx, shard_state):
     if self._data_written_to_slice:

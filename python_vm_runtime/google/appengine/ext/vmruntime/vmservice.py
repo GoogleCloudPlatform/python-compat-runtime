@@ -125,6 +125,19 @@ class VmService(object):
 
     appengine_config = vmconfig.BuildVmAppengineEnvConfig()
     vmstub.Register(vmstub.VMStub(appengine_config.default_ticket))
+
+
+
+
+
+
+
+
+    try:
+      import appengine_config as user_appengine_config
+    except ImportError:
+      pass
+
     app = meta_app.FullyWrappedApp(appinfo_external, appengine_config)
     self.server = self.server_class(self.host, self.port, app,
                                     appinfo_external)

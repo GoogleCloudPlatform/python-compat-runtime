@@ -32,30 +32,73 @@ Versions 1.9 and 1.10 of docker remote API are supported.
 """
 
 from collections import namedtuple
-import itertools
+import datetime
 import json
 import logging
 import os
 import re
+import socket
 import ssl
+import sys
 import threading
 import urlparse
 
 import google
-import docker
+
+from docker import docker
+
 import requests
 
 
 _SUCCESSFUL_BUILD_PATTERN = re.compile(r'Successfully built ([a-zA-Z0-9]{12})')
 
-_ERROR_LOG_TMPL = 'Build Error: {error}.'
-_ERROR_LOG_DETAILED_TMPL = _ERROR_LOG_TMPL + ' Detail: {detail}'
 _STREAM = 'stream'
 
 
 _cleanup_scheduled = None
 _cleanup_scheduled_lock = threading.Lock()
 _cleanup_lock = threading.Lock()
+
+DEFAULT_LINUX_DOCKER_HOST = '/var/run/docker.sock'
+DOCKER_CONNECTION_ERROR = (
+    'Couldn\'t connect to the docker daemon.\n'
+    'Please check if the environment variables DOCKER_HOST, '
+    'DOCKER_CERT_PATH and DOCKER_TLS_VERIFY are set correctly. '
+    'If you are using boot2docker, you can set them up by '
+    'executing the commands that are shown by:\n'
+    'boot2docker shellinit')
+# TODO: revisit this message when
+# https://github.com/boot2docker/boot2docker-cli/issues/301 is fixed
+
+# This is the recognized format for container names to be automatically
+# cleaned up by the _CleanupOldContainersAndImagesWithPrefix method below.
+_CONTAINER_NAME_FORMAT = '{prefix}.{base_name}.{timestamp}'
+
+
+def CleanableContainerName(prefix, base_name, timestamp=None):
+  """Generates a container name tagged for later deletion.
+
+  We have an asynchronous cleaning process in the SDK that can recognize these
+  containers by their names and periodically cleans them up.
+  The naming scheme avoids cleaning up containers that did not come
+  from the SDK.
+
+  Args:
+    prefix: the prefix used to identify the cleanable containers.
+    base_name: the identifier of the series of containers.
+    timestamp: the timestamp as a string you want to generate the name from.
+               If None, it will be the now in the UTC timezone in ISO 8601.
+
+  Returns:
+    the generated container name.
+  """
+  if timestamp is None:
+    # ":" is not allowed in container names but is optional in
+    # ISO8601.
+    timestamp = datetime.datetime.utcnow().strftime('%Y-%m-%dT%H%M%S.%fZ')
+
+  return _CONTAINER_NAME_FORMAT.format(
+      prefix=prefix, base_name=base_name, timestamp=timestamp)
 
 
 class ImageOptions(namedtuple('ImageOptionsT',
@@ -214,7 +257,10 @@ class Image(BaseImage):
     Raises:
       ImageError: if the image could not be built.
     """
-    logging.info('Building image %s...', self.tag)
+    logging.info('Building docker image %s from %s/Dockerfile:',
+                 self.tag, self._image_opts.dockerfile_dir)
+
+    logging.info('-' * 20 + '  DOCKER BUILD  ' + '-' * 20)
 
     build_res = self._docker_client.build(
         path=self._image_opts.dockerfile_dir,
@@ -222,47 +268,47 @@ class Image(BaseImage):
         quiet=False, fileobj=None, nocache=self._image_opts.nocache,
         rm=self._image_opts.rm)
 
-    log_lines = [json.loads(x.strip()) for x in build_res]
+    error = None
+    error_detail = None
+    log_records = []
+    try:
+      for line in build_res:
+        line = line.strip()
+        if not line:
+          continue
+        log_record = json.loads(line)
+        log_records.append(log_record)
+        if 'stream' in log_record:
+          logging.info(log_record['stream'].strip())
+        elif 'error' in log_record:
+          error = log_record['error'].strip()
+          logging.error(error)
+        elif 'errorDetail' in log_record:
+          error_detail = log_record['errorDetail']['message'].strip()
+          logging.error('Details: ' + error_detail)
+    except docker.errors.APIError as e:
+      logging.error(e.explanation)
+      error = e.explanation
+      error_detail = ''
+    finally:
+      logging.info('-' * 56)
 
-    if not log_lines:
-      logging.error('Error building docker image %s [with no output]', self.tag)
-      raise ImageError
+    if not log_records:
+      raise ImageError('Error building docker image %s [with no output]',
+                       self.tag)
 
-    def _FormatBuildLog(lines):
-      if not lines:
-        return ''
-      return ('Full Image Build Log:\n%s' %
-              ''.join(l.get(_STREAM, '') for l in lines))
-
-    success_message = log_lines[-1].get(_STREAM)
+    success_message = log_records[-1].get(_STREAM)
     if success_message:
       m = _SUCCESSFUL_BUILD_PATTERN.match(success_message)
       if m:
         # The build was successful.
         self._id = m.group(1)
         logging.info('Image %s built, id = %s', self.tag, self.id)
-        logging.debug(_FormatBuildLog(log_lines))
         return
-
-    logging.error('Error building docker image %s', self.tag)
-
-    # Last log line usually contains error details if not a success message.
-    err_line = log_lines[-1]
-    error = err_line.get('error')
-    error_detail = err_line.get('errorDetail')
+    msg = 'Docker build aborted: %s' % error
     if error_detail:
-      error_detail = error_detail.get('message')
-
-    stop = len(log_lines)
-    if error or error_detail:
-      el = (_ERROR_LOG_TMPL if error == error_detail
-            else _ERROR_LOG_DETAILED_TMPL).format(error=error,
-                                                  detail=error_detail)
-      logging.error(el)
-      stop -= 1
-
-    logging.error(_FormatBuildLog(itertools.islice(log_lines, stop)))
-    raise ImageError
+      msg += '\nMore info: %s' % error_detail
+    raise ImageError(msg)
 
   def Remove(self):
     """Calls "docker rmi"."""
@@ -429,6 +475,14 @@ def _CleanupOldContainersAndImagesWithPrefix(docker_client, prefix,
             # another container derived from this image, clean it up later.
             continue
           logging.debug('Removing old image: %s', img)
+
+          # TODO: remove once it is fixed upstream.
+          # see https://github.com/docker/docker/issues/9602
+          if isinstance(img, (int, long)):
+            logging.error('Some unnamed images could not be removed.\n'
+                          'Try cleaning up old images manually.\n'
+                          'They can be listed with "docker images".')
+            continue
           docker_client.remove_image(img)
         except docker.errors.APIError as e:
           logging.warning('Image Id %s cannot be removed: %s.\n'
@@ -470,7 +524,7 @@ class Container(object):
 
     Raises:
       ContainerError: if container_id is already set, i.e. container is already
-          started.
+          started or we could not build the underlying image.
     """
     if self.id:
       raise ContainerError('Trying to start already running container.')
@@ -617,13 +671,30 @@ def _KwargsFromEnv():
                 tls_verify)
 
   params = {}
+
   if host:
     params['base_url'] = (host.replace('tcp://', 'https://') if tls_verify
                           else host)
+  elif sys.platform.startswith('linux'):
+    # if this is a linux user, the default value of DOCKER_HOST should be the
+    # unix socket.
+
+    # first check if the socket is valid to give a better feedback to the user.
+    if os.path.exists(DEFAULT_LINUX_DOCKER_HOST):
+      sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+      try:
+        sock.connect(DEFAULT_LINUX_DOCKER_HOST)
+        params['base_url'] = 'unix://' + DEFAULT_LINUX_DOCKER_HOST
+      except socket.error:
+        logging.warning('Found a stale /var/run/docker.sock, '
+                        'did you forget to start your docker daemon?')
+      finally:
+        sock.close()
+
   if tls_verify and cert_path:
     # assert_hostname=False is needed for boot2docker to work with our custom
     # registry.
-    params['tls'] = docker.docker.tls.TLSConfig(
+    params['tls'] = docker.tls.TLSConfig(
         client_cert=(os.path.join(cert_path, 'cert.pem'),
                      os.path.join(cert_path, 'key.pem')),
         ca_cert=os.path.join(cert_path, 'ca.pem'),
@@ -633,7 +704,7 @@ def _KwargsFromEnv():
   return params
 
 
-def NewDockerClient(**kwargs):
+def NewDockerClientNoCheck(**kwargs):
   """Factory method for building a docker.Client from environment variables.
 
   Args:
@@ -649,21 +720,27 @@ def NewDockerClient(**kwargs):
   kwargs_from_env = _KwargsFromEnv()
   kwargs_from_env.update(kwargs)
   if 'base_url' not in kwargs_from_env:
-    raise DockerDaemonConnectionError(
-        'Couldn\'t connect to the docker daemon because the required '
-        'environment variables were not set. Please check the environment '
-        'variables DOCKER_HOST, DOCKER_CERT_PATH and DOCKER_TLS_VERIFY are set '
-        'correctly. If you are using boot2docker, make sure you have run '
-        '"$(boot2docker shellinit)"')
-  client = docker.Client(**kwargs_from_env)
+    raise DockerDaemonConnectionError(DOCKER_CONNECTION_ERROR)
+  return docker.Client(**kwargs_from_env)
+
+
+def NewDockerClient(**kwargs):
+  """Factory method for building a docker.Client from environment variables.
+
+  Args:
+    **kwargs: Any kwargs will be passed to the docker.Client constructor and
+      override any determined from the environment.
+
+  Returns:
+    A docker.Client instance.
+
+  Raises:
+    DockerDaemonConnectionError: If the docker daemon isn't responding.
+  """
+  client = NewDockerClientNoCheck(**kwargs)
   try:
     client.ping()
-  except requests.exceptions.ConnectionError:
-    raise DockerDaemonConnectionError(
-        'Couldn\'t connect to the docker daemon using the specified '
-        'environment variables. Please check the environment variables '
-        'DOCKER_HOST, DOCKER_CERT_PATH and DOCKER_TLS_VERIFY are set '
-        'correctly. If you are using boot2docker, make sure you have run '
-        '"$(boot2docker shellinit)"')
+  except requests.exceptions.ConnectionError, e:
+    logging.error('Failed to connect to Docker Daemon due to: %s', e)
+    raise DockerDaemonConnectionError(DOCKER_CONNECTION_ERROR)
   return client
-

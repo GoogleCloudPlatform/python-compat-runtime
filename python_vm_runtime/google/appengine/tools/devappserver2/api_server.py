@@ -100,6 +100,20 @@ _DATASTORE_V4_METHODS = {
                  datastore_v4_pb.RunQueryResponse),
 }
 
+# TODO: Remove after the Files API is really gone.
+_FILESAPI_USE_TRACKER = None
+
+
+def enable_filesapi_tracking(request_data):
+  """Turns on per-request tracking of Files API use.
+
+  Args:
+    request_data: An object with a set_filesapi_used(request_id) method to
+        track Files API use.
+  """
+  global _FILESAPI_USE_TRACKER
+  _FILESAPI_USE_TRACKER = request_data
+
 
 def _execute_request(request):
   """Executes an API method call and returns the response object.
@@ -142,6 +156,10 @@ def _execute_request(request):
   service_stub = apiproxy_stub_map.apiproxy.GetStub(service)
 
   def make_request():
+    # TODO: Remove after the Files API is really gone.
+    if (_FILESAPI_USE_TRACKER is not None
+        and service == 'file' and request_id is not None):
+      _FILESAPI_USE_TRACKER.set_filesapi_used(request_id)
     service_stub.MakeSyncCall(service,
                               method,
                               request_data,
@@ -271,7 +289,8 @@ def setup_stubs(
     taskqueue_default_http_server,
     user_login_url,
     user_logout_url,
-    default_gcs_bucket_name):
+    default_gcs_bucket_name,
+    appidentity_oauth_url=None):
   """Configures the APIs hosted by this server.
 
   Args:
@@ -333,6 +352,9 @@ def setup_stubs(
     user_logout_url: A str containing the url that should be used for user
         logout.
     default_gcs_bucket_name: A str, overriding the default bucket behavior.
+    appidentity_oauth_url: A str containing the url to the oauth2 server to use
+        to authenticate the private key. If set to None, then the standard
+        google oauth2 server is used.
   """
 
 
@@ -340,7 +362,8 @@ def setup_stubs(
 
   identity_stub = app_identity_stub.AppIdentityServiceStub.Create(
       email_address=appidentity_email_address,
-      private_key_path=appidentity_private_key_path)
+      private_key_path=appidentity_private_key_path,
+      oauth_url=appidentity_oauth_url)
   if default_gcs_bucket_name is not None:
     identity_stub.SetDefaultGcsBucketName(default_gcs_bucket_name)
   apiproxy_stub_map.apiproxy.RegisterStub('app_identity_service', identity_stub)
@@ -522,6 +545,8 @@ def test_setup_stubs(
     trusted=False,
     appidentity_email_address=None,
     appidentity_private_key_path=None,
+    # TODO: is this correct? If I'm following the flow correctly, this
+    # should not be a file but a directory.
     blobstore_path='/dev/null',
     datastore_consistency=None,
     datastore_path=':memory:',
@@ -536,13 +561,14 @@ def test_setup_stubs(
     mail_enable_sendmail=False,
     mail_show_mail_body=False,
     mail_allow_tls=True,
-    matcher_prospective_search_path='/dev/null',
+    matcher_prospective_search_path=os.devnull,
     search_index_path=None,
     taskqueue_auto_run_tasks=False,
     taskqueue_default_http_server='http://localhost:8080',
     user_login_url='/_ah/login?continue=%s',
     user_logout_url='/_ah/login?continue=%s',
-    default_gcs_bucket_name=None):
+    default_gcs_bucket_name=None,
+    appidentity_oauth_url=None):
   """Similar to setup_stubs with reasonable test defaults and recallable."""
 
   # Reset the stub map between requests because a stub map only allows a
@@ -579,7 +605,8 @@ def test_setup_stubs(
               taskqueue_default_http_server,
               user_login_url,
               user_logout_url,
-              default_gcs_bucket_name)
+              default_gcs_bucket_name,
+              appidentity_oauth_url)
 
 
 def cleanup_stubs():
