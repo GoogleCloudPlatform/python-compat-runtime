@@ -18,6 +18,7 @@ import logging
 import re
 
 from werkzeug.wrappers import Request
+from werkzeug.wrappers import Response
 
 
 def dispatcher(handlers):
@@ -32,29 +33,21 @@ def dispatcher(handlers):
     A WSGI app that dispatches to the user apps specified in the input.
   """
 
-  def dispatch(env, start_response):
+  def dispatch(wsgi_env, start_response):
     """Handle one request."""
-    request = Request(env)
-    for url, script, app in handlers:  # Closure over parent func's handlers.
+    request = Request(wsgi_env)
+    for url, script, app in handlers:  # pylint: disable=unused-variable
       matcher = re.match(url, request.path)
       if matcher and matcher.end() == len(request.path):
-        if script:
-          if app is not None:
-            # Send a response via the app specified in the handler.
-            return app(env, start_response)
-          else:
-            # The import must have failed. This will have been logged at import
-            # time. Send a 500 error response.
-            start_response('500 Internal Server Error', [])
-            return ['<h1>500 Internal Server Error</h1>\n']
-        # This is a static file; normally these are handled by the appserver
-        # but in development or for local queries they may end up here.
-        # TODO(apphosting): support static files.
+        if app is not None:
+          # Send a response via the app specified in the handler.
+          return app(wsgi_env, start_response)
         else:
-          logging.error('Static file serving is not supported: %s ',
-                        request.path)
-          start_response('500 Internal Server Error', [])
-          return ['<h1>500 Internal Server Error</h1>\n']
+          # The import must have failed. This will have been logged at import
+          # time. Send a 500 error response.
+          response = Response('<h1>500 Internal Server Error</h1>\n',
+                              status=500)
+          return response(wsgi_env, start_response)
     logging.error('No handler found for %s', request.path)
     start_response('404 Not Found', [])
     return ['<h1>404 Not Found</h1>\n']

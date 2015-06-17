@@ -34,7 +34,15 @@ FAKE_HANDLERS = [
     appinfo.URLMap(url='/failure', script='wsgi_test.nonexistent_function'),
     appinfo.URLMap(url='/env', script='wsgi_test.dump_os_environ'),
     appinfo.URLMap(url='/setenv', script='wsgi_test.add_to_os_environ'),
-    appinfo.URLMap(url='/wait', script='wsgi_test.wait_on_global_event')]
+    appinfo.URLMap(url='/wait', script='wsgi_test.wait_on_global_event'),
+    appinfo.URLMap(url='/favicon.ico', static_files='test_statics/favicon.ico'),
+    appinfo.URLMap(url='/faketype.ico', static_files='test_statics/favicon.ico',
+                   mime_type='application/fake_type'),
+    appinfo.URLMap(url='/wildcard_statics/(.*)',
+                   static_files=r'test_statics/\1'),
+    appinfo.URLMap(url='/static_dir',
+                   static_dir='test_statics'),
+    ]
 HELLO_STRING = 'Hello World!'
 
 FAKE_ENV_KEY = 'KEY'
@@ -118,6 +126,10 @@ class MetaAppTestCase(unittest.TestCase):
     response = self.client.get('/notfound')
     self.assertEqual(response.status_code, 404)
 
+  def test_health(self):
+    response = self.client.get('/_ah/health')
+    self.assertEqual(response.status_code, 200)
+
   # Test PATH is present in env. If this breaks, each request is properly
   # wiping the environment but not properly reconstituting the frozen initial
   # state.
@@ -125,6 +137,39 @@ class MetaAppTestCase(unittest.TestCase):
     response = self.client.get('/env')
     # Assumes PATH will be present in the env in all cases, including tests!
     self.assertIn('PATH', json.loads(response.data))
+
+  def test_static_file(self):
+    response = self.client.get('/favicon.ico')
+    self.assertEqual(response.status_code, 200)
+    with open('test_statics/favicon.ico') as f:
+      self.assertEqual(response.data, f.read())
+
+  def test_static_file_mime_type(self):
+    response = self.client.get('/faketype.ico')
+    self.assertEqual(response.status_code, 200)
+    with open('test_statics/favicon.ico') as f:
+      self.assertEqual(response.data, f.read())
+    self.assertEqual(response.mimetype, 'application/fake_type')
+
+  def test_static_file_wildcard(self):
+    response = self.client.get('/wildcard_statics/favicon.ico')
+    self.assertEqual(response.status_code, 200)
+    with open('test_statics/favicon.ico') as f:
+      self.assertEqual(response.data, f.read())
+
+  def test_static_file_wildcard_404(self):
+    response = self.client.get('/wildcard_statics/no_file')
+    self.assertEqual(response.status_code, 404)
+
+  def test_static_file_wildcard_directory_traversal(self):
+    response = self.client.get('/wildcard_statics/../../setup.py')
+    self.assertEqual(response.status_code, 404)
+
+  def test_static_dir(self):
+    response = self.client.get('/static_dir/favicon.ico')
+    self.assertEqual(response.status_code, 200)
+    with open('test_statics/favicon.ico') as f:
+      self.assertEqual(response.data, f.read())
 
   def test_wsgi_vars_in_env(self):
     response = self.client.get('/env')
