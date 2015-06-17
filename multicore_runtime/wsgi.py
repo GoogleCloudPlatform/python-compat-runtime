@@ -24,8 +24,8 @@ import logging
 import os
 
 from dispatcher import dispatcher
-from middleware import reset_environment_middleware
 from middleware import health_check_middleware
+from middleware import reset_environment_middleware
 from wsgi_config import env_vars_from_env_config
 from wsgi_config import get_module_config
 from wsgi_config import get_module_config_filename

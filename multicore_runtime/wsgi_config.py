@@ -19,6 +19,8 @@ import os
 import threading
 from UserDict import UserDict
 
+from static_files import static_app_for_regex_and_files
+
 from google.appengine.api import appinfo_includes
 from google.appengine.runtime import wsgi
 
@@ -38,14 +40,13 @@ def get_module_config(filename):
 
 def app_for_script(script):
   """Returns the WSGI app specified in the input string, or None on failure."""
-  if script:
-    app, filename, err = wsgi.LoadObject(script)  # pylint: disable=unused-variable
-    if err:
-      # Log the exception but do not reraise.
-      logging.exception('Failed to import %s: %s', script, err)
-      return None
-    else:
-      return app_wrapped_in_user_middleware(app)
+  app, filename, err = wsgi.LoadObject(script)  # pylint: disable=unused-variable
+  if err:
+    # Log the exception but do not reraise.
+    logging.exception('Failed to import %s: %s', script, err)
+    return None
+  else:
+    return app_wrapped_in_user_middleware(app)
 
 
 def app_wrapped_in_user_middleware(app):
@@ -80,6 +81,51 @@ def get_add_middleware_from_appengine_config():
     return None
 
 
+def static_app_for_handler(handler):
+  """Returns a WSGI app that serves static files as directed by the handler.
+
+  Args:
+    handler: An individual handler from appinfo_external.handlers
+      (appinfo.URLMap)
+
+  Returns:
+    A static file-serving WSGI app closed over the handler information.
+  """
+  regex = handler.url
+  files = handler.static_files
+  if not files:
+    if handler.static_dir:
+      # If static_files is not set, convert static_dir to static_files and also
+      # modify the url regex accordingly. See the appinfo.URLMap docstring for
+      # more information.
+      regex = static_dir_url(handler)
+      files = handler.static_dir + r'/\1'
+    else:
+      # Neither static_files nor static_dir is set; log an error and return.
+      logging.error('No script, static_files or static_dir found for %s',
+                    handler)
+      return None
+  return static_app_for_regex_and_files(regex, files,
+                                        mime_type=handler.mime_type)
+
+
+def static_dir_url(handler):
+  """Converts a static_dir regex into a static_files regex if needed.
+
+  See the appinfo.URLMap docstring for more information.
+
+  Args:
+    handler: A handler (appinfo.URLMap)
+
+  Returns:
+    A modified url regex
+  """
+  if not handler.script and not handler.static_files and handler.static_dir:
+    return handler.url + '/(.*)'
+  else:
+    return handler.url
+
+
 def load_user_scripts_into_handlers(handlers):
   """Preloads user scripts, wrapped in env_config middleware if present.
 
@@ -94,9 +140,9 @@ def load_user_scripts_into_handlers(handlers):
       - app: The fully loaded app corresponding to the script.
   """
   loaded_handlers = [
-      (x.url,
+      (x.url if x.script or x.static_files else static_dir_url(x),
        x.script.replace('$PYTHON_LIB/', '') if x.script else x.script,
-       app_for_script(x.script) if x.script else None)
+       app_for_script(x.script) if x.script else static_app_for_handler(x))
       for x in handlers]
   logging.info('Parsed handlers: %s',
                [(url, script) for (url, script, _) in loaded_handlers])
