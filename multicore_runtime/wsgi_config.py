@@ -21,6 +21,7 @@ from UserDict import UserDict
 
 from static_files import static_app_for_regex_and_files
 
+from google.appengine.api import appinfo
 from google.appengine.api import appinfo_includes
 from google.appengine.runtime import wsgi
 
@@ -139,11 +140,15 @@ def load_user_scripts_into_handlers(handlers):
       - script: The script to serve for this handler, as a string.
       - app: The fully loaded app corresponding to the script.
   """
+  # `if x.login == appinfo.LOGIN_OPTIONAL` disables loading handlers
+  # that require login or admin status entirely. This is a temporary
+  # measure until handling of login-required handlers is implemented
+  # securely.
   loaded_handlers = [
       (x.url if x.script or x.static_files else static_dir_url(x),
        x.script.replace('$PYTHON_LIB/', '') if x.script else x.script,
        app_for_script(x.script) if x.script else static_app_for_handler(x))
-      for x in handlers]
+      for x in handlers if x.login == appinfo.LOGIN_OPTIONAL]
   logging.info('Parsed handlers: %s',
                [(url, script) for (url, script, _) in loaded_handlers])
   return loaded_handlers

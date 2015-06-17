@@ -33,7 +33,8 @@ setup(name='appengine-python-vm-runtime',
       package_dir={'': 'python_vm_runtime',
                    'google.appengine.vmruntime': 'multicore_runtime',},
       include_package_data=True,
-      packages=find_packages('python_vm_runtime') + ['google.appengine.vmruntime'],  # pylint: disable=line-too-long
+      packages=find_packages('python_vm_runtime',
+                             exclude=['lib.*'])+['google.appengine.vmruntime'],
       # namespace_packages=['google'],  # This skips google/__init__.py
       install_requires=['requests>=2.5.0',
                         'webapp2>=2.5.2',
