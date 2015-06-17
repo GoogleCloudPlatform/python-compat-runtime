@@ -1,22 +1,22 @@
 Google Managed VMs Python Runtime
+=================================
 
 Warning
-=======
-
+-------
 The instructions here are for a multi-process version of the Python 2.7 runtime
 **currently in alpha**. Please do not use this version for production workloads.
 To use the stable version of the runtime, follow the documentation at
 https://cloud.google.com/appengine/docs/managed-vms/ instead.
 
 Contents
-========
-
+--------
    * Using the multi-process runtime
    * Configuration
    * Building your own version
+   * Caveats
 
 Using the multi-process runtime
-===============================
+-------------------------------
 *These instructions assume you have a working Python application that has
 already been deployed successfully to Managed VMs using the default runtime
 version.*
@@ -45,7 +45,7 @@ section.
 prebuilt Docker image with no manual Dockerfile modification required.*
 
 Configuration
-=============
+-------------
 By default the multi-process version of the runtime is launched via the Gunicorn
 webserver and is configured to use a fixed number of processes and gevent-based
 concurrency.
@@ -62,7 +62,7 @@ the number of processes in the Dockerfile to between 1 and 2 times the number of
 CPU cores available.
 
 Building your own version
-=========================
+-------------------------
 If you would like to make modifications to the runtime (either for personal use
 or to debug or resolve an outstanding issue), you can build and deploy a custom
 version with the following steps:
@@ -77,3 +77,20 @@ directory as the Dockerfile.
 - Replace the URL in that line with the filename of your generated tar.gz file.
 - Deploy your application. A warning during deployment where your tar.gz file is
 rejected for addition because it is too large can be ignored.
+
+Caveats
+-------
+As this is an alpha product, some functionality has not yet been implemented.
+
+- Logging is via stderr only. The default logging view in Google Developers
+Console is "Request". Click on the dropdown showing "Request" and select
+"stderr" to view the logs. stderr-only logging is temporary and will change
+in a future version.
+- Log entries are not automatically associated with a specific request.
+- Handlers that are flagged as `login: required` or `login: admin` are not
+supported. Attemping to access these handlers will result in a 404 as the
+handlers will not be registered.
+
+There may be other features that work on the current Python runtime and are not
+implemented or not functional in this version. Please open an issue on Github
+for any you encounter.

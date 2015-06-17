@@ -35,6 +35,10 @@ FAKE_HANDLERS = [
     appinfo.URLMap(url='/env', script='wsgi_test.dump_os_environ'),
     appinfo.URLMap(url='/setenv', script='wsgi_test.add_to_os_environ'),
     appinfo.URLMap(url='/wait', script='wsgi_test.wait_on_global_event'),
+    appinfo.URLMap(url='/login', script='wsgi_test.hello_world',
+                   login=appinfo.LOGIN_REQUIRED),
+    appinfo.URLMap(url='/admin', script='wsgi_test.hello_world',
+                   login=appinfo.LOGIN_ADMIN),
     appinfo.URLMap(url='/favicon.ico', static_files='test_statics/favicon.ico'),
     appinfo.URLMap(url='/faketype.ico', static_files='test_statics/favicon.ico',
                    mime_type='application/fake_type'),
@@ -137,6 +141,16 @@ class MetaAppTestCase(unittest.TestCase):
     response = self.client.get('/env')
     # Assumes PATH will be present in the env in all cases, including tests!
     self.assertIn('PATH', json.loads(response.data))
+
+  def test_login_required(self):
+    # Login routes are temporarily disabled.
+    response = self.client.get('/login')
+    self.assertEqual(response.status_code, 404)
+
+  def test_login_admin(self):
+    # Login routes are temporarily disabled.
+    response = self.client.get('/admin')
+    self.assertEqual(response.status_code, 404)
 
   def test_static_file(self):
     response = self.client.get('/favicon.ico')
