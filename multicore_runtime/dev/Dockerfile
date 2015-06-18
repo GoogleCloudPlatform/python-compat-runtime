@@ -5,7 +5,11 @@ RUN apt-get -q update && \
     python2.7 python-pip python-gevent python-greenlet && \
   apt-get clean && rm /var/lib/apt/lists/*_*
 
-COPY https://github.com/GoogleCloudPlatform/appengine-python-vm-runtime/releases/download/0.1/python-runtime-0.1.tar.gz /home/vmagent/python-runtime.tar.gz
+ADD https://github.com/GoogleCloudPlatform/appengine-python-vm-runtime/releases/download/v0.1/appengine-python-vm-runtime-0.1.tar.gz /home/vmagent/python-runtime.tar.gz
+
+# To use a custom-built version of the runtime, comment out the above ADD
+# command and instead use the following line:
+# COPY appengine-python-vm-runtime-0.1.tar.gz /home/vmagent/python-runtime.tar.gz
 
 RUN pip install --upgrade pip>=6.1.1 gunicorn==19.1.1
 RUN pip install /home/vmagent/python-runtime.tar.gz

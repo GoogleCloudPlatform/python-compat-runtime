@@ -73,8 +73,10 @@ repository.
 - Copy the resulting tar.gz file to your application's folder, in the same
 directory as the Dockerfile.
 - Edit the Dockerfile in your application and look for the line that says
-`COPY (...) /home/vmagent/python-runtime.tar.gz`
-- Replace the URL in that line with the filename of your generated tar.gz file.
+`ADD (...) /home/vmagent/python-runtime.tar.gz`
+- Replace that line with a COPY command, with the filename of your generated
+tar.gz file instead of the URL as the source, and the same destination. An
+example is included in the Dockerfile comments.
 - Deploy your application. A warning during deployment where your tar.gz file is
 rejected for addition because it is too large can be ignored.
 
