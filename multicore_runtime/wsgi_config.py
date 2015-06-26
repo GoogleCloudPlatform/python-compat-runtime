@@ -94,6 +94,7 @@ def static_app_for_handler(handler):
   """
   regex = handler.url
   files = handler.static_files
+  upload = handler.upload
   if not files:
     if handler.static_dir:
       # If static_files is not set, convert static_dir to static_files and also
@@ -101,12 +102,13 @@ def static_app_for_handler(handler):
       # more information.
       regex = static_dir_url(handler)
       files = handler.static_dir + r'/\1'
+      upload = handler.static_dir + '/.*'
     else:
       # Neither static_files nor static_dir is set; log an error and return.
       logging.error('No script, static_files or static_dir found for %s',
                     handler)
       return None
-  return static_app_for_regex_and_files(regex, files,
+  return static_app_for_regex_and_files(regex, files, upload,
                                         mime_type=handler.mime_type)
 
 
