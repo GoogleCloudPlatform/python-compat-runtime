@@ -39,11 +39,15 @@ FAKE_HANDLERS = [
                    login=appinfo.LOGIN_REQUIRED),
     appinfo.URLMap(url='/admin', script='wsgi_test.hello_world',
                    login=appinfo.LOGIN_ADMIN),
-    appinfo.URLMap(url='/favicon.ico', static_files='test_statics/favicon.ico'),
+    appinfo.URLMap(url='/favicon.ico',
+                   static_files='test_statics/favicon.ico',
+                   upload='test_statics/favicon.ico'),
     appinfo.URLMap(url='/faketype.ico', static_files='test_statics/favicon.ico',
-                   mime_type='application/fake_type'),
+                   mime_type='application/fake_type',
+                   upload='test_statics/favicon.ico'),
     appinfo.URLMap(url='/wildcard_statics/(.*)',
-                   static_files=r'test_statics/\1'),
+                   static_files=r'test_statics/\1',
+                   upload='test_statics/(.*)'),
     appinfo.URLMap(url='/static_dir',
                    static_dir='test_statics'),
     ]
@@ -176,7 +180,10 @@ class MetaAppTestCase(unittest.TestCase):
     self.assertEqual(response.status_code, 404)
 
   def test_static_file_wildcard_directory_traversal(self):
+    # Try to fetch some files outside of the "upload" regex using path traversal
     response = self.client.get('/wildcard_statics/../../setup.py')
+    self.assertEqual(response.status_code, 404)
+    response = self.client.get('/wildcard_statics/../__init__.py')
     self.assertEqual(response.status_code, 404)
 
   def test_static_dir(self):
