@@ -23,6 +23,7 @@ WSGI app.
 import logging
 import os
 
+import cloud_logging
 from dispatcher import dispatcher
 from middleware import health_check_middleware
 from middleware import reset_environment_middleware
@@ -36,8 +37,12 @@ from wsgi_config import user_env_vars_from_appinfo
 from google.appengine.ext.vmruntime import vmconfig
 from google.appengine.ext.vmruntime import vmstub
 
-logging.basicConfig(level=logging.INFO)
+# Configure logging to output structured JSON to Cloud Logging.
+handler = cloud_logging.CloudLoggingHandler()
+handler.setLevel(logging.INFO)
+logging.getLogger('').addHandler(handler)
 
+# Fetch application configuration via the config file.
 appinfo = get_module_config(get_module_config_filename())
 env_config = vmconfig.BuildVmAppengineEnvConfig()
 
