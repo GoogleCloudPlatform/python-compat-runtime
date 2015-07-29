@@ -49,6 +49,26 @@ env_config = vmconfig.BuildVmAppengineEnvConfig()
 # Ensure API requests include a valid ticket by default.
 vmstub.Register(vmstub.VMStub(env_config.default_ticket))
 
+# Take an immutable snapshot of env data from env_config. This is added to the
+# environment in `reset_environment_middleware` in a particular order to ensure
+# that it cannot be overridden by other steps.
+frozen_env_config_env = tuple(
+    env_vars_from_env_config(env_config).iteritems())
+
+# Also freeze user env vars specified in app.yaml. Later steps to modify the
+# environment such as env_vars_from_env_config and request middleware
+# will overwrite these changes. This is added to the environment in
+# `reset_environment_middleware`.
+frozen_user_env = tuple(
+    user_env_vars_from_appinfo(appinfo).iteritems())
+
+# While the primary use of the frozen env vars is for
+# `reset_environment_middleware`, we'll also add them to the env here to make
+# them available during app preloading. This is useful for apps which have
+# side-effects at import time (which is not recommended).
+os.environ.update(frozen_user_env)
+os.environ.update(frozen_env_config_env)
+
 # Load user code.
 preloaded_handlers = load_user_scripts_into_handlers(appinfo.handlers)
 
@@ -60,19 +80,10 @@ vmstub.app_is_loaded = True
 # Take an immutable snapshot of the environment's current state, which we will
 # use to refresh the environment (via `reset_environment_middleware`) at the
 # beginning of each request.
+# It would be cleaner to take this snapshot earlier in the process, but app
+# preloading may trigger any arbitrary user code, including code that modifies
+# the environment, and we need to capture any results from that.
 frozen_environment = tuple(os.environ.iteritems())
-
-# Also freeze user env vars specified in app.yaml. Later steps to modify the
-# environment such as env_vars_from_env_config and request middleware
-# will overwrite these changes. This is added to the environment in
-# `reset_environment_middleware`.
-frozen_user_env = tuple(
-    user_env_vars_from_appinfo(appinfo).iteritems())
-
-# Also freeze environment data from env_config. This is added to the
-# environment in `reset_environment_middleware`.
-frozen_env_config_env = tuple(
-    env_vars_from_env_config(env_config).iteritems())
 
 # Monkey-patch os.environ to be thread-local. This is for backwards
 # compatibility with GAE's use of environment variables to store request data.
