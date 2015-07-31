@@ -17,7 +17,7 @@
 import logging
 import os
 import threading
-from UserDict import UserDict
+import UserDict
 
 from static_files import static_app_for_regex_and_files
 
@@ -198,5 +198,5 @@ def user_env_vars_from_appinfo(appinfo):
 
 
 # Dictionary with thread-local contents.
-class ThreadLocalDict(UserDict, threading.local):
+class ThreadLocalDict(UserDict.IterableUserDict, threading.local):
   pass
