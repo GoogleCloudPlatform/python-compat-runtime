@@ -40,12 +40,12 @@ from google.appengine.ext.vmruntime import vmstub
 # Configure logging to output structured JSON to Cloud Logging.
 root_logger = logging.getLogger('')
 try:
-    handler = cloud_logging.CloudLoggingHandler()
-    root_logger.addHandler(handler)
+  handler = cloud_logging.CloudLoggingHandler()
+  root_logger.addHandler(handler)
 except IOError:
-    # If the Cloud Logging endpoint does not exist, just use the default handler
-    # instead. This will be the case when running in local dev mode.
-    pass
+  # If the Cloud Logging endpoint does not exist, just use the default handler
+  # instead. This will be the case when running in local dev mode.
+  pass
 
 root_logger.setLevel(logging.INFO)
 
@@ -76,8 +76,19 @@ frozen_user_env = tuple(
 os.environ.update(frozen_user_env)
 os.environ.update(frozen_env_config_env)
 
+# Decide whether to enable support for legacy end-to-end tests. This is intended
+# to be temporary.
+# TODO(apphosting): Modify the end-to-end test runner to make this step
+# unnecessary.
+legacy_e2e_support = appinfo.vm_settings.get('vm_runtime') == 'python'
+
 # Load user code.
-preloaded_handlers = load_user_scripts_into_handlers(appinfo.handlers)
+if legacy_e2e_support:
+  import legacy_e2e_support  # pylint: disable=g-import-not-at-top
+  preloaded_handlers = legacy_e2e_support.load_legacy_scripts_into_handlers(
+      appinfo.handlers)
+else:
+  preloaded_handlers = load_user_scripts_into_handlers(appinfo.handlers)
 
 # Now that all scripts are fully imported, it is safe to use asynchronous
 # API calls.
