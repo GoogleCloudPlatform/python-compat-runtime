@@ -33,6 +33,7 @@ FAKE_HANDLERS = [
     appinfo.URLMap(url='/hello', script='wsgi_test.hello_world'),
     appinfo.URLMap(url='/failure', script='wsgi_test.nonexistent_function'),
     appinfo.URLMap(url='/env', script='wsgi_test.dump_os_environ'),
+    appinfo.URLMap(url='/sortenv', script='wsgi_test.sort_os_environ_keys'),
     appinfo.URLMap(url='/setenv', script='wsgi_test.add_to_os_environ'),
     appinfo.URLMap(url='/wait', script='wsgi_test.wait_on_global_event'),
     appinfo.URLMap(url='/login', script='wsgi_test.hello_world',
@@ -97,6 +98,15 @@ def wait_on_global_event(request):  # pylint: disable=unused-argument
   concurrent_request_is_started.set()
   concurrent_request_should_proceed.wait()
   return Response(json.dumps(dict(os.environ)))
+
+
+@Request.application
+def sort_os_environ_keys(request):  # pylint: disable=unused-argument
+  # See test_env_sort method for explanation.
+  resp = ""
+  for name in sorted(os.environ):
+    resp += '%s=%s\n' % (name, os.environ[name])
+  return Response(resp)
 
 
 class MetaAppTestCase(unittest.TestCase):
@@ -262,3 +272,13 @@ class MetaAppTestCase(unittest.TestCase):
     # Wait for the thread to finish and examine the results.
     response = future.get(5)  # This will raise an exception on timeout.
     self.assertNotIn('ENVIRONMENT_MODIFIED', json.loads(response.data))
+
+  # Regression test for an issue where a threadlocal dict subclass could not
+  # be cast to a list or sorted.
+  def test_env_sort(self):
+    response = self.client.get('/sortenv')
+    self.assertEqual(response.status_code, 200)
+    # If the handler didn't crash, the regression test passed. No need to
+    # validate contents extensively.
+    self.assertIn('REQUEST_METHOD', response.data)
+    self.assertIn('GET', response.data)
