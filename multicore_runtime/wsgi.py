@@ -38,9 +38,16 @@ from google.appengine.ext.vmruntime import vmconfig
 from google.appengine.ext.vmruntime import vmstub
 
 # Configure logging to output structured JSON to Cloud Logging.
-handler = cloud_logging.CloudLoggingHandler()
-handler.setLevel(logging.INFO)
-logging.getLogger('').addHandler(handler)
+root_logger = logging.getLogger('')
+try:
+    handler = cloud_logging.CloudLoggingHandler()
+    root_logger.addHandler(handler)
+except IOError:
+    # If the Cloud Logging endpoint does not exist, just use the default handler
+    # instead. This will be the case when running in local dev mode.
+    pass
+
+root_logger.setLevel(logging.INFO)
 
 # Fetch application configuration via the config file.
 appinfo = get_module_config(get_module_config_filename())

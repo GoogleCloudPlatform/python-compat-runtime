@@ -43,7 +43,7 @@ class CloudLoggingHandler(logging.FileHandler):
     # Large log entries will get mangled if multiple workers write to the same
     # file simultaneously, so we'll use the worker's PID to pick a log filename.
     filename = LOG_PATH_TEMPLATE.format(os.getpid())
-    super(CloudLoggingHandler, self).__init__(filename, delay=True)
+    super(CloudLoggingHandler, self).__init__(filename)
 
   def format(self, record):
     """Format the specified record default behavior, plus JSON and metadata."""
