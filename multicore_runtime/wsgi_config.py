@@ -41,7 +41,13 @@ def get_module_config(filename):
 
 def app_for_script(script):
   """Returns the WSGI app specified in the input string, or None on failure."""
-  app, filename, err = wsgi.LoadObject(script)  # pylint: disable=unused-variable
+  try:
+    app, filename, err = wsgi.LoadObject(script)  # pylint: disable=unused-variable
+  except ImportError as e:
+    # Despite nominally returning an error object, LoadObject will sometimes
+    # just result in an exception. Since we're already processing the err
+    # object, we might as well just use that variable to store the exception.
+    err = e
   if err:
     # Log the exception but do not reraise.
     logging.exception('Failed to import %s: %s', script, err)
@@ -133,13 +139,13 @@ def load_user_scripts_into_handlers(handlers):
   """Preloads user scripts, wrapped in env_config middleware if present.
 
   Args:
-    handlers: appinfo_external.handlers data as provided by get_module_config()
+    handlers: appinfo.handlers data as provided by get_module_config()
 
   Returns:
     A list of tuples suitable for configuring the dispatcher() app,
     where the tuples are (url, script, app):
       - url: The url pattern which matches this handler.
-      - script: The script to serve for this handler, as a string.
+      - script: The script to serve for this handler, as a string, or None.
       - app: The fully loaded app corresponding to the script.
   """
   # `if x.login == appinfo.LOGIN_OPTIONAL` disables loading handlers
@@ -148,7 +154,7 @@ def load_user_scripts_into_handlers(handlers):
   # securely.
   loaded_handlers = [
       (x.url if x.script or x.static_files else static_dir_url(x),
-       x.script.replace('$PYTHON_LIB/', '') if x.script else x.script,
+       x.script,
        app_for_script(x.script) if x.script else static_app_for_handler(x))
       for x in handlers if x.login == appinfo.LOGIN_OPTIONAL]
   logging.info('Parsed handlers: %s',
