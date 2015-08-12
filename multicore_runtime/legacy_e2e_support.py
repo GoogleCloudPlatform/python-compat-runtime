@@ -54,7 +54,7 @@ class StubOut(object):
 
 
 def load_legacy_scripts_into_handlers(handlers):
-  """Preloads legacy CGI scripts.
+  """Preloads legacy CGI scripts. Static file handlers are not supported.
 
   Args:
     handlers: appinfo.handlers data as provided by get_module_config()
@@ -67,9 +67,9 @@ def load_legacy_scripts_into_handlers(handlers):
       - app: The fully loaded app corresponding to the script.
   """
   loaded_handlers = [
-      (x.url if x.script or x.static_files else wsgi_config.static_dir_url(x),
-       x.script.replace('$PYTHON_LIB/', '') if x.script else x.script,
-       legacy_app_for_script(x.script) if x.script else wsgi_config.static_app_for_handler(x))  # pylint: disable=line-too-long
+      (x.url,
+       x.script,
+       legacy_app_for_script(x.script.replace('$PYTHON_LIB/', '')))
       for x in handlers]
   logging.info('Parsed handlers: %s',
                [(url, script) for (url, script, _) in loaded_handlers])
@@ -86,18 +86,20 @@ def legacy_app_for_script(script):
     The application as extracted from the script, or None.
   """
   with MockedWsgiHandler.python_25_app_lock:
-    modname, _ = script.rsplit('.', 1)
+    modname = script.rsplit('.', 1)[0]
     app_holder = []
     revert_func = lambda: None
     try:
       revert_func = stub_wsgi_utils(app_holder)
       runpy.run_module(modname, run_name='__main__')
+    except ImportError as e:
+      logging.exception('Error loading %s', script)
     finally:
       revert_func()
     if app_holder:
       return app_holder[0]
     else:
-      logging.exception('Cannot load an app from %s' % script)
+      logging.error('Cannot load an app from %s', script)
       return None
 
 
