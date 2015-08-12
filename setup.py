@@ -18,13 +18,13 @@ from setuptools import find_packages
 from setuptools import setup
 
 setup(name='appengine-python-vm-runtime',
-      version='0.1',
+      version='0.2',
       description='Google App Engine-compatible Python runtime for Managed VMs',
       url='https://github.com/GoogleCloudPlatform/appengine-python-vm-runtime',
       author='Google',
       license='Apache License 2.0',
       classifiers=[
-          'Development Status :: 3 - Alpha',
+          'Development Status :: 4 - Beta',
           'Intended Audience :: Developers',
           'License :: OSI Approved :: Apache Software License',
           'Programming Language :: Python :: 2',
