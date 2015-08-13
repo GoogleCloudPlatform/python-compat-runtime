@@ -4,9 +4,8 @@ Google Managed VMs Python Runtime
 Warning
 -------
 The instructions here are for a multi-process version of the Python 2.7 runtime
-**currently in alpha**. Please do not use this version for production workloads.
-To use the stable version of the runtime, follow the documentation at
-https://cloud.google.com/appengine/docs/managed-vms/ instead.
+**currently in beta**. To use the stable version of the runtime, follow the
+documentation at https://cloud.google.com/appengine/docs/managed-vms/ instead.
 
 Contents
 --------
@@ -21,7 +20,7 @@ Using the multi-process runtime
 already been deployed successfully to Managed VMs using the default runtime
 version.*
 
-As this version of the Python runtime is currently in alpha, it is not built
+As this version of the Python runtime is currently in beta, it is not built
 as a stable Docker image like other runtimes. Instead it can be put into place
 via modifications to an application's Dockerfile.
 
@@ -47,19 +46,14 @@ prebuilt Docker image with no manual Dockerfile modification required.*
 Configuration
 -------------
 By default the multi-process version of the runtime is launched via the Gunicorn
-webserver and is configured to use a fixed number of processes and gevent-based
-concurrency.
+webserver and is configured to use gevent-based concurrency and a number of
+processes equal to the number of CPU cores available.
 
-This can be changed by editing the ENTRYPOINT line in the Dockerfile. For
-instance, Gunicorn can be changed to Waitress or another Python webserver, or
-the number of processes can be increased, or gevent-based concurrency can be
-turned off.
-
-A future version of this runtime may automatically adapt the default settings to
-accommodate a given instance size. This version instead uses a fixed number of
-processes. If you are using an instance type with more than 4 CPU cores, change
-the number of processes in the Dockerfile to between 1 and 2 times the number of
-CPU cores available.
+This can be changed by creating a file called "gunicorn_config.py" in your
+application's root directory, which will override the default
+"gunicorn_config.py" included with this project. Refer the gunicorn
+documentation for details:
+http://gunicorn-docs.readthedocs.org/en/latest/settings.html
 
 Building your own version
 -------------------------
@@ -72,6 +66,8 @@ distribution by running `python setup.py sdist` from the root directory of the
 repository.
 - Copy the resulting tar.gz file to your application's folder, in the same
 directory as the Dockerfile.
+- Also copy "gunicorn_config.py" to the same directory as above, or use your
+own.
 - Edit the Dockerfile in your application and look for the line that says
 `ADD (...) /home/vmagent/python-runtime.tar.gz`
 - Replace that line with a COPY command, with the filename of your generated
@@ -82,13 +78,8 @@ rejected for addition because it is too large can be ignored.
 
 Caveats
 -------
-As this is an alpha product, some functionality has not yet been implemented.
+As this is a beta product, some functionality has not yet been implemented.
 
-- Logging is via stderr only. The default logging view in Google Developers
-Console is "Request". Click on the dropdown showing "Request" and select
-"stderr" to view the logs. stderr-only logging is temporary and will change
-in a future version.
-- Log entries are not automatically associated with a specific request.
 - Handlers that are flagged as `login: required` or `login: admin` are not
 supported. Attemping to access these handlers will result in a 404 as the
 handlers will not be registered.

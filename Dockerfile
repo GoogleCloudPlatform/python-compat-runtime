@@ -5,11 +5,9 @@ RUN apt-get -q update && \
     python2.7 python-pip python-gevent python-greenlet && \
   apt-get clean && rm /var/lib/apt/lists/*_*
 
-ADD https://github.com/GoogleCloudPlatform/appengine-python-vm-runtime/releases/download/v0.1/appengine-python-vm-runtime-0.1.tar.gz /home/vmagent/python-runtime.tar.gz
-
-# To use a custom-built version of the runtime, comment out the above ADD
-# command and instead use the following line:
-# COPY appengine-python-vm-runtime-0.2.tar.gz /home/vmagent/python-runtime.tar.gz
+# This step adds the actual compiled runtime ('python setup.py sdist') to the
+# docker image.
+COPY python-runtime.tar.gz /home/vmagent/python-runtime.tar.gz
 
 RUN pip install --upgrade pip gunicorn==19.3.0
 RUN pip install /home/vmagent/python-runtime.tar.gz
@@ -19,7 +17,10 @@ EXPOSE 8080
 RUN ln -s /home/vmagent/app /app
 WORKDIR /app
 
-ADD . /app
+# Add the default gunicorn configuration file to the app directory. This
+# default file will be overridden if the user adds a file called
+# "gunicorn_config.py" to their app's root directory.
+ADD gunicorn_config.py /app/gunicorn_config.py
 
 # Configure the entrypoint with Managed VMs-essential configuration like "bind",
 # but leave the rest up to the config file.
