@@ -115,6 +115,17 @@ class WSGIRequestInfo(request_info.RequestInfo):
       environ = self._request_wsgi_environ[request_id]
       return wsgiref.util.request_uri(environ)
 
+  def register_request_id(self, environ, request_id):
+    """Registers a simulated HTTP request from the dev_appserver.
+
+    Args:
+      environ: An environ dict for the request as defined in PEP-333.
+      request_id: The string id of the request making the API call.
+    """
+    with self._lock:
+      if request_id not in self._request_wsgi_environ:
+        self._request_wsgi_environ[request_id] = environ
+
   def get_request_environ(self, request_id):
     """Returns a dict containing the WSGI environ for the request."""
     with self._lock:

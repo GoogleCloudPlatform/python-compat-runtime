@@ -2714,6 +2714,10 @@ class BaseDatastore(BaseTransactionManager, BaseIndexManager):
     """Writes the datastore to disk."""
     self.Flush()
 
+  def Close(self):
+    """Closes the Datstore, writing any buffered data."""
+    self.Write()
+
   def _GetQueryCursor(self, query, filters, orders, index_list,
                       filter_predicate):
     """Runs the given datastore_pb.Query and returns a QueryCursor for it.

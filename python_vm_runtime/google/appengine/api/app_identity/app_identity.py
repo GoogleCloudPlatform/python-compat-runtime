@@ -345,10 +345,7 @@ def make_get_default_gcs_bucket_name_call(rpc):
     except apiproxy_errors.ApplicationError, err:
       raise _to_app_identity_error(err)
 
-    if response.has_default_gcs_bucket_name():
-      return response.default_gcs_bucket_name()
-    else:
-      return None
+    return response.default_gcs_bucket_name() or None
 
 
   rpc.make_call(_GET_DEFAULT_GCS_BUCKET_NAME_METHOD_NAME, request,

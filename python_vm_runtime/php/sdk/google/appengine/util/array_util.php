@@ -20,6 +20,9 @@
  */
 namespace google\appengine\util;
 
+/**
+ * Various PHP array related utility functions.
+ */
 final class ArrayUtil {
   /**
    * Find an item in an associative array by a key value, or return null if not
@@ -53,4 +56,41 @@ final class ArrayUtil {
     return $default;
   }
 
+  /**
+   * Merge a number of arrays using a case insensitive comparison for the array
+   * keys.
+   *
+   * @param mixed array Two or more arrays to merge.
+   *
+   * @returns array The merged array.
+   *
+   * @throws InvalidArgumentException If less than two arrays are passed to
+   *     the function, or one of the arguments is not an array.
+   */
+  public static function arrayMergeIgnoreCase() {
+    if (func_num_args() < 2) {
+      throw new \InvalidArgumentException(
+          "At least two arrays must be supplied.");
+    }
+    $result = [];
+    $key_mapping = [];
+    $input_args = func_get_args();
+
+    foreach($input_args as $args) {
+      if (!is_array($args)) {
+        throw new \InvalidArgumentException(
+            "Arguments are expected to be arrays, found " . gettype($arg));
+      }
+      foreach($args as $key => $val) {
+        $lower_case_key = strtolower($key);
+        if (array_key_exists($lower_case_key, $key_mapping)) {
+          $result[$key_mapping[$lower_case_key]] = $val;
+        } else {
+          $key_mapping[$lower_case_key] = $key;
+          $result[$key] = $val;
+        }
+      }
+    }
+    return $result;
+  }
 }

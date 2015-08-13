@@ -60,7 +60,7 @@ class CurlLiteTest extends ApiProxyTestBase {
   public function setOptionProvider() {
     $supported_options = ['FOLLOWLOCATION', 'HTTPGET', 'NOBODY', 'POST', 'PUT',
         'SSL_VERIFYPEER', 'TIMEOUT', 'TIMEOUT_MS', 'POSTFIELDS', 'RANGE',
-        'REFERER', 'URL', 'USERAGENT', 'HTTPHEADER',
+        'REFERER', 'URL', 'USERAGENT',
     ];
 
     foreach($supported_options as $option) {
@@ -116,6 +116,8 @@ class CurlLiteTest extends ApiProxyTestBase {
     $url = 'http://google.com';
     $response_body = "Hello World";
     $this->setupRequest($url, $response_body);
+    $this->addRequestHeader('Foo', 'Bar');
+    $this->addRequestHeader('Baz', 'Boo: Zoop');
     $this->apiProxyMock->expectCall('urlfetch',
                                     'Fetch',
                                     $this->request,
@@ -124,6 +126,14 @@ class CurlLiteTest extends ApiProxyTestBase {
     $curl_lite = new CurlLite();
     $curl_lite->setOptionsArray([CURLOPT_URL => $url]);
     $curl_lite->setOptionsArray([CURLOPT_RETURNTRANSFER => true]);
+    $curl_lite->setOptionsArray([CURLOPT_HTTPHEADER => [
+        'Foo: Bar',
+        'Baz: Boo: Zoop',
+        // cURL drops headers that do not have a value.
+        'Key-With-Space: ',
+        'Key-With-Nothing:',
+        'Key-Without-Colon',
+    ]]);
     $result = $curl_lite->exec();
     unset($curl_lite);
 
@@ -181,6 +191,39 @@ class CurlLiteTest extends ApiProxyTestBase {
     $this->assertEquals($response_body, $result);
     $this->apiProxyMock->verify();
   }
+
+  public function testUserSuppliedContentTypePost() {
+    $url = 'http://google.com';
+    $response_body = "Hello World";
+    $postfields = json_encode(["Hello" => "World"]);
+    $this->setupRequest($url, $response_body);
+    $this->apiProxyMock->expectCall('urlfetch',
+                                    'Fetch',
+                                    $this->request,
+                                    $this->response);
+
+    $this->request->setMethod(RequestMethod::POST);
+    $this->request->setPayload($postfields);
+    $this->addRequestHeader('Content-Type',
+                            'application/json');
+
+    $curl_lite = new CurlLite();
+    $curl_lite->setOptionsArray([
+      CURLOPT_URL => $url,
+      CURLOPT_RETURNTRANSFER => 1,
+      CURLOPT_POSTFIELDS => $postfields,
+      CURLOPT_POST => 1,
+      CURLOPT_HTTPHEADER => [
+        'Content-Type: application/json',
+      ],
+    ]);
+    $result = $curl_lite->exec();
+    unset($curl_lite);
+
+    $this->assertEquals($response_body, $result);
+    $this->apiProxyMock->verify();
+  }
+
 
   public function testRequestHeaders() {
     $url = 'http://google.com';

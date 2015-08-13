@@ -242,15 +242,13 @@ class InvalidConversionError(Exception):
 class IdResolver(object):
   """A class that can handle project id <--> application id transformations."""
 
-  def __init__(self, app_ids=None):
+  def __init__(self, app_ids=()):
     """Create a new IdResolver.
 
     Args:
      app_ids: A list of application ids with application id shard set. i.e.
          s~my_app or e~my_app.
     """
-    if app_ids is None:
-      app_ids = []
     resolver_map = {}
     for app_id in app_ids:
       resolver_map[self.resolve_project_id(app_id)] = app_id
@@ -1213,7 +1211,7 @@ class _EntityConverter(object):
       v3_meaning = None
     else:
 
-      v1_value.null_value = googledatastore.Value.NULL_VALUE
+      v1_value.null_value = googledatastore.NULL_VALUE
 
     if is_zlib_value:
       v1_value.meaning = MEANING_ZLIB
@@ -1359,7 +1357,7 @@ class _EntityConverter(object):
     v1_value.integer_value = value
 
   def __v1_double_property(self, entity, name, value, indexed):
-    """Creates a single-double-valued v1 Property.
+    """Populates a single-double-valued v1 Property.
 
     Args:
       entity: the entity to populate

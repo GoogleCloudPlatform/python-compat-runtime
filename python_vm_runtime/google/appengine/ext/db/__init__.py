@@ -585,6 +585,7 @@ class Property(object):
         an underscore, but may change for different subclasses.
     """
     self.model_class = model_class
+    self._property_name = property_name
     if self.name is None:
       self.name = property_name
 
@@ -962,9 +963,19 @@ class Model(object):
 
 
 
-    for prop in self.properties().values():
+    for prop in self._properties.values():
+      property_name = prop._property_name
       if prop.name in kwds:
+
+
+
         value = kwds[prop.name]
+      elif property_name in kwds and property_name not in self._all_properties:
+
+
+
+
+        value = kwds[property_name]
       elif is_projection:
         continue
       else:

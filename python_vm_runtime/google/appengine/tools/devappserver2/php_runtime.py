@@ -51,20 +51,17 @@ _EXECUTABLE_EXT = {'win32': '.exe'}
 _EXTENSION_PREFIX = {'win32': 'php_'}
 _DYNAMIC_LIB_EXT = {'win32': '.dll', 'darwin': '.so'}
 
-# Only php55 supports dynamically lodable extensions.
-_RUNTIMES_WITH_LOADABLE_EXTENSION_SUPPORT = ('php55',)
-
 
 def _get_php_executable_path(runtime):
   filename = 'php-cgi%s' % _EXECUTABLE_EXT.get(sys.platform, '')
   return _get_php_binary_path(filename, runtime)
 
 
-def _get_php_extension_path(extension_stem):
+def _get_php_extension_path(extension_stem, runtime):
   filename = '%s%s%s' % (_EXTENSION_PREFIX.get(sys.platform, ''),
                          extension_stem,
                          _DYNAMIC_LIB_EXT.get(sys.platform, ''))
-  return _get_php_binary_path(filename, 'php55')
+  return _get_php_binary_path(filename, runtime)
 
 
 def _get_php_binary_path(filename, runtime):
@@ -73,13 +70,9 @@ def _get_php_binary_path(filename, runtime):
   if sys.platform == 'win32':
     if runtime == 'php55':
       php_binary_dir = 'php/php-5.5-Win32-VC11-x86'
-    else:
-      php_binary_dir = 'php/php-5.4-Win32-VC9-x86'
   elif sys.platform == 'darwin':
     if runtime == 'php55':
       php_binary_dir = '../php55'
-    else:
-      php_binary_dir = '../php54'
 
   if php_binary_dir:
     # The Cloud SDK uses symlinks in its packaging of the Mac Launcher.  First
@@ -312,13 +305,12 @@ class PHPRuntimeInstanceFactory(instance.InstanceFactory):
                      'php_executable_path',
                      _get_php_executable_path(runtime))
 
-    if runtime in _RUNTIMES_WITH_LOADABLE_EXTENSION_SUPPORT:
-      setattr_if_empty(runtime_config.php_config,
-                       'gae_extension_path',
-                       _get_php_extension_path('gae_runtime_module'))
-      setattr_if_empty(runtime_config.php_config,
-                       'xdebug_extension_path',
-                       _get_php_extension_path('xdebug'))
+    setattr_if_empty(runtime_config.php_config,
+                     'gae_extension_path',
+                     _get_php_extension_path('gae_runtime_module', runtime))
+    setattr_if_empty(runtime_config.php_config,
+                     'xdebug_extension_path',
+                     _get_php_extension_path('xdebug', runtime))
 
     return runtime_config
 

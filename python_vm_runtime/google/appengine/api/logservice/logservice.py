@@ -938,9 +938,7 @@ class AppLog(object):
     return self._source_location
 
 
-
-_FETCH_KWARGS = frozenset(['prototype_request', 'timeout', 'batch_size',
-                           'server_versions'])
+_FETCH_KWARGS = frozenset(['prototype_request', 'timeout', 'batch_size'])
 
 
 @datastore_rpc._positional(0)
@@ -1049,11 +1047,6 @@ def fetch(start_time=None,
     raise InvalidArgumentError('include_app_logs must be a boolean')
   request.set_include_app_logs(include_app_logs)
 
-  if 'server_versions' in kwargs:
-    logging.warning('The server_versions kwarg to the fetch() method is '
-                    'deprecated.  Please use the module_versions kwarg '
-                    'instead.')
-    module_versions = kwargs.pop('server_versions')
   if version_ids and module_versions:
     raise InvalidArgumentError('version_ids and module_versions may not be '
                                'used at the same time.')

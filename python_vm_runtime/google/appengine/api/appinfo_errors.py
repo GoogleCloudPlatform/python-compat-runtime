@@ -178,3 +178,7 @@ class TooManyHttpHeaders(Error):
 
 class TooManyScalingSettingsError(Error):
   """Raised when more than one scaling settings section is present."""
+
+
+class MissingRuntimeError(Error):
+  """Raised when the "runtime" field is omitted for a non-vm."""

@@ -34,23 +34,6 @@ import time
 import urllib
 import urllib2
 
-_UPLOADING_APP_DOC_URLS = {
-    "go": "https://developers.google.com/appengine/docs/go/tools/"
-          "uploadinganapp#Go_Password-less_login_with_OAuth2",
-    "php": "https://developers.google.com/appengine/docs/php/tools/"
-           "uploadinganapp#PHP_Password-less_login_with_OAuth2",
-    "php55": "https://developers.google.com/appengine/docs/php/tools/"
-             "uploadinganapp#PHP_Password-less_login_with_OAuth2",
-    "python": "https://developers.google.com/appengine/docs/python/tools/"
-              "uploadinganapp#Python_Password-less_login_with_OAuth2",
-    "python27": "https://developers.google.com/appengine/docs/python/tools/"
-                "uploadinganapp#Python_Password-less_login_with_OAuth2",
-    "java": "https://developers.google.com/appengine/docs/java/tools/"
-            "uploadinganapp#Passwordless_Login_with_OAuth2",
-    "java7": "https://developers.google.com/appengine/docs/java/tools/"
-             "uploadinganapp#Passwordless_Login_with_OAuth2",
-    }
-
 logger = logging.getLogger('google.appengine.tools.appengine_rpc')
 
 def GetPlatformToken(os_module=os, sys_module=sys, platform=sys.platform):
@@ -121,9 +104,6 @@ class ClientLoginError(urllib2.HTTPError):
 
 class AbstractRpcServer(object):
   """Provides a common interface for a simple RPC server."""
-
-
-  SUGGEST_OAUTH2 = False
 
 
   RUNTIME = "python"
@@ -314,22 +294,8 @@ class AbstractRpcServer(object):
         if os.getenv("APPENGINE_RPC_USE_SID", "0") == "1":
           return
       except ClientLoginError, e:
-        if e.reason == "BadAuthentication":
-          if e.info == "InvalidSecondFactor":
-            print >>sys.stderr, ("Use an application-specific password instead "
-                                 "of your regular account password.")
-            print >>sys.stderr, ("See http://www.google.com/"
-                                 "support/accounts/bin/answer.py?answer=185833")
 
 
-
-            if self.SUGGEST_OAUTH2:
-              print >>sys.stderr, ("However, now the recommended way to log in "
-                                   "is using OAuth2. See")
-              print >>sys.stderr, _UPLOADING_APP_DOC_URLS[self.RUNTIME]
-          else:
-            print >>sys.stderr, "Invalid username or password."
-          continue
         if e.reason == "CaptchaRequired":
           print >>sys.stderr, (
               "Please go to\n"
@@ -431,6 +397,8 @@ class AbstractRpcServer(object):
           return response
         except urllib2.HTTPError, e:
           logger.debug("Got http error, this is try #%s", tries)
+
+
           if tries > self.rpc_tries:
             raise
           elif e.code == 401:
@@ -630,13 +598,3 @@ To learn more, see https://developers.google.com/appengine/kb/general#rpcssl""")
 
     opener.add_handler(urllib2.HTTPCookieProcessor(self.cookie_jar))
     return opener
-
-
-
-class HttpRpcServerWithOAuth2Suggestion(HttpRpcServer):
-  """An HttpRpcServer variant which suggests using OAuth2 instead of ASP.
-
-  Not all systems which use HttpRpcServer can use OAuth2.
-  """
-
-  SUGGEST_OAUTH2 = True

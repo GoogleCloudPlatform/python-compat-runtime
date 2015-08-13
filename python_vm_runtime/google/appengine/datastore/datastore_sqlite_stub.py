@@ -688,6 +688,7 @@ class DatastoreSqliteStub(datastore_stub_util.BaseDatastore,
 
   def Close(self):
     """Closes the SQLite connection and releases the files."""
+    datastore_stub_util.BaseDatastore.Close(self)
     conn = self._GetConnection()
     conn.close()
 

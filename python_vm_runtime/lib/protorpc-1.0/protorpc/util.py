@@ -25,6 +25,7 @@ __author__ = ['rafek@google.com (Rafe Kaplan)',
 
 import cgi
 import datetime
+import functools
 import inspect
 import os
 import re
@@ -159,6 +160,7 @@ def positional(max_positional_args):
       has no arguments with default values.
   """
   def positional_decorator(wrapped):
+    @functools.wraps(wrapped)
     def positional_wrapper(*args, **kwargs):
       if len(args) > max_positional_args:
         plural_s = ''
@@ -415,6 +417,12 @@ class TimeZoneOffset(datetime.tzinfo):
     if isinstance(offset, datetime.timedelta):
       offset = total_seconds(offset) / 60
     self.__offset = offset
+
+  def __copy__(self):
+    return self.__class__(self.__offset)
+
+  def __deepcopy__(self, unused_memo):
+    return self.__class__(self.__offset)
 
   def utcoffset(self, dt):
     """Get the a timedelta with the time zone's offset from UTC.

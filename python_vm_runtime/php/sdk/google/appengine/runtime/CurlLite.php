@@ -33,6 +33,7 @@ use google\appengine\runtime\ApiProxy;
 use google\appengine\runtime\ApplicationError;
 use google\appengine\URLFetchRequest\RequestMethod;
 use google\appengine\URLFetchServiceError\ErrorCode;
+use google\appengine\util\ArrayUtil;
 use google\appengine\util\HttpUtil;
 
 final class CurlLite {
@@ -436,7 +437,8 @@ final class CurlLite {
         $this->headers['Cookie'] = $value;
         break;
       case CURLOPT_HTTPHEADER:
-        // TODO
+        $this->headers = ArrayUtil::arrayMergeIgnoreCase(
+            $this->headers, $this->parseHttpHeaders($value));
         break;
       // Cases that we don't support, that could cause a semantic change in the
       // application by not supporting.
@@ -498,12 +500,14 @@ final class CurlLite {
     if ($this->tryGetOption(CURLOPT_POSTFIELDS, $value) && $value) {
       if (is_string($value)) {
         $payload = $value;
+      } else if (is_array($value)) {
+        $payload = http_build_query($value);
+        // TODO: Arrays need to be mulitpart encoded.
+      }
+      if (!$this->tryGetRequestHeaderValue(self::CONTENT_TYPE_HEADER, $val)) {
         $header = $this->request->addHeader();
         $header->setKey(self::CONTENT_TYPE_HEADER);
         $header->setValue('application/x-www-form-urlencoded');
-      } else if (is_array($value)) {
-        $payload = http_build_query($value);
-        // TODO: Content-Type
       }
       $this->request->setPayload($payload);
     }
@@ -638,5 +642,52 @@ final class CurlLite {
     }
     $response .= self::CRLF;
     return $response;
+  }
+
+
+  /**
+   * Check if the request has the specified header, and if so return it in the
+   * pass-by-ref value $value.
+   *
+   * @param string $key The header key to find.
+   * @param string $value The value of the header, of found.
+   *
+   * @returns boolean True if the header was found, false otherwise.
+   */
+  private function tryGetRequestHeaderValue($key, &$value) {
+    $result = false;
+    foreach($this->request->getHeaderList() as $header) {
+      if (strcasecmp($key, $header->getKey()) === 0) {
+        $value = $header->getValue();
+        $result = true;
+      }
+    }
+    return $result;
+  }
+
+  /**
+   * Add an array of HTTP headers in key:value format and return an assoicative
+   * array.
+   *
+   * @param array $headers An array of header strings in "Key: Value" format.
+   *
+   * @returns array An associative array of headers.
+   */
+  private function parseHttpHeaders($headers) {
+    $result = [];
+    foreach ($headers as $header) {
+      $values = explode(':', $header, 2);
+      if (count($values) === 2) {
+        list($key, $value) = $values;
+        $key = trim($key);
+        $value = trim($value);
+        // Checking with real cURL it only sends a header if the key & the value
+        // are set.
+        if ($key && $value) {
+          $result[$key] = $value;
+        }
+      }
+    }
+    return $result;
   }
 }

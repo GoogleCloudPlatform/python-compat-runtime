@@ -296,26 +296,6 @@ def check_headers_valid(headers):
     raise InvalidEmailError(reason)
 
 
-
-def _email_check_and_list(emails, field):
-  """Generate a list of emails.
-
-  Args:
-    emails: Single email or list of emails.
-
-  Returns:
-    Sequence of email addresses.
-
-  Raises:
-    InvalidEmailError if any email addresses are invalid.
-  """
-  if isinstance(emails, types.StringTypes):
-    check_email_valid(value)
-  else:
-    for address in iter(emails):
-      check_email_valid(address, field)
-
-
 def _email_sequence(emails):
   """Forces email to be sequenceable type.
 

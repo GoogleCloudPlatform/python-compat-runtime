@@ -87,11 +87,29 @@ __all__ = [
 ]
 
 
+class _Remapped405Exception(api_exceptions.ServiceException):
+  """Method Not Allowed (405) ends up being remapped to 501.
+
+  This is included here for compatibility with the Java implementation.  The
+  Google Cloud Endpoints server remaps HTTP 405 to 501."""
+  http_status = httplib.METHOD_NOT_ALLOWED
+
+
+class _Remapped408Exception(api_exceptions.ServiceException):
+  """Request Timeout (408) ends up being remapped to 503.
+
+  This is included here for compatibility with the Java implementation.  The
+  Google Cloud Endpoints server remaps HTTP 408 to 503."""
+  http_status = httplib.REQUEST_TIMEOUT
+
+
 _ERROR_NAME_MAP = dict((httplib.responses[c.http_status], c) for c in [
     api_exceptions.BadRequestException,
     api_exceptions.UnauthorizedException,
     api_exceptions.ForbiddenException,
     api_exceptions.NotFoundException,
+    _Remapped405Exception,
+    _Remapped408Exception,
     api_exceptions.ConflictException,
     api_exceptions.GoneException,
     api_exceptions.PreconditionFailedException,

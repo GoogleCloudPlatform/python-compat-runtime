@@ -387,35 +387,35 @@ class CloudDatastoreV1Stub(apiproxy_stub.APIProxyStub):
       self.__service_converter.v1_to_v3_txn(v1_txn, v3_txn)
 
 
-    if v1_mutation.op == googledatastore.Mutation.INSERT:
+    if v1_mutation.HasField('insert'):
       v3_entity = entity_pb.EntityProto()
-      self.__entity_converter.v1_to_v3_entity(v1_mutation.entity,
-                                              v3_entity)
+      v1_entity = v1_mutation.insert
+      self.__entity_converter.v1_to_v3_entity(v1_entity, v3_entity)
       index_writes, v3_key = self.__insert_v3_entity(v3_entity, v3_txn)
 
 
-    elif v1_mutation.op == googledatastore.Mutation.UPDATE:
+    elif v1_mutation.HasField('update'):
       v3_entity = entity_pb.EntityProto()
-      self.__entity_converter.v1_to_v3_entity(v1_mutation.entity,
+      self.__entity_converter.v1_to_v3_entity(v1_mutation.update,
                                               v3_entity)
       index_writes = self.__update_v3_entity(v3_entity, v3_txn)
 
 
-    elif v1_mutation.op == googledatastore.Mutation.UPSERT:
+    elif v1_mutation.HasField('upsert'):
       v3_entity = entity_pb.EntityProto()
-      self.__entity_converter.v1_to_v3_entity(v1_mutation.entity,
-                                              v3_entity)
+      v1_entity = v1_mutation.upsert
+      self.__entity_converter.v1_to_v3_entity(v1_entity, v3_entity)
       index_writes, v3_key = self.__upsert_v3_entity(v3_entity, v3_txn)
 
 
-    elif v1_mutation.op == googledatastore.Mutation.DELETE:
+    elif v1_mutation.HasField('delete'):
       v3_ref = entity_pb.Reference()
-      self.__entity_converter.v1_to_v3_reference(v1_mutation.key,
+      self.__entity_converter.v1_to_v3_reference(v1_mutation.delete,
                                                  v3_ref)
       index_writes = self.__delete_v3_reference(v3_ref, v3_txn)
 
     v1_mutation_result = googledatastore.MutationResult()
-    if v3_key and not datastore_pbs.is_complete_v1_key(v1_mutation.entity.key):
+    if v3_key and not datastore_pbs.is_complete_v1_key(v1_entity.key):
       self.__entity_converter.v3_to_v1_key(v3_key, v1_mutation_result.key)
     return v1_mutation_result, index_writes
 

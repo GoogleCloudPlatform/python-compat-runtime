@@ -1022,24 +1022,17 @@ class _ServiceValidator(object):
                                           req.keys)
 
   def __validate_mutation(self, mutation):
-    _assert_condition(mutation.op !=
-                      googledatastore.Mutation.OPERATION_UNSPECIFIED,
-                      'Unknown mutation operator.')
-    constraint = {
-        googledatastore.Mutation.INSERT : UPSERT,
-        googledatastore.Mutation.UPSERT : UPSERT,
-        googledatastore.Mutation.UPDATE : UPDATE,
-        googledatastore.Mutation.DELETE : DELETE
-    }[mutation.op]
+    if mutation.HasField('insert'):
 
-    if mutation.op == googledatastore.Mutation.DELETE:
-      _assert_condition(mutation.HasField('key'),
-                        'mutation.key must be set for %s.' % mutation.op)
-      self.__entity_validator.validate_key(constraint, mutation.key)
+      self.__entity_validator.validate_entity(UPSERT, mutation.insert)
+    elif mutation.HasField('update'):
+      self.__entity_validator.validate_entity(UPDATE, mutation.update)
+    elif mutation.HasField('upsert'):
+      self.__entity_validator.validate_entity(UPSERT, mutation.upsert)
+    elif mutation.HasField('delete'):
+      self.__entity_validator.validate_key(DELETE, mutation.delete)
     else:
-      _assert_condition(mutation.HasField('entity'),
-                        'mutation.entity must be set for %s' % mutation.op)
-      self.__entity_validator.validate_entity(constraint, mutation.entity)
+      _assert_condition(False, 'mutation lacks required op')
 
 
 
