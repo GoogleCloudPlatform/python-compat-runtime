@@ -35,7 +35,6 @@ import contextlib
 import copy
 import datetime
 import errno
-import getpass
 import hashlib
 import logging
 import mimetypes
@@ -65,6 +64,7 @@ from google.appengine.api import croninfo
 from google.appengine.api import dispatchinfo
 from google.appengine.api import dosinfo
 from google.appengine.api import queueinfo
+from google.appengine.api import validation
 from google.appengine.api import yaml_errors
 from google.appengine.api import yaml_object
 from google.appengine.datastore import datastore_index
@@ -162,12 +162,6 @@ SERVICE_ACCOUNT_BASE = (
 
 APP_YAML_FILENAME = 'app.yaml'
 
-_OAUTH2_WARNING = (
-    '####################################################\n'
-    'OAuth2 is now the default authentication method.\n'
-    'The --no_oauth2 flag will stop working in release 1.9.21.\n'
-    '####################################################')
-
 
 
 
@@ -183,11 +177,6 @@ augment_mimetypes.init()
 
 
 class Error(Exception):
-  pass
-
-
-class OAuthNotAvailable(Error):
-  """The appengine_rpc_httplib2 module could not be imported."""
   pass
 
 
@@ -2808,7 +2797,6 @@ class AppCfgApp(object):
     argv: The original command line as a list.
     args: The positional command line args left over after parsing the options.
     raw_input_fn: Function used for getting raw user input, like email.
-    password_input_fn: Function used for getting user password.
     error_fh: Unexpected HTTPErrors are printed to this file handle.
 
   Attributes for testing:
@@ -2821,7 +2809,6 @@ class AppCfgApp(object):
   def __init__(self, argv, parser_class=optparse.OptionParser,
                rpc_server_class=None,
                raw_input_fn=raw_input,
-               password_input_fn=getpass.getpass,
                out_fh=sys.stdout,
                error_fh=sys.stderr,
                update_check_class=sdk_update_checker.SDKUpdateChecker,
@@ -2843,7 +2830,6 @@ class AppCfgApp(object):
       parser_class: Options parser to use for this application.
       rpc_server_class: RPC server class to use for this application.
       raw_input_fn: Function used for getting user email.
-      password_input_fn: Function used for getting user password.
       out_fh: All normal output is printed to this file handle.
       error_fh: Unexpected HTTPErrors are printed to this file handle.
       update_check_class: sdk_update_checker.SDKUpdateChecker class (can be
@@ -2874,7 +2860,6 @@ class AppCfgApp(object):
     self.argv = argv
     self.rpc_server_class = rpc_server_class
     self.raw_input_fn = raw_input_fn
-    self.password_input_fn = password_input_fn
     self.out_fh = out_fh
     self.error_fh = error_fh
     self.update_check_class = update_check_class
@@ -2989,12 +2974,6 @@ class AppCfgApp(object):
     verbosity = self.options.verbose
 
 
-
-    if any((self.options.oauth2_refresh_token, self.options.oauth2_access_token,
-            self.options.authenticate_service_account)):
-      self.options.oauth2 = True
-
-
     if self.options.oauth2_client_id:
       self.oauth_client_id = self.options.oauth2_client_id
     if self.options.oauth2_client_secret:
@@ -3051,6 +3030,14 @@ class AppCfgApp(object):
     Returns:
       An OptionParser instance.
     """
+
+    def AppendSourceReference(option, opt_str, value, parser):
+      """Validates the source reference string and appends it to the list."""
+      try:
+        appinfo.ValidateSourceReference(value)
+      except validation.ValidationError, e:
+        raise optparse.OptionValueError('option %s: %s' % (opt_str, e.message))
+      getattr(parser.values, option.dest).append(value)
 
     class Formatter(optparse.IndentedHelpFormatter):
       """Custom help formatter that does not reformat the description."""
@@ -3129,9 +3116,6 @@ class AppCfgApp(object):
     parser.add_option('--skip_sdk_update_check', action='store_true',
                       dest='skip_sdk_update_check', default=False,
                       help='Do not check for SDK updates.')
-    parser.add_option('--passin', action='store_true',
-                      dest='passin', default=False,
-                      help='Read the login password from stdin.')
     parser.add_option('-A', '--application', action='store', dest='app_id',
                       help=('Set the application, overriding the application '
                             'value from app.yaml file.'))
@@ -3143,6 +3127,11 @@ class AppCfgApp(object):
                             'value from app.yaml file.'))
     parser.add_option('-r', '--runtime', action='store', dest='runtime',
                       help='Override runtime from app.yaml file.')
+    parser.add_option('--source_ref', metavar='[repository_uri#]revision',
+                      type='string', action='callback',
+                      callback=AppendSourceReference, dest='source_ref',
+                      default=[],
+                      help=optparse.SUPPRESS_HELP)
     parser.add_option('-E', '--env_variable', action='update',
                       dest='env_variables', metavar='NAME:VALUE',
                       help=('Set an environment variable, potentially '
@@ -3155,9 +3144,6 @@ class AppCfgApp(object):
     parser.add_option('--oauth2', action='store_true',
                       dest='redundant_oauth2', default=False,
                       help='Ignored (OAuth2 is the default).')
-    parser.add_option('--no_oauth2', action='store_false',
-                      dest='oauth2', default=True,
-                      help='Use password auth instead of OAuth2.')
     parser.add_option('--oauth2_refresh_token', action='store',
                       dest='oauth2_refresh_token', default=None,
                       help='An existing OAuth2 refresh token to use. Will '
@@ -3231,65 +3217,21 @@ class AppCfgApp(object):
       A new AbstractRpcServer, on which RPC calls can be made.
 
     Raises:
-      OAuthNotAvailable: OAuth is requested but the dependecies aren't imported.
       RuntimeError: The user has request non-interactive authentication but the
         environment is not correct for that to work.
     """
-
-    def GetUserCredentials():
-      """Prompts the user for a username and password."""
-      email = self.options.email
-      if email is None:
-        email = self.raw_input_fn('Email: ')
-
-      password_prompt = 'Password for %s: ' % email
-
-
-      if self.options.passin:
-        password = self.raw_input_fn(password_prompt)
-      else:
-        password = self.password_input_fn(password_prompt)
-
-      return (email, password)
 
     StatusUpdate('Host: %s' % self.options.server, self.error_fh)
 
     source = GetSourceName()
 
-
-
-    dev_appserver = self.options.host == 'localhost'
-
-    if self.options.oauth2 and not dev_appserver:
-      if not appengine_rpc_httplib2:
-
-        raise OAuthNotAvailable()
-      if not self.rpc_server_class:
-        self.rpc_server_class = appengine_rpc_httplib2.HttpRpcServerOAuth2
-
-
-      get_user_credentials = (
-          appengine_rpc_httplib2.HttpRpcServerOAuth2.OAuth2Parameters(
-              access_token=self.options.oauth2_access_token,
-              client_id=self.oauth_client_id,
-              client_secret=self.oauth_client_secret,
-              scope=self.oauth_scopes,
-              refresh_token=self.options.oauth2_refresh_token,
-              credential_file=self.options.oauth2_credential_file,
-              token_uri=self._GetTokenUri()))
-    else:
-      if not self.rpc_server_class:
-        if not dev_appserver and not self.options.oauth2:
-          print >> self.error_fh, _OAUTH2_WARNING
-
-          time.sleep(5)
-        self.rpc_server_class = appengine_rpc.HttpRpcServerWithOAuth2Suggestion
-        if hasattr(self, 'runtime'):
-          self.rpc_server_class.RUNTIME = self.runtime
-      get_user_credentials = GetUserCredentials
-
+    dev_appserver = self.options.host in ['localhost', '127.0.0.1']
 
     if dev_appserver:
+      if not self.rpc_server_class:
+        self.rpc_server_class = appengine_rpc.HttpRpcServer
+        if hasattr(self, 'runtime'):
+          self.rpc_server_class.RUNTIME = self.runtime
       email = self.options.email
       if email is None:
         email = 'test@example.com'
@@ -3307,17 +3249,26 @@ class AppCfgApp(object):
       rpcserver.authenticated = True
       return rpcserver
 
+    if not self.rpc_server_class:
+      self.rpc_server_class = appengine_rpc_httplib2.HttpRpcServerOAuth2
 
-    if self.options.passin:
-      auth_tries = 1
-    else:
-      auth_tries = 3
+
+    get_user_credentials = (
+        appengine_rpc_httplib2.HttpRpcServerOAuth2.OAuth2Parameters(
+            access_token=self.options.oauth2_access_token,
+            client_id=self.oauth_client_id,
+            client_secret=self.oauth_client_secret,
+            scope=self.oauth_scopes,
+            refresh_token=self.options.oauth2_refresh_token,
+            credential_file=self.options.oauth2_credential_file,
+            token_uri=self._GetTokenUri()))
+
 
     return self.rpc_server_class(self.options.server, get_user_credentials,
                                  GetUserAgent(), source,
                                  host_override=self.options.host,
                                  save_cookies=self.options.save_cookies,
-                                 auth_tries=auth_tries,
+                                 auth_tries=3,
                                  account_type='HOSTED_OR_GOOGLE',
                                  secure=self.options.secure,
                                  ignore_certs=self.options.ignore_certs,
@@ -3425,6 +3376,15 @@ class AppCfgApp(object):
       if appyaml.env_variables is None:
         appyaml.env_variables = appinfo.EnvironmentVariables()
       appyaml.env_variables.update(self.options.env_variables)
+    if self.options.source_ref:
+      try:
+        combined_refs = '\n'.join(self.options.source_ref)
+        appinfo.ValidateCombinedSourceReferencesString(combined_refs)
+        if appyaml.beta_settings is None:
+          appyaml.beta_settings = appinfo.BetaSettings()
+        appyaml.beta_settings['source_reference'] = combined_refs
+      except validation.ValidationError, e:
+        self.parser.error(e.message)
 
     if not appyaml.application:
       self.parser.error('Expected -A app_id when application property in file '

@@ -69,6 +69,7 @@ is stored in memory before it is written.
 
 import logging
 import os
+import sys
 
 from google.appengine.api import lib_config
 
@@ -98,16 +99,35 @@ def __django_version_setup():
                    version,
                    'https://developers.google.com/appengine/docs/python/tools/'
                    'libraries#Django')
-    try:
 
 
 
-      import django
-      if not hasattr(django, 'VERSION'):
-        from django import v0_96
-    except ImportError:
 
-      pass
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def _django_setup():

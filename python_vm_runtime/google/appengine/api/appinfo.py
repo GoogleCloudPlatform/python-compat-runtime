@@ -268,6 +268,12 @@ CODE_LOCK = 'code_lock'
 ENV_VARIABLES = 'env_variables'
 PAGESPEED = 'pagespeed'
 
+SOURCE_REPO_RE_STRING = r'^[a-z][a-z0-9\-\+\.]*:[^#]*$'
+SOURCE_REVISION_RE_STRING = r'^[0-9a-fA-F]+$'
+
+
+SOURCE_REFERENCES_MAX_SIZE = 2048
+
 INSTANCE_CLASS = 'instance_class'
 
 MINIMUM_PENDING_LATENCY = 'min_pending_latency'
@@ -285,6 +291,17 @@ COOL_DOWN_PERIOD_SEC = 'cool_down_period_sec'
 CPU_UTILIZATION = 'cpu_utilization'
 CPU_UTILIZATION_UTILIZATION = 'target_utilization'
 CPU_UTILIZATION_AGGREGATION_WINDOW_LENGTH_SEC = 'aggregation_window_length_sec'
+TARGET_NETWORK_SENT_BYTES_PER_SEC = 'target_network_sent_bytes_per_sec'
+TARGET_NETWORK_SENT_PACKETS_PER_SEC = 'target_network_sent_packets_per_sec'
+TARGET_NETWORK_RECEIVED_BYTES_PER_SEC = 'target_network_received_bytes_per_sec'
+TARGET_NETWORK_RECEIVED_PACKETS_PER_SEC = (
+    'target_network_received_packets_per_sec')
+TARGET_DISK_WRITE_BYTES_PER_SEC = 'target_disk_write_bytes_per_sec'
+TARGET_DISK_WRITE_OPS_PER_SEC = 'target_disk_write_ops_per_sec'
+TARGET_DISK_READ_BYTES_PER_SEC = 'target_disk_read_bytes_per_sec'
+TARGET_DISK_READ_OPS_PER_SEC = 'target_disk_read_ops_per_sec'
+TARGET_REQUEST_COUNT_PER_SEC = 'target_request_count_per_sec'
+TARGET_CONCURRENT_REQUESTS = 'target_concurrent_requests'
 
 
 
@@ -468,8 +485,9 @@ _SUPPORTED_LIBRARIES = [
         'PyAMF',
         'http://pyamf.appspot.com/index.html',
         'A library that provides (AMF) Action Message Format functionality.',
-        ['0.6.1'],
+        ['0.6.1', '0.7.2'],
         latest_version='0.6.1',
+        experimental_versions=['0.7.2'],
         ),
     _VersionedLibrary(
         'pycrypto',
@@ -1414,6 +1432,26 @@ class AutomaticScaling(validation.Validated):
       COOL_DOWN_PERIOD_SEC: validation.Optional(
           validation.Range(60, sys.maxint, int)),
       CPU_UTILIZATION: validation.Optional(CpuUtilization),
+      TARGET_NETWORK_SENT_BYTES_PER_SEC:
+      validation.Optional(validation.Range(1, sys.maxint)),
+      TARGET_NETWORK_SENT_PACKETS_PER_SEC:
+      validation.Optional(validation.Range(1, sys.maxint)),
+      TARGET_NETWORK_RECEIVED_BYTES_PER_SEC:
+      validation.Optional(validation.Range(1, sys.maxint)),
+      TARGET_NETWORK_RECEIVED_PACKETS_PER_SEC:
+      validation.Optional(validation.Range(1, sys.maxint)),
+      TARGET_DISK_WRITE_BYTES_PER_SEC:
+      validation.Optional(validation.Range(1, sys.maxint)),
+      TARGET_DISK_WRITE_OPS_PER_SEC:
+      validation.Optional(validation.Range(1, sys.maxint)),
+      TARGET_DISK_READ_BYTES_PER_SEC:
+      validation.Optional(validation.Range(1, sys.maxint)),
+      TARGET_DISK_READ_OPS_PER_SEC:
+      validation.Optional(validation.Range(1, sys.maxint)),
+      TARGET_REQUEST_COUNT_PER_SEC:
+      validation.Optional(validation.Range(1, sys.maxint)),
+      TARGET_CONCURRENT_REQUESTS:
+      validation.Optional(validation.Range(1, sys.maxint)),
   }
 
 
@@ -1456,6 +1494,7 @@ class BetaSettings(VmSettings):
   """Class for Beta (internal or unreleased) settings.
 
   This class is meant to replace VmSettings eventually.
+  All new beta settings must be registered in shared_constants.py.
 
   We don't validate these further here.  They're validated in Olympus.
   """
@@ -1564,6 +1603,45 @@ def NormalizeVmSettings(appyaml):
           appyaml.beta_settings[field] = appyaml.vm_settings[field]
 
   return appyaml
+
+
+def ValidateSourceReference(ref):
+  """Determines if a source reference is valid.
+
+  Args:
+    ref: A source reference in a [repository_uri#]revision form.
+
+  Raises:
+    ValidationError: when the reference is malformed.
+  """
+  repo_revision = ref.split('#', 1)
+  revision_id = repo_revision[-1]
+  if not re.match(SOURCE_REVISION_RE_STRING, revision_id):
+    raise validation.ValidationError('Bad revision identifier: %s' %
+                                     revision_id)
+
+  if len(repo_revision) == 2:
+    uri = repo_revision[0]
+    if not re.match(SOURCE_REPO_RE_STRING, uri):
+      raise validation.ValidationError('Bad repository URI: %s' % uri)
+
+
+def ValidateCombinedSourceReferencesString(source_refs):
+  """Determines if source_refs contains a valid list of source references.
+
+  Args:
+    source_refs: A multi-line string containing one source reference per line.
+
+  Raises:
+    ValidationError: when the reference is malformed.
+  """
+  if len(source_refs) > SOURCE_REFERENCES_MAX_SIZE:
+    raise validation.ValidationError(
+        'Total source reference(s) size exceeds the limit: %d > %d' % (
+            len(source_refs), SOURCE_REFERENCES_MAX_SIZE))
+
+  for ref in source_refs.splitlines():
+    ValidateSourceReference(ref.strip())
 
 
 class HealthCheck(validation.Validated):
@@ -1818,7 +1896,7 @@ class AppInfoExternal(validation.Validated):
       PROJECT: validation.Optional(APPLICATION_RE_STRING),
       MODULE: validation.Optional(MODULE_ID_RE_STRING),
       VERSION: validation.Optional(MODULE_VERSION_ID_RE_STRING),
-      RUNTIME: RUNTIME_RE_STRING,
+      RUNTIME: validation.Optional(RUNTIME_RE_STRING),
 
 
       API_VERSION: API_VERSION_RE_STRING,
@@ -1889,6 +1967,13 @@ class AppInfoExternal(validation.Validated):
           that does not support it (e.g. python25).
     """
     super(AppInfoExternal, self).CheckInitialized()
+    if self.runtime is None and not self.vm:
+      raise appinfo_errors.MissingRuntimeError(
+          'You must specify a "runtime" field for non-vm applications.')
+    elif self.runtime is None:
+
+
+      self.runtime = 'custom'
     if (not self.handlers and not self.builtins and not self.includes
         and not self.vm):
       raise appinfo_errors.MissingURLMapping(
@@ -1925,6 +2010,11 @@ class AppInfoExternal(validation.Validated):
           "legacy ids manually using the allocate_ids() API functions.\n"
           "For more information see:\n"
           + datastore_auto_ids_url + '\n' + appcfg_auto_ids_url + '\n')
+
+    if (hasattr(self, 'beta_settings') and self.beta_settings
+        and self.beta_settings.get('source_reference')):
+      ValidateCombinedSourceReferencesString(
+          self.beta_settings.get('source_reference'))
 
     if self.libraries:
       if not (vm_runtime_python27 or self.runtime == 'python27'):

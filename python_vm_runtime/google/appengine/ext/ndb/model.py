@@ -3322,7 +3322,7 @@ class Model(_NotEqualMixin):
 
   def _prepare_for_put(self):
     if self._properties:
-      for prop in self._properties.itervalues():
+      for _, prop in sorted(self._properties.iteritems()):
         prop._prepare_for_put(self)
 
   @classmethod

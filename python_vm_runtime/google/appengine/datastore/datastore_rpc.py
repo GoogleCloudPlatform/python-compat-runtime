@@ -1822,8 +1822,7 @@ class BaseConnection(object):
       if self._api_version == _CLOUD_DATASTORE_V1:
         for entity in pbs:
           mutation = req.mutations.add()
-          mutation.entity.CopyFrom(entity)
-          mutation.op = googledatastore.Mutation.UPSERT
+          mutation.upsert.CopyFrom(entity)
         method = 'Commit'
         resp = googledatastore.CommitResponse()
       else:
@@ -1931,8 +1930,7 @@ class BaseConnection(object):
       if self._api_version == _CLOUD_DATASTORE_V1:
         for pb in pbs:
           mutation = req.mutations.add()
-          mutation.key.CopyFrom(pb)
-          mutation.op = googledatastore.Mutation.DELETE
+          mutation.delete.CopyFrom(pb)
         method = 'Commit'
         resp = googledatastore.CommitResponse()
       else:
@@ -2596,12 +2594,10 @@ class TransactionalConnection(BaseConnection):
 
       for entity in self.__pending_v1_upserts.itervalues():
         mutation = req.mutations.add()
-        mutation.entity.CopyFrom(entity)
-        mutation.op = googledatastore.Mutation.UPSERT
+        mutation.upsert.CopyFrom(entity)
       for key in self.__pending_v1_deletes.itervalues():
         mutation = req.mutations.add()
-        mutation.key.CopyFrom(key)
-        mutation.op = googledatastore.Mutation.DELETE
+        mutation.delete.CopyFrom(key)
 
 
       self.__pending_v1_upserts.clear()

@@ -104,7 +104,7 @@ class GoRuntimeInstanceFactory(instance.InstanceFactory):
     self._module_configuration = module_configuration
     self._application_lock = threading.Lock()
     if (module_configuration.runtime == 'vm' and
-        'GAE_LOCAL_VM_RUNTIME' in os.environ):
+        os.environ.get('GAE_LOCAL_VM_RUNTIME') != '0'):
       self._start_process_flavor = http_runtime.START_PROCESS_REVERSE
       self._go_application = go_managedvm.GoManagedVMApp(
           self._module_configuration)
@@ -187,11 +187,16 @@ class GoRuntimeInstanceFactory(instance.InstanceFactory):
         logging.debug('Deploying new instance of failure proxy.')
         proxy = _GoBuildFailureRuntimeProxy(self._last_build_error)
       else:
+        environ = self._go_application.get_environment()
+        # Add in the environment settings from app_yaml "env_variables:"
+        runtime_config = self._runtime_config_getter()
+        for kv in runtime_config.environ:
+          environ[kv.key] = kv.value
         proxy = http_runtime.HttpRuntimeProxy(
             [self._go_application.go_executable],
             instance_config_getter,
             self._module_configuration,
-            self._go_application.get_environment(),
+            environ,
             start_process_flavor=self._start_process_flavor)
 
     return instance.Instance(self.request_data,

@@ -131,6 +131,7 @@ class Paths(object):
       self.v1_extra_paths.extend([
           os.path.join(dir_path, 'lib', 'httplib2'),
           os.path.join(dir_path, 'lib', 'oauth2client'),
+          os.path.join(dir_path, 'lib', 'six'),
       ])
 
     self.api_server_extra_paths = [
@@ -156,6 +157,7 @@ class Paths(object):
       self.oauth_client_extra_paths.extend([
           os.path.join(dir_path, 'lib', 'apiclient'),
           os.path.join(dir_path, 'lib', 'oauth2client'),
+          os.path.join(dir_path, 'lib', 'six'),
           os.path.join(dir_path, 'lib', 'uritemplate'),
       ])
     else:
@@ -188,6 +190,7 @@ class Paths(object):
         os.path.join(dir_path, 'lib', 'pyasn1_modules'),
         os.path.join(dir_path, 'lib', 'httplib2'),
         os.path.join(dir_path, 'lib', 'oauth2client'),
+        os.path.join(dir_path, 'lib', 'six'),
     ]
 
 

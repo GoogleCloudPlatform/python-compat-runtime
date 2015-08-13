@@ -43,6 +43,9 @@ from google.appengine.tools.value_mixin import ValueMixin
 logger = logging.getLogger('google.appengine.tools.appengine_rpc')
 
 
+_TIMEOUT_WAIT_TIME = 5
+
+
 class Error(Exception):
   pass
 
@@ -92,7 +95,8 @@ class HttpRpcServerHttpLib2(object):
   def __init__(self, host, auth_function, user_agent, source,
                host_override=None, extra_headers=None, save_cookies=False,
                auth_tries=None, account_type=None, debug_data=True, secure=True,
-               ignore_certs=False, rpc_tries=3, conflict_max_errors=10):
+               ignore_certs=False, rpc_tries=3, conflict_max_errors=10,
+               timeout_max_errors=2):
     """Creates a new HttpRpcServerHttpLib2.
 
     Args:
@@ -114,6 +118,8 @@ class HttpRpcServerHttpLib2(object):
         Response code >= 500 and < 600) before failing.
       conflict_max_errors: The number of rpc retries upon http server error
         (i.e. Response code 409) before failing.
+      timeout_max_errors: The number of rpc retries upon http server timeout
+        (i.e. Response code 408) before failing.
     """
     self.host = host
     self.auth_function = auth_function
@@ -130,6 +136,7 @@ class HttpRpcServerHttpLib2(object):
     self.rpc_max_errors = rpc_tries
     self.scheme = secure and 'https' or 'http'
     self.conflict_max_errors = conflict_max_errors
+    self.timeout_max_errors = timeout_max_errors
 
     self.certpath = None
     self.cert_file_available = False
@@ -216,6 +223,7 @@ class HttpRpcServerHttpLib2(object):
     rpc_errors = 0
     auth_errors = [0]
     conflict_errors = 0
+    timeout_errors = 0
 
     def NeedAuth():
       """Marker that we need auth; it'll actually be tried next time around."""
@@ -226,7 +234,8 @@ class HttpRpcServerHttpLib2(object):
         RaiseHttpError(url, response_info, response, 'Too many auth attempts.')
 
     while (rpc_errors < self.rpc_max_errors and
-           conflict_errors < self.conflict_max_errors):
+           conflict_errors < self.conflict_max_errors and
+           timeout_errors < self.timeout_max_errors):
       self._Authenticate(self.http, auth_errors[0] > 0)
       logger.debug('Sending request to %s headers=%s body=%s',
                    url, headers,
@@ -247,6 +256,13 @@ class HttpRpcServerHttpLib2(object):
       logger.debug('Got http error %s.', response_info.status)
       if status == 401:
         NeedAuth()
+        continue
+      elif status == 408:
+        timeout_errors += 1
+        logger.debug('Got timeout error %s of %s. Retrying in %s seconds',
+                     timeout_errors, self.timeout_max_errors,
+                     _TIMEOUT_WAIT_TIME)
+        time.sleep(_TIMEOUT_WAIT_TIME)
         continue
       elif status == 409:
         conflict_errors += 1

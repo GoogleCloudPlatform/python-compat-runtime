@@ -30,6 +30,32 @@ from google.appengine.tools.devappserver2 import go_errors
 from google.appengine.tools.devappserver2 import safe_subprocess
 
 
+def _file_is_executable(exe_name):
+  """Platform-independent check if file is executable.
+
+  Args:
+    exe_name: file name to test.
+
+  Returns:
+    bool, True if exe_name is executable.
+  """
+  if os.path.isfile(exe_name) and os.access(exe_name, os.X_OK):
+    if not sys.platform.startswith('win'):
+      # This is sufficient for Linux and Mac OS X, but not for Windows.
+      return True
+    # More information about the PE File Structure and MS-DOS Header can be
+    # found here: https://msdn.microsoft.com/en-us/magazine/cc301805.aspx
+    # and here: https://msdn.microsoft.com/en-us/library/ms809762.aspx
+    # TODO: Get rid of this when a better solution is found.
+    try:
+      with open(exe_name, 'rb') as f:
+        s = f.read(2)
+      return s == 'MZ'
+    except OSError:
+      pass
+  return False
+
+
 def _rmtree(directory):
   try:
     shutil.rmtree(directory)
@@ -118,6 +144,11 @@ class GoManagedVMApp(object):
       stdout, stderr = _run_tool('go', args)
     finally:
       os.chdir(cwd)
+    if not _file_is_executable(exe_name):
+      raise go_errors.BuildError(
+          'Your Go app must use "package main" and must provide'
+          ' a "func main". See https://cloud.google.com/appengine'
+          '/docs/go/managed-vms/ for more information.')
     logging.debug('Build succeeded:\n%s\n%s', stdout, stderr)
     self._go_executable = exe_name
 

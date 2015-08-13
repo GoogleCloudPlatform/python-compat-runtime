@@ -78,10 +78,17 @@ _API_CALL_DEADLINE = 5.0
 
 
 
+
 _API_CALL_VALIDATE_CERTIFICATE_DEFAULT = False
 
 
 _CONNECTION_SUPPORTS_TIMEOUT = sys.version_info >= (2, 6)
+
+
+_CONNECTION_SUPPORTS_SSL_TUNNEL = sys.version_info >= (2, 6)
+
+
+_MAX_REQUEST_SIZE = 10485760
 
 
 
@@ -140,6 +147,10 @@ def _IsAllowedPort(port):
       port >= 1024):
     return True
   return False
+
+def _IsLocalhost(host):
+  """Determines whether 'host' points to localhost."""
+  return host.startswith('localhost') or host.startswith('127.0.0.1')
 
 
 class URLFetchServiceStub(apiproxy_stub.APIProxyStub):
@@ -201,6 +212,10 @@ class URLFetchServiceStub(apiproxy_stub.APIProxyStub):
       logging.error('Invalid method: %s', request.method())
       raise apiproxy_errors.ApplicationError(
         urlfetch_service_pb.URLFetchServiceError.INVALID_URL)
+
+    if payload is not None and len(payload) > _MAX_REQUEST_SIZE:
+      raise apiproxy_errors.ApplicationError(
+          urlfetch_service_pb.URLFetchServiceError.PAYLOAD_TOO_LARGE)
 
     if not (protocol == 'http' or protocol == 'https'):
       logging.error('Invalid protocol: %s', protocol)
@@ -355,8 +370,15 @@ class URLFetchServiceStub(apiproxy_stub.APIProxyStub):
                     'url = %r, payload = %.1000r, headers = %r',
                     host, url, escaped_payload, adjusted_headers)
       try:
+        proxy_host = None
+
         if protocol == 'http':
           connection_class = httplib.HTTPConnection
+          default_port = 80
+
+          if os.environ.get('HTTP_PROXY') and not _IsLocalhost(host):
+            _, proxy_host, _, _, _ = (
+                urlparse.urlsplit(os.environ.get('HTTP_PROXY')))
         elif protocol == 'https':
           if (validate_certificate and _CanValidateCerts() and
               CERT_PATH):
@@ -365,6 +387,13 @@ class URLFetchServiceStub(apiproxy_stub.APIProxyStub):
                 ca_certs=CERT_PATH)
           else:
             connection_class = httplib.HTTPSConnection
+
+          default_port = 443
+
+          if (_CONNECTION_SUPPORTS_SSL_TUNNEL and
+              os.environ.get('HTTPS_PROXY') and not _IsLocalhost(host)):
+            _, proxy_host, _, _, _ = (
+                urlparse.urlsplit(os.environ.get('HTTPS_PROXY')))
         else:
 
           error_msg = 'Redirect specified invalid protocol: "%s"' % protocol
@@ -377,20 +406,26 @@ class URLFetchServiceStub(apiproxy_stub.APIProxyStub):
 
 
 
-        if _CONNECTION_SUPPORTS_TIMEOUT:
-          connection = connection_class(host, timeout=deadline)
+        connection_kwargs = (
+            {'timeout': deadline} if _CONNECTION_SUPPORTS_TIMEOUT else {})
+
+        if proxy_host:
+          proxy_address, _, proxy_port = proxy_host.partition(':')
+          connection = connection_class(
+              proxy_address, proxy_port if proxy_port else default_port,
+              **connection_kwargs)
+          full_path = urlparse.urlunsplit((protocol, host, path, query, ''))
+
+          if protocol == 'https':
+            connection.set_tunnel(host)
         else:
-          connection = connection_class(host)
+          connection = connection_class(host, **connection_kwargs)
+          full_path = urlparse.urlunsplit(('', '', path, query, ''))
 
 
 
         last_protocol = protocol
         last_host = host
-
-        if query != '':
-          full_path = path + '?' + query
-        else:
-          full_path = path
 
         if not _CONNECTION_SUPPORTS_TIMEOUT:
           orig_timeout = socket.getdefaulttimeout()
