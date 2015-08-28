@@ -19,8 +19,7 @@ import logging
 import math
 import os
 
-LOG_PATH_TEMPLATE = '/var/log/app_engine/app.{}.json'
-
+LOG_PATH_TEMPLATE = '/var/log/app_engine/app.{pid}.json'
 
 class CloudLoggingHandler(logging.FileHandler):
   """A handler that emits logs to Cloud Logging.
@@ -42,7 +41,7 @@ class CloudLoggingHandler(logging.FileHandler):
   def __init__(self):
     # Large log entries will get mangled if multiple workers write to the same
     # file simultaneously, so we'll use the worker's PID to pick a log filename.
-    filename = LOG_PATH_TEMPLATE.format(os.getpid())
+    filename = LOG_PATH_TEMPLATE.format(pid=os.getpid())
     super(CloudLoggingHandler, self).__init__(filename)
 
   def format(self, record):
@@ -50,13 +49,16 @@ class CloudLoggingHandler(logging.FileHandler):
     # First, let's just get the log string as it would normally be formatted.
     message = super(CloudLoggingHandler, self).format(record)
 
+    subsecond, second = math.modf(record.created)  # Second is a float, here.
+
     # Now assemble a dictionary with the log string as the message.
     payload = {
         'message': message,
-        'timestamp': {'seconds': int(record.created),
-                      'nanos': int(math.modf(record.created)[0] * 1000000000)},
+        'timestamp': {'seconds': int(second),
+                      'nanos': int(subsecond * 1e9)},
         'thread': record.thread,
-        'severity': record.levelname,}
+        'severity': record.levelname,
+        }
 
     # Now make a best effort to add the trace id.
     # First, try to get the trace id from the 'extras' of the record.
