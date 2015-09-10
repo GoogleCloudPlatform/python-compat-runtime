@@ -19,7 +19,7 @@ import os
 import threading
 import UserDict
 
-from static_files import static_app_for_regex_and_files
+from . import static_files
 
 from google.appengine.api import appinfo
 from google.appengine.api import appinfo_includes
@@ -27,7 +27,14 @@ from google.appengine.runtime import wsgi
 
 
 def get_module_config_filename():
-  """Returns the name of the module configuration file (app.yaml)."""
+  """Returns the path of the module configuration file (e.g. 'app.yaml').
+
+  Returns:
+    The path of the module configuration file.
+
+  Raises:
+    KeyError: The MODULE_YAML_PATH environment variable is not set.
+  """
   module_yaml_path = os.environ['MODULE_YAML_PATH']
   logging.info('Using module_yaml_path from env: %s', module_yaml_path)
   return module_yaml_path
@@ -42,15 +49,14 @@ def get_module_config(filename):
 def app_for_script(script):
   """Returns the WSGI app specified in the input string, or None on failure."""
   try:
-    app, filename, err = wsgi.LoadObject(script)  # pylint: disable=unused-variable
-  except ImportError as e:
-    # Despite nominally returning an error object, LoadObject will sometimes
-    # just result in an exception. Since we're already processing the err
-    # object, we might as well just use that variable to store the exception.
-    err = e
-  if err:
-    # Log the exception but do not reraise.
-    logging.exception('Failed to import %s: %s', script, err)
+    app, unused_filename, err = wsgi.LoadObject(script)
+    if err:  # wsgi.LoadObject guarantees this is either None or ImportError.
+      raise err
+  except ImportError:
+    # Despite returning an error object sometimes, LoadObject will other times
+    # just raise an exception. By raising the err object if it exists, we
+    # catch either.
+    logging.exception('Failed to import %s', script)
     return None
   else:
     return app_wrapped_in_user_middleware(app)
@@ -80,10 +86,7 @@ def get_add_middleware_from_appengine_config():
   """
   try:
     import appengine_config  # pylint: disable=g-import-not-at-top
-    try:
-      return appengine_config.webapp_add_wsgi_middleware
-    except AttributeError:
-      return None
+    return getattr(appengine_config, 'webapp_add_wsgi_middleware', None)
   except ImportError:
     return None
 
@@ -98,27 +101,27 @@ def static_app_for_handler(handler):
   Returns:
     A static file-serving WSGI app closed over the handler information.
   """
-  regex = handler.url
+  url_re = handler.url  # handler.url is a regex, despite the name.
   files = handler.static_files
-  upload = handler.upload
+  upload_re = handler.upload
   if not files:
     if handler.static_dir:
       # If static_files is not set, convert static_dir to static_files and also
       # modify the url regex accordingly. See the appinfo.URLMap docstring for
       # more information.
-      regex = static_dir_url(handler)
-      files = handler.static_dir + r'/\1'
-      upload = handler.static_dir + '/.*'
+      url_re = static_dir_url_re(handler)
+      files = r'{dir}/\1'.format(dir=handler.static_dir)
+      upload_re = '{dir}/.*'.format(dir=handler.static_dir)
     else:
       # Neither static_files nor static_dir is set; log an error and return.
       logging.error('No script, static_files or static_dir found for %s',
                     handler)
       return None
-  return static_app_for_regex_and_files(regex, files, upload,
-                                        mime_type=handler.mime_type)
+  return static_files.static_app_for_regex_and_files(
+      url_re, files, upload_re, mime_type=handler.mime_type)
 
 
-def static_dir_url(handler):
+def static_dir_url_re(handler):
   """Converts a static_dir regex into a static_files regex if needed.
 
   See the appinfo.URLMap docstring for more information.
@@ -130,7 +133,7 @@ def static_dir_url(handler):
     A modified url regex
   """
   if not handler.script and not handler.static_files and handler.static_dir:
-    return handler.url + '/(.*)'
+    return '{url_re}/(.*)'.format(url_re=handler.url)
   else:
     return handler.url
 
@@ -143,22 +146,29 @@ def load_user_scripts_into_handlers(handlers):
 
   Returns:
     A list of tuples suitable for configuring the dispatcher() app,
-    where the tuples are (url, script, app):
-      - url: The url pattern which matches this handler.
-      - script: The script to serve for this handler, as a string, or None.
+    where the tuples are (url, app):
+      - url_re: The url regular expression which matches this handler.
       - app: The fully loaded app corresponding to the script.
   """
-  # `if x.login == appinfo.LOGIN_OPTIONAL` disables loading handlers
+  # `if handler.login == appinfo.LOGIN_OPTIONAL` disables loading handlers
   # that require login or admin status entirely. This is a temporary
   # measure until handling of login-required handlers is implemented
   # securely.
-  loaded_handlers = [
-      (x.url if x.script or x.static_files else static_dir_url(x),
-       x.script,
-       app_for_script(x.script) if x.script else static_app_for_handler(x))
-      for x in handlers if x.login == appinfo.LOGIN_OPTIONAL]
-  logging.info('Parsed handlers: %s',
-               [(url, script) for (url, script, _) in loaded_handlers])
+  loaded_handlers = []
+  for handler in handlers:
+    if handler.login == appinfo.LOGIN_OPTIONAL:
+      if handler.script:  # An application, not a static files directive.
+        url_re = handler.url
+        app = app_for_script(handler.script)
+      else:  # A static files directive, either with static_files or static_dir.
+        if handler.static_files:
+          url_re = handler.url
+        else:  # This is a "static_dir" directive.
+          url_re = static_dir_url_re(handler)
+        app = static_app_for_handler(handler)
+      loaded_handlers.append((url_re, app))
+  logging.info('Parsed handlers: %r',
+               [url_re for (url_re, _) in loaded_handlers])
   return loaded_handlers
 
 
@@ -175,34 +185,35 @@ def env_vars_from_env_config(env_config):
     A dict of strings suitable for e.g. `os.environ.update(values)`.
   """
 
-  return {'SERVER_SOFTWARE': env_config.server_software,
-          'APPENGINE_RUNTIME': 'python27',
-          'APPLICATION_ID': '%s~%s' % (env_config.partition,
-                                       env_config.appid),
-          'INSTANCE_ID': env_config.instance,
-          'BACKEND_ID': env_config.major_version,
-          'CURRENT_MODULE_ID': env_config.module,
-          'CURRENT_VERSION_ID': '%s.%s' % (env_config.major_version,
-                                           env_config.minor_version),
-          'DEFAULT_TICKET': env_config.default_ticket}
+  return {
+      'SERVER_SOFTWARE': env_config.server_software,
+      'APPENGINE_RUNTIME': 'python27',
+      'APPLICATION_ID': '%s~%s' % (env_config.partition,
+                                   env_config.appid),
+      'INSTANCE_ID': env_config.instance,
+      'BACKEND_ID': env_config.major_version,
+      'CURRENT_MODULE_ID': env_config.module,
+      'CURRENT_VERSION_ID': '%s.%s' % (env_config.major_version,
+                                       env_config.minor_version),
+      'DEFAULT_TICKET': env_config.default_ticket,
+      }
 
 
-def user_env_vars_from_appinfo(appinfo):
+def user_env_vars_from_appinfo(appinfo_ext):
   """Generate a dict of env variables specified by the user in app.yaml.
 
   This function only returns a dict and does not update os.environ directly.
 
   Args:
-    appinfo: The configuration info (a parsed yaml object) as generated by
-              get_module_config()
+    appinfo_ext: The configuration info (a parsed yaml object) as generated by
+                 get_module_config()
 
   Returns:
     A dict of strings suitable for e.g. `os.environ.update(values)`.
   """
 
-  return appinfo.env_variables or {}
+  return appinfo_ext.env_variables or {}
 
 
-# Dictionary with thread-local contents.
 class ThreadLocalDict(UserDict.IterableUserDict, threading.local):
-  pass
+  """A dictionary with thread-local contents."""

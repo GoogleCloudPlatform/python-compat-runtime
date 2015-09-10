@@ -12,20 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+import httplib
 import unittest
 
 from mock import patch
-from werkzeug.test import Client
-from werkzeug.wrappers import Request
-from werkzeug.wrappers import Response
+from werkzeug import test
+from werkzeug import wrappers
 
-from wsgi_config import app_for_script
+from . import wsgi_config
+from . import wsgi_test
 
-
-@Request.application
+@wrappers.Request.application
 def salutation_world(request):
   salutation = request.args.get('salutation', 'Hello')
-  return Response('%s World!' % salutation)
+  return wrappers.Response('%s World!' % salutation)
 
 
 def goodbye_world_middleware(app):
@@ -38,19 +38,21 @@ def goodbye_world_middleware(app):
 class AppConfigTestCase(unittest.TestCase):
 
   def test_app_for_script(self):
-    with patch('wsgi_config.get_add_middleware_from_appengine_config',
+    with patch.object(wsgi_config, 'get_add_middleware_from_appengine_config',
                return_value=None):
-      app = app_for_script('wsgi_config_test.salutation_world')
-    client = Client(app, Response)
+      app = wsgi_config.app_for_script(
+          wsgi_test.script_path('salutation_world', test_name=__name__))
+    client = test.Client(app, wrappers.Response)
     response = client.get('/?salutation=Hello')
-    self.assertEqual(response.status_code, 200)
+    self.assertEqual(response.status_code, httplib.OK)
     self.assertEqual(response.data, 'Hello World!')
 
   def test_app_for_script_with_middleware(self):
-    with patch('wsgi_config.get_add_middleware_from_appengine_config',
+    with patch.object(wsgi_config, 'get_add_middleware_from_appengine_config',
                return_value=goodbye_world_middleware):
-      app = app_for_script('wsgi_config_test.salutation_world')
-    client = Client(app, Response)
+      app = wsgi_config.app_for_script(
+          wsgi_test.script_path('salutation_world', test_name=__name__))
+    client = test.Client(app, wrappers.Response)
     response = client.get('/?salutation=Hello')
-    self.assertEqual(response.status_code, 200)
+    self.assertEqual(response.status_code, httplib.OK)
     self.assertEqual(response.data, 'Goodbye World!')

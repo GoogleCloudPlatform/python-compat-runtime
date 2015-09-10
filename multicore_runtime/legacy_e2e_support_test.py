@@ -12,14 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+import httplib
 import tempfile
 import unittest
 
-from werkzeug.test import Client
-from werkzeug.wrappers import Request
-from werkzeug.wrappers import Response
+from werkzeug import test
+from werkzeug import wrappers
 
-import legacy_e2e_support
+from . import legacy_e2e_support
 
 
 class LegacyAppConfigTestCase(unittest.TestCase):
@@ -27,7 +27,7 @@ class LegacyAppConfigTestCase(unittest.TestCase):
   def test_legacy_app_for_script(self):
     app = legacy_e2e_support.legacy_app_for_script(
         'legacy_e2e_support_test_app.py')
-    client = Client(app, Response)
+    client = test.Client(app, wrappers.Response)
     response = client.get('/')
-    self.assertEqual(response.status_code, 200)
+    self.assertEqual(response.status_code, httplib.OK)
     self.assertEqual(response.data, 'Hello World!')

@@ -19,7 +19,7 @@ import runpy
 import threading
 from wsgiref import handlers
 
-import wsgi_config
+from . import wsgi_config
 
 from google.appengine.ext.webapp import util as webapp_util
 
@@ -61,18 +61,16 @@ def load_legacy_scripts_into_handlers(handlers):
 
   Returns:
     A list of tuples suitable for configuring the dispatcher() app,
-    where the tuples are (url, script, app):
-      - url: The url pattern which matches this handler.
-      - script: The script to serve for this handler, as a string, or None.
+    where the tuples are (url, app):
+      - url_re: The url regular expression which matches this handler.
       - app: The fully loaded app corresponding to the script.
   """
   loaded_handlers = [
       (x.url,
-       x.script,
        legacy_app_for_script(x.script.replace('$PYTHON_LIB/', '')))
       for x in handlers]
-  logging.info('Parsed handlers: %s',
-               [(url, script) for (url, script, _) in loaded_handlers])
+  logging.info('Parsed handlers: %r',
+               [url_re for (url_re, _) in loaded_handlers])
   return loaded_handlers
 
 

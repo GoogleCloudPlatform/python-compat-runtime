@@ -14,12 +14,20 @@
 #
 """A WSGI app that, once configured, dispatches requests to user apps."""
 
+import httplib
 import logging
 import re
 
-from werkzeug.wrappers import Request
-from werkzeug.wrappers import Response
+from werkzeug import wrappers
 
+ERROR_TEMPLATE = '<h1>{http_status} {message}</h1>\n'
+
+def response_for_error(http_status):
+  """Given an HTTP status code, returns a simple HTML error message."""
+  return wrappers.Response(
+      ERROR_TEMPLATE.format(http_status=http_status,
+                            message=httplib.responses[http_status]),
+      status=http_status)
 
 def dispatcher(handlers):
   """Accepts handlers and returns a WSGI app that dispatches requests to them.
@@ -27,29 +35,26 @@ def dispatcher(handlers):
   Args:
     handlers: a list of handlers as produced by
       wsgi_utils.load_user_scripts_into_handlers: a list of tuples of
-      (url, script, app).
+      (url_re, app).
 
   Returns:
     A WSGI app that dispatches to the user apps specified in the input.
   """
 
-  def dispatch(wsgi_env, start_response):
+  @wrappers.Request.application  # Transforms wsgi_env, start_response args into request
+  def dispatch(request):
     """Handle one request."""
-    request = Request(wsgi_env)
-    for url, script, app in handlers:  # pylint: disable=unused-variable
-      matcher = re.match(url, request.path)
+    for url_re, app in handlers:
+      matcher = re.match(url_re, request.path)
       if matcher and matcher.end() == len(request.path):
         if app is not None:
           # Send a response via the app specified in the handler.
-          return app(wsgi_env, start_response)
+          return app
         else:
           # The import must have failed. This will have been logged at import
           # time. Send a 500 error response.
-          response = Response('<h1>500 Internal Server Error</h1>\n',
-                              status=500)
-          return response(wsgi_env, start_response)
+          return response_for_error(httplib.INTERNAL_SERVER_ERROR)
     logging.error('No handler found for %s', request.path)
-    start_response('404 Not Found', [])
-    return ['<h1>404 Not Found</h1>\n']
+    return response_for_error(httplib.NOT_FOUND)
 
   return dispatch
