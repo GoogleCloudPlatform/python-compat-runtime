@@ -35,6 +35,10 @@ application's Dockerfile (starting with FROM) and the last line of
 multicore_runtime/dev/Dockerfile (ADD . /app) and concatenating the files, with
 the repository's version first.
 
+Also copy the gunicorn_config.py file from the repository to your application's
+root directory. (When the runtime is prepared as a precompiled image, a default
+will be included in the image and this step will become optional.)
+
 This Dockerfile will download the latest release of the runtime directly from
 Github. If you would like to instead use a version of the runtime you have
 modified or that has not yet been released, see the "Building your own version"

@@ -2,7 +2,7 @@ FROM gcr.io/google_appengine/base
 
 RUN apt-get -q update && \
   apt-get install --no-install-recommends -y -q \
-    python2.7 python-pip python-gevent python-greenlet && \
+    python2.7 python-pip && \
   apt-get clean && rm /var/lib/apt/lists/*_*
 
 ADD https://github.com/GoogleCloudPlatform/appengine-python-vm-runtime/releases/download/v0.1/appengine-python-vm-runtime-0.1.tar.gz /home/vmagent/python-runtime.tar.gz
@@ -11,7 +11,7 @@ ADD https://github.com/GoogleCloudPlatform/appengine-python-vm-runtime/releases/
 # command and instead use the following line:
 # COPY appengine-python-vm-runtime-0.2.tar.gz /home/vmagent/python-runtime.tar.gz
 
-RUN pip install --upgrade pip gunicorn==19.3.0
+RUN pip install --upgrade pip gunicorn==19.3.0 futures==3.0.3
 RUN pip install /home/vmagent/python-runtime.tar.gz
 
 EXPOSE 8080
