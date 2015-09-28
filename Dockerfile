@@ -2,14 +2,14 @@ FROM gcr.io/google_appengine/base
 
 RUN apt-get -q update && \
   apt-get install --no-install-recommends -y -q \
-    python2.7 python-pip python-gevent python-greenlet && \
+    python2.7 python-pip && \
   apt-get clean && rm /var/lib/apt/lists/*_*
 
 # This step adds the actual compiled runtime ('python setup.py sdist') to the
 # docker image.
 COPY python-runtime.tar.gz /home/vmagent/python-runtime.tar.gz
 
-RUN pip install --upgrade pip gunicorn==19.3.0
+RUN pip install --upgrade pip gunicorn==19.3.0 futures==3.0.3
 RUN pip install /home/vmagent/python-runtime.tar.gz
 
 EXPOSE 8080
