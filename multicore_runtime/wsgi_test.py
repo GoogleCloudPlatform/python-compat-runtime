@@ -71,6 +71,8 @@ FAKE_ENV_KEY = 'KEY'
 FAKE_ENV_VALUE = 'VALUE'
 FAKE_USER_EMAIL = 'test@example.com'
 BAD_USER_EMAIL = 'bad@example.com'
+FAKE_IP = '192.168.254.254'
+WRONG_IP = '192.168.0.1'
 
 FAKE_APPINFO_EXTERNAL = MagicMock(handlers=FAKE_HANDLERS,
                                   env_variables={FAKE_ENV_KEY: FAKE_ENV_VALUE,
@@ -253,6 +255,18 @@ class MetaAppTestCase(unittest.TestCase):
     response = self.client.get('/env', headers={'X_APPENGINE_HTTPS': 'on'})
     env = json.loads(response.data)
     self.assertEqual(env['SERVER_PORT'], '443')
+
+  def test_remote_addr_in_env(self):
+    response = self.client.get(
+        '/env', headers={'X_APPENGINE_USER_IP': FAKE_IP})
+    env = json.loads(response.data)
+    self.assertEqual(env['REMOTE_ADDR'], FAKE_IP)
+
+    response = self.client.get(
+        '/env', headers={'X_APPENGINE_REMOTE_ADDR': FAKE_IP,
+                         'X_APPENGINE_USER_IP': WRONG_IP})
+    env = json.loads(response.data)
+    self.assertEqual(env['REMOTE_ADDR'], FAKE_IP)
 
   # Test that one request can't modify the environment in a way that affects
   # a subsequent request. This validates os.environ is cleared per request.

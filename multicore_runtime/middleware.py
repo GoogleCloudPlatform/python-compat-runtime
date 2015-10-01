@@ -28,7 +28,7 @@ RESERVED_ENV_KEYS = {
     'DATACENTER': '',
     'DEFAULT_VERSION_HOSTNAME': '',
     'HTTPS': '',
-    'REMOTE_ADDR': '',
+#   'REMOTE_ADDR': '',  # REMOTE_ADDR is reserved but has special case handling.
     'REQUEST_ID_HASH': '',
     'REQUEST_LOG_ID': '',
     'USER_EMAIL': '',
@@ -37,6 +37,10 @@ RESERVED_ENV_KEYS = {
     'USER_NICKNAME': '',
     'USER_ORGANIZATION': '',
     }
+
+X_APPENGINE_USER_IP_ENV_KEY = 'HTTP_X_APPENGINE_USER_IP'
+X_APPENGINE_REMOTE_ADDR_ENV_KEY = 'HTTP_X_APPENGINE_REMOTE_ADDR'
+WSGI_REMOTE_ADDR_ENV_KEY = 'REMOTE_ADDR'
 
 
 def reset_environment_middleware(app, frozen_environment, frozen_user_env,
@@ -75,6 +79,10 @@ def reset_environment_middleware(app, frozen_environment, frozen_user_env,
 
     # Repopulate os.environ with the frozen environment.
     os.environ.update(frozen_environment)
+
+    # Patch the wsgi environment to set REMOTE_ADDR to equal the origin IP and
+    # not the IP of the proxy server. This mimics existing GAE behavior.
+    mutate_env_to_overwrite_remote_addr(request.environ)
 
     # Add in wsgi_env data, including request headers.
     os.environ.update(request_environment_for_wsgi_env(request.environ))
@@ -169,6 +177,28 @@ def get_env_to_hide_service_bridge(wsgi_env):
         'Unrecognized value for HTTPS (%s), won\'t modify SERVER_PORT', https)
 
   return output
+
+
+def mutate_env_to_overwrite_remote_addr(wsgi_env):
+  """Mutate wsgi_env to set wsgi_env['REMOTE_ADDR'] to the end user IP.
+
+  Args:
+    wsgi_env: WSGI request env data to mutate.
+
+  Returns:
+    None
+  """
+
+  # Grab the remote user IP from the X-AppEngine header and overwrite
+  # REMOTE_ADDR used by WSGI.
+  user_ip = wsgi_env.get(X_APPENGINE_REMOTE_ADDR_ENV_KEY)
+  if not user_ip:
+    # No HTTP_X_APPENGINE_REMOTE_ADDR, so check USER_IP instead.
+    user_ip = wsgi_env.get(X_APPENGINE_USER_IP_ENV_KEY)
+
+  if user_ip:
+    # Update env.
+    wsgi_env[WSGI_REMOTE_ADDR_ENV_KEY] = user_ip
 
 
 def health_check_middleware(app):
