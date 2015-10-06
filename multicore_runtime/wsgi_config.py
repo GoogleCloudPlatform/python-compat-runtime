@@ -150,23 +150,18 @@ def load_user_scripts_into_handlers(handlers):
       - url_re: The url regular expression which matches this handler.
       - app: The fully loaded app corresponding to the script.
   """
-  # `if handler.login == appinfo.LOGIN_OPTIONAL` disables loading handlers
-  # that require login or admin status entirely. This is a temporary
-  # measure until handling of login-required handlers is implemented
-  # securely.
   loaded_handlers = []
   for handler in handlers:
-    if handler.login == appinfo.LOGIN_OPTIONAL:
-      if handler.script:  # An application, not a static files directive.
+    if handler.script:  # An application, not a static files directive.
+      url_re = handler.url
+      app = app_for_script(handler.script)
+    else:  # A static files directive, either with static_files or static_dir.
+      if handler.static_files:
         url_re = handler.url
-        app = app_for_script(handler.script)
-      else:  # A static files directive, either with static_files or static_dir.
-        if handler.static_files:
-          url_re = handler.url
-        else:  # This is a "static_dir" directive.
-          url_re = static_dir_url_re(handler)
-        app = static_app_for_handler(handler)
-      loaded_handlers.append((url_re, app))
+      else:  # This is a "static_dir" directive.
+        url_re = static_dir_url_re(handler)
+      app = static_app_for_handler(handler)
+    loaded_handlers.append((url_re, app))
   logging.info('Parsed handlers: %r',
                [url_re for (url_re, _) in loaded_handlers])
   return loaded_handlers

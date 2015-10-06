@@ -48,10 +48,6 @@ FAKE_HANDLERS = [
     appinfo.URLMap(url='/sortenv', script=script_path('sort_os_environ_keys')),
     appinfo.URLMap(url='/setenv', script=script_path('add_to_os_environ')),
     appinfo.URLMap(url='/wait', script=script_path('wait_on_global_event')),
-    appinfo.URLMap(url='/login', script=script_path('hello_world'),
-                   login=appinfo.LOGIN_REQUIRED),
-    appinfo.URLMap(url='/admin', script=script_path('hello_world'),
-                   login=appinfo.LOGIN_ADMIN),
     appinfo.URLMap(url='/favicon.ico',
                    static_files=static_path('test_statics/favicon.ico'),
                    upload=static_path('test_statics/favicon.ico')),
@@ -170,16 +166,6 @@ class MetaAppTestCase(unittest.TestCase):
     response = self.client.get('/env')
     # Assumes PATH will be present in the env in all cases, including tests!
     self.assertIn('PATH', json.loads(response.data))
-
-  def test_login_required(self):
-    # Login routes are temporarily disabled.
-    response = self.client.get('/login')
-    self.assertEqual(response.status_code, httplib.NOT_FOUND)
-
-  def test_login_admin(self):
-    # Login routes are temporarily disabled.
-    response = self.client.get('/admin')
-    self.assertEqual(response.status_code, httplib.NOT_FOUND)
 
   def test_static_file(self):
     response = self.client.get('/favicon.ico')
