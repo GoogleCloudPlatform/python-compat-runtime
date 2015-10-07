@@ -225,6 +225,10 @@ class ModuleConfiguration(object):
           self._minor_version_id)
 
   @property
+  def env(self):
+    return self._app_info_external.env
+
+  @property
   def runtime(self):
     return self._runtime
 
@@ -618,6 +622,10 @@ class BackendConfiguration(object):
         self.module_name,
         self.major_version,
         self._minor_version_id)
+
+  @property
+  def env(self):
+    return self._module_configuration.env
 
   @property
   def runtime(self):

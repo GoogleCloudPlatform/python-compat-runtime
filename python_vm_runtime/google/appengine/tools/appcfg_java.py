@@ -491,7 +491,8 @@ class JavaAppUpdate(object):
         self.javac_command,
         '-classpath', classpath,
         '-d', jsp_class_dir,
-        '-target', '1.7',
+        '-source', '7',
+        '-target', '7',
         '-encoding', self.options.compile_encoding,
     ] + java_files
 
