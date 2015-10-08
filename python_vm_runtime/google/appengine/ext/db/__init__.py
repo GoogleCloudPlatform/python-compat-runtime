@@ -585,7 +585,6 @@ class Property(object):
         an underscore, but may change for different subclasses.
     """
     self.model_class = model_class
-    self._property_name = property_name
     if self.name is None:
       self.name = property_name
 
@@ -963,19 +962,9 @@ class Model(object):
 
 
 
-    for prop in self._properties.values():
-      property_name = prop._property_name
+    for prop in self.properties().values():
       if prop.name in kwds:
-
-
-
         value = kwds[prop.name]
-      elif property_name in kwds and property_name not in self._all_properties:
-
-
-
-
-        value = kwds[property_name]
       elif is_projection:
         continue
       else:
@@ -3911,7 +3900,7 @@ class ComputedProperty(Property):
   you may not set values on them.  Attempting to do so raises
   db.DerivedPropertyError which db.Model knows to ignore during entity
   loading time.  Whenever getattr is used for the property
-  the value is recaclulated.  This happens when the model calls
+  the value is recalculated.  This happens when the model calls
   get_value_for_datastore on the property.
 
   Example:
