@@ -35,7 +35,7 @@ application's Dockerfile (starting with FROM) and the last line of
 multicore_runtime/dev/Dockerfile (ADD . /app) and concatenating the files, with
 the repository's version first.
 
-Also copy the gunicorn_config.py file from the repository to your application's
+Also copy the gunicorn.conf.py file from the repository to your application's
 root directory. (When the runtime is prepared as a precompiled image, a default
 will be included in the image and this step will become optional.)
 
@@ -53,9 +53,9 @@ By default the multi-process version of the runtime is launched via the Gunicorn
 webserver and is configured to use gevent-based concurrency and a number of
 processes equal to the number of CPU cores available.
 
-This can be changed by creating a file called "gunicorn_config.py" in your
+This can be changed by creating a file called "gunicorn.conf.py" in your
 application's root directory, which will override the default
-"gunicorn_config.py" included with this project. Refer the gunicorn
+"gunicorn.conf.py" included with this project. Refer the gunicorn
 documentation for details:
 http://gunicorn-docs.readthedocs.org/en/latest/settings.html
 
@@ -70,7 +70,7 @@ distribution by running `python setup.py sdist` from the root directory of the
 repository.
 - Copy the resulting tar.gz file to your application's folder, in the same
 directory as the Dockerfile.
-- Also copy "gunicorn_config.py" to the same directory as above, or use your
+- Also copy "gunicorn.conf.py" to the same directory as above, or use your
 own.
 - Edit the Dockerfile in your application and look for the line that says
 `ADD (...) /home/vmagent/python-runtime.tar.gz`

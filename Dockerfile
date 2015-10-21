@@ -19,9 +19,9 @@ WORKDIR /app
 
 # Add the default gunicorn configuration file to the app directory. This
 # default file will be overridden if the user adds a file called
-# "gunicorn_config.py" to their app's root directory.
-ADD gunicorn_config.py /app/gunicorn_config.py
+# "gunicorn.conf.py" to their app's root directory.
+ADD gunicorn.conf.py /app/gunicorn.conf.py
 
 # Configure the entrypoint with Managed VMs-essential configuration like "bind",
 # but leave the rest up to the config file.
-ENTRYPOINT ["/usr/bin/env", "gunicorn", "-b", "0.0.0.0:8080", "google.appengine.vmruntime.wsgi:meta_app", "--log-file=-", "-c", "gunicorn_config.py"]
+ENTRYPOINT ["/usr/bin/env", "gunicorn", "-b", "0.0.0.0:8080", "google.appengine.vmruntime.wsgi:meta_app", "--log-file=-", "-c", "gunicorn.conf.py"]
