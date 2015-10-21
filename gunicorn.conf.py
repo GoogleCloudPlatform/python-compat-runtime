@@ -15,7 +15,7 @@ workers = multiprocessing.cpu_count()
 # maximum number of requests handled concurrently by EACH worker. Consider
 # increasing this number for applications that spend a lot of time waiting for
 # I/O.
-threads = 10
+threads = 100
 
 # Settings specific to the Managed VMs production environment such as "bind"
 # and "logfile" are set in the Dockerfile's ENTRYPOINT directive.
