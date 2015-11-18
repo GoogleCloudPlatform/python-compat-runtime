@@ -43,6 +43,19 @@ except IOError:
 
 root_logger.setLevel(logging.INFO)
 
+# Enable Python Cloud Debugger if one is present. The debugger agent
+# communicates with the Cloud Debugger backend.
+#
+# The debugger has no effect on the application until snapshot is
+# requested.
+#
+# For details see: https://github.com/GoogleCloudPlatform/cloud-debug-python
+try:
+  import googleclouddebugger
+  googleclouddebugger.AttachDebugger()
+except ImportError:
+  pass
+
 # Fetch application configuration via the config file.
 appinfo = wsgi_config.get_module_config(
     wsgi_config.get_module_config_filename())
