@@ -95,7 +95,7 @@ if appinfo.vm_settings.get('vm_runtime') == 'python':
       appinfo.handlers)
 else:
   preloaded_handlers = wsgi_config.load_user_scripts_into_handlers(
-      appinfo.handlers)
+      appinfo)
 
 # Now that all scripts are fully imported, it is safe to use asynchronous
 # API calls.

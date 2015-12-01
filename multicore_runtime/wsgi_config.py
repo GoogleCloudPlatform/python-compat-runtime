@@ -14,6 +14,7 @@
 #
 """Utilities to configure the dispatcher, middleware and environment."""
 
+import datetime
 import logging
 import os
 import threading
@@ -91,12 +92,13 @@ def get_add_middleware_from_appengine_config():
     return None
 
 
-def static_app_for_handler(handler):
+def static_app_for_handler(handler, default_expire=None):
   """Returns a WSGI app that serves static files as directed by the handler.
 
   Args:
     handler: An individual handler from appinfo_external.handlers
       (appinfo.URLMap)
+    default_expire: A top-level default expiration time for static assets.
 
   Returns:
     A static file-serving WSGI app closed over the handler information.
@@ -117,8 +119,15 @@ def static_app_for_handler(handler):
       logging.error('No script, static_files or static_dir found for %s',
                     handler)
       return None
+
+  expiration = datetime.timedelta(seconds=appinfo.ParseExpiration(
+      handler.expiration or default_expire))
+
   return static_files.static_app_for_regex_and_files(
-      url_re, files, upload_re, mime_type=handler.mime_type)
+      url_re, files, upload_re,
+      mime_type=handler.mime_type,
+      http_headers=handler.http_headers,
+      expiration=expiration)
 
 
 def static_dir_url_re(handler):
@@ -138,11 +147,11 @@ def static_dir_url_re(handler):
     return handler.url
 
 
-def load_user_scripts_into_handlers(handlers):
+def load_user_scripts_into_handlers(app_info):
   """Preloads user scripts, wrapped in env_config middleware if present.
 
   Args:
-    handlers: appinfo.handlers data as provided by get_module_config()
+    app_info: AppInfoExternal object mostly used to get it's handlers.
 
   Returns:
     A list of tuples suitable for configuring the dispatcher() app,
@@ -151,7 +160,7 @@ def load_user_scripts_into_handlers(handlers):
       - app: The fully loaded app corresponding to the script.
   """
   loaded_handlers = []
-  for handler in handlers:
+  for handler in app_info.handlers:
     if handler.script:  # An application, not a static files directive.
       url_re = handler.url
       app = app_for_script(handler.script)
@@ -160,7 +169,8 @@ def load_user_scripts_into_handlers(handlers):
         url_re = handler.url
       else:  # This is a "static_dir" directive.
         url_re = static_dir_url_re(handler)
-      app = static_app_for_handler(handler)
+      app = static_app_for_handler(handler,
+                                   default_expire=app_info.default_expiration)
     loaded_handlers.append((url_re, app))
   logging.info('Parsed handlers: %r',
                [url_re for (url_re, _) in loaded_handlers])

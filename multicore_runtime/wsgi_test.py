@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+import datetime
 import httplib
 import json
 import logging
@@ -24,10 +25,18 @@ from . import wsgi_config
 
 from mock import MagicMock
 from mock import patch
+from werkzeug import http
 from werkzeug import test
 from werkzeug import wrappers
 
 from google.appengine.api import appinfo
+
+
+class FakeDatetime(datetime.datetime):
+
+  @staticmethod
+  def now():
+    return FAKE_CURRENT_TIME
 
 
 def script_path(script, test_name=__name__):
@@ -40,6 +49,10 @@ def static_path(relative_path, test_path=os.path.dirname(__file__)):
   """Returns a fully qualified static file path based on test_path."""
   return os.path.join(test_path, relative_path)
 
+FAKE_CURRENT_TIME = datetime.datetime(2015, 11, 30, 18)
+FAKE_HTTP_HEADERS = appinfo.HttpHeadersDict()
+FAKE_HTTP_HEADERS['X-Foo-Header'] = 'foo'
+FAKE_HTTP_HEADERS['X-Bar-Header'] = 'bar value'
 
 FAKE_HANDLERS = [
     appinfo.URLMap(url='/hello', script=script_path('hello_world')),
@@ -55,6 +68,14 @@ FAKE_HANDLERS = [
                    static_files=static_path('test_statics/favicon.ico'),
                    mime_type='application/fake_type',
                    upload=static_path('test_statics/favicon.ico')),
+    appinfo.URLMap(url='/static_header',
+                   static_files=static_path('test_statics/favicon.ico'),
+                   upload=static_path('test_statics/favicon.ico'),
+                   http_headers=FAKE_HTTP_HEADERS),
+    appinfo.URLMap(url='/expiration',
+                   static_files=static_path('test_statics/favicon.ico'),
+                   upload=static_path('test_statics/favicon.ico'),
+                   expiration='5d 4h'),
     appinfo.URLMap(url='/wildcard_statics/(.*)',
                    static_files=static_path(r'test_statics/\1'),
                    upload=static_path('test_statics/(.*)')),
@@ -72,7 +93,8 @@ WRONG_IP = '192.168.0.1'
 
 FAKE_APPINFO_EXTERNAL = MagicMock(handlers=FAKE_HANDLERS,
                                   env_variables={FAKE_ENV_KEY: FAKE_ENV_VALUE,
-                                                 'USER_EMAIL': BAD_USER_EMAIL})
+                                                 'USER_EMAIL': BAD_USER_EMAIL},
+                                  default_expiration='2d 3h')
 
 FAKE_APPENGINE_CONFIG = MagicMock(
     server_software='server', partition='partition', appid='appid',
@@ -179,6 +201,42 @@ class MetaAppTestCase(unittest.TestCase):
     with open(static_path('test_statics/favicon.ico')) as f:
       self.assertEqual(response.data, f.read())
     self.assertEqual(response.mimetype, 'application/fake_type')
+
+  def test_static_file_header(self):
+    response = self.client.get('/static_header')
+    self.assertEqual(response.status_code, httplib.OK)
+    with open(static_path('test_statics/favicon.ico')) as f:
+      self.assertEqual(response.data, f.read())
+    self.assertTrue(response.headers.has_key('X-Foo-Header'))
+    self.assertEqual(response.headers['X-Foo-Header'], 'foo')
+    self.assertTrue(response.headers.has_key('X-Bar-Header'))
+    self.assertEqual(response.headers['X-Bar-Header'], 'bar value')
+
+  @patch('datetime.datetime', FakeDatetime)
+  def test_static_file_expires(self):
+    response = self.client.get('/expiration')
+    self.assertEqual(response.status_code, httplib.OK)
+    with open(static_path('test_statics/favicon.ico')) as f:
+      self.assertEqual(response.data, f.read())
+    current_time = FAKE_CURRENT_TIME
+    extra_time = datetime.timedelta(
+        seconds=appinfo.ParseExpiration('5d 4h'))
+    expired_time = current_time + extra_time
+    self.assertEqual(response.headers['Expires'],
+                     http.http_date(expired_time))
+
+  @patch('datetime.datetime', FakeDatetime)
+  def test_static_file_default_expires(self):
+    response = self.client.get('/favicon.ico')
+    self.assertEqual(response.status_code, httplib.OK)
+    with open(static_path('test_statics/favicon.ico')) as f:
+      self.assertEqual(response.data, f.read())
+    current_time = FAKE_CURRENT_TIME
+    extra_time = datetime.timedelta(
+        seconds=appinfo.ParseExpiration('2d 3h'))
+    expired_time = current_time + extra_time
+    self.assertEqual(response.headers['Expires'],
+                     http.http_date(expired_time))
 
   def test_static_file_wildcard(self):
     response = self.client.get('/wildcard_statics/favicon.ico')
