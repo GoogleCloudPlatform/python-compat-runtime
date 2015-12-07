@@ -27,6 +27,8 @@ from google.appengine.api import appinfo_includes
 from google.appengine.runtime import wsgi
 
 
+DEFAULT_STATIC_CONTENT_EXPIRATION = '10m'
+
 def get_module_config_filename():
   """Returns the path of the module configuration file (e.g. 'app.yaml').
 
@@ -92,13 +94,13 @@ def get_add_middleware_from_appengine_config():
     return None
 
 
-def static_app_for_handler(handler, default_expire=None):
+def static_app_for_handler(handler, expiration):
   """Returns a WSGI app that serves static files as directed by the handler.
 
   Args:
     handler: An individual handler from appinfo_external.handlers
       (appinfo.URLMap)
-    default_expire: A top-level default expiration time for static assets.
+    expiration: Number of seconds for static content to be cached.
 
   Returns:
     A static file-serving WSGI app closed over the handler information.
@@ -120,14 +122,11 @@ def static_app_for_handler(handler, default_expire=None):
                     handler)
       return None
 
-  expiration = datetime.timedelta(seconds=appinfo.ParseExpiration(
-      handler.expiration or default_expire))
-
   return static_files.static_app_for_regex_and_files(
       url_re, files, upload_re,
       mime_type=handler.mime_type,
       http_headers=handler.http_headers,
-      expiration=expiration)
+      expiration=datetime.timedelta(seconds=expiration))
 
 
 def static_dir_url_re(handler):
@@ -169,8 +168,11 @@ def load_user_scripts_into_handlers(app_info):
         url_re = handler.url
       else:  # This is a "static_dir" directive.
         url_re = static_dir_url_re(handler)
+      expiration = (handler.expiration or
+                    app_info.default_expiration or
+                    DEFAULT_STATIC_CONTENT_EXPIRATION)
       app = static_app_for_handler(handler,
-                                   default_expire=app_info.default_expiration)
+                                   appinfo.ParseExpiration(expiration))
     loaded_handlers.append((url_re, app))
   logging.info('Parsed handlers: %r',
                [url_re for (url_re, _) in loaded_handlers])
