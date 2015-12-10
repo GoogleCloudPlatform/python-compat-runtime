@@ -10,7 +10,7 @@ RUN apt-get -q update && \
 COPY python-runtime.tar.gz /home/vmagent/python-runtime.tar.gz
 
 RUN easy_install pip
-RUN pip install gunicorn==19.3.0 futures==3.0.3
+RUN pip install gunicorn==19.4.1 futures==3.0.3
 RUN pip install google-python-cloud-debugger
 RUN pip install /home/vmagent/python-runtime.tar.gz
 
