@@ -24,7 +24,7 @@ from . import cloud_logging
 class CloudLoggingTestCase(unittest.TestCase):
 
   EXPECTED_TRACE_ID = None
-  EXPECTED_OVERRIDDEN_TRACE_ID = '1234123412341234'
+  EXPECTED_OVERRIDDEN_TRACE_ID = '1234abcd1234abcd1234abcd1234abcd'
   EXPECTED_MESSAGE = 'test message'
   TEST_TIME = 1437589520.830589056
   EXPECTED_SECONDS = 1437589520
@@ -67,12 +67,23 @@ class CloudLoggingTestCase(unittest.TestCase):
 
 class CloudLoggingTestCaseWithTraceIdEnv(CloudLoggingTestCase):
 
-  EXPECTED_TRACE_ID = '0101010102020202'
+  EXPECTED_TRACE_ID = '01010101020202020303030304040404'
 
   def setUp(self):
     super(CloudLoggingTestCaseWithTraceIdEnv, self).setUp()
     os.environ['X-Cloud-Trace-Context'] = '{}/12345;o=1'.format(
         self.EXPECTED_TRACE_ID)
+
+  def tearDown(self):
+    os.unsetenv('X-Cloud-Trace-Context')
+
+class CloudLoggingTestCaseWithTraceIdEnvNoOptions(CloudLoggingTestCase):
+
+  EXPECTED_TRACE_ID = '0101010102020202ababababcdcdcdcd'
+
+  def setUp(self):
+    super(CloudLoggingTestCaseWithTraceIdEnvNoOptions, self).setUp()
+    os.environ['X-Cloud-Trace-Context'] = self.EXPECTED_TRACE_ID
 
   def tearDown(self):
     os.unsetenv('X-Cloud-Trace-Context')

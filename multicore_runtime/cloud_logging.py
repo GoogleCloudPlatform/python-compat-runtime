@@ -67,7 +67,11 @@ class CloudLoggingHandler(logging.FileHandler):
     # If that didn't work, check if HTTP headers are present in the
     # environment (GAE 1.0-style), and use them to parse out the Trace ID.
     if not trace_id:
-      trace_id = os.getenv('X-Cloud-Trace-Context', '')[:16]
+      # Get trace ID from the X-Cloud-Trace-Context header. The header is
+      # formatted "{hexadecimal trace id}/{options}", where the / and
+      # the options are themselves optional. We only want the trace ID, so 
+      # let's drop anything after a "/" if one exists.
+      trace_id = os.getenv('X-Cloud-Trace-Context', '').split('/')[0]
 
     # Now add a traceID key to the payload, if one was found.
     if trace_id:
