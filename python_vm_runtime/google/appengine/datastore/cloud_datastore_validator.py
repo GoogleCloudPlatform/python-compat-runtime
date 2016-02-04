@@ -967,6 +967,10 @@ class _ServiceValidator(object):
         req.mode == googledatastore.CommitRequest.TRANSACTIONAL):
       _assert_condition(req.WhichOneof('transaction_selector'),
                         'Transactional commit requires a transaction.')
+      if req.WhichOneof('transaction_selector') == 'transaction':
+        _assert_condition(req.transaction, 'a transaction cannot be the empty '
+                                           'string.')
+
 
       seen_base_versions = {}
       for mutation in req.mutations:
@@ -1015,6 +1019,7 @@ class _ServiceValidator(object):
 
     _assert_condition(not req.HasField('gql_query'), 'GQL not supported.')
     _assert_initialized(req)
+    self.__validate_read_options(req.read_options)
     self.__entity_validator.validate_partition_id(READ,
                                                   req.partition_id)
     _assert_condition(req.HasField('query'),
@@ -1035,6 +1040,7 @@ class _ServiceValidator(object):
       ValidationError: if the request is invalid
     """
     _assert_initialized(req)
+    self.__validate_read_options(req.read_options)
     self.__entity_validator.validate_keys(READ, req.keys)
 
   def validate_allocate_ids_req(self, req):
@@ -1074,6 +1080,11 @@ class _ServiceValidator(object):
       _assert_condition(mutation.base_version >= 0,
                         'Invalid base_version: %d, '
                         'it should be >= 0' % mutation.base_version)
+
+  def __validate_read_options(self, read_options):
+    if read_options.WhichOneof('consistency_type') == 'transaction':
+      _assert_condition(read_options.transaction, 'a transaction cannot be the '
+                                                  'the empty string.')
 
 
 def get_service_validator(id_resolver):

@@ -53,6 +53,7 @@ import urllib2
 
 
 import google
+from oauth2client import devshell
 import yaml
 
 from google.appengine.cron import groctimespecification
@@ -578,7 +579,7 @@ def MigratePython27Notice():
   Prints a message to sys.stdout. The caller should have tested that the user is
   using Python 2.5, so as not to spuriously display this message.
   """
-  print (
+  ErrorUpdate(
       'WARNING: This application is using the Python 2.5 runtime, which is '
       'deprecated! It should be updated to the Python 2.7 runtime as soon as '
       'possible, which offers performance improvements and many new features. '
@@ -713,50 +714,6 @@ class DosEntryUpload(object):
       self.rpcserver.Send('/api/dos/update',
                           app_id=app_id,
                           payload=self.dos.ToYAML())
-
-
-class PagespeedEntryUpload(object):
-  """Provides facilities to upload pagespeed configs to the hosting service."""
-
-  def __init__(self, rpcserver, config, pagespeed, error_fh=sys.stderr):
-    """Creates a new PagespeedEntryUpload.
-
-    Args:
-      rpcserver: The RPC server to use. Should be an instance of a subclass of
-        AbstractRpcServer.
-      config: The AppInfoExternal object derived from the app.yaml file.
-      pagespeed: The PagespeedEntry object from config.
-      error_fh: Where to send status and error messages.
-    """
-    self.rpcserver = rpcserver
-    self.config = config
-    self.pagespeed = pagespeed
-    self.error_fh = error_fh
-
-  def DoUpload(self):
-    """Uploads the pagespeed entries."""
-
-    pagespeed_yaml = ''
-    if self.pagespeed:
-      StatusUpdate('Uploading PageSpeed configuration.', self.error_fh)
-      pagespeed_yaml = self.pagespeed.ToYAML()
-    try:
-      self.rpcserver.Send('/api/appversion/updatepagespeed',
-                          app_id=self.config.application,
-                          version=self.config.version,
-                          payload=pagespeed_yaml)
-    except urllib2.HTTPError, err:
-
-
-
-
-
-
-
-
-
-      if err.code != 404 or self.pagespeed is not None:
-        raise
 
 
 class DefaultVersionSet(object):
@@ -3263,11 +3220,20 @@ class AppCfgApp(object):
                                  ignore_certs=self.options.ignore_certs,
                                  options=self.options)
 
+  def _MaybeGetDevshellOAuth2AccessToken(self):
+    """Returns a valid OAuth2 access token when running in Cloud Shell."""
+    try:
+      creds = devshell.DevshellCredentials()
+      return creds.access_token
+    except devshell.NoDevshellServer:
+      return None
+
   def _GetOAuth2Parameters(self):
     """Returns appropriate an OAuth2Parameters object for authentication."""
     oauth2_parameters = (
         appengine_rpc_httplib2.HttpRpcServerOAuth2.OAuth2Parameters(
-            access_token=self.options.oauth2_access_token,
+            access_token=(self.options.oauth2_access_token or
+                          self._MaybeGetDevshellOAuth2AccessToken()),
             client_id=self.oauth_client_id,
             client_secret=self.oauth_client_secret,
             scope=self.oauth_scopes,
@@ -3373,7 +3339,7 @@ class AppCfgApp(object):
     if self.options.version:
       appyaml.version = self.options.version
     if self.options.runtime:
-      appinfo.VmSafeSetRuntime(appyaml, self.options.runtime)
+      appyaml.SetEffectiveRuntime(self.options.runtime)
     if self.options.env_variables:
       if appyaml.env_variables is None:
         appyaml.env_variables = appinfo.EnvironmentVariables()
@@ -3675,10 +3641,10 @@ class AppCfgApp(object):
     paths = self.file_iterator(basepath, appyaml.skip_files, appyaml.runtime)
     openfunc = lambda path: self.opener(os.path.join(basepath, path), 'rb')
 
-
-    if (appyaml.GetEffectiveRuntime() == 'go' and
-        not (appyaml.runtime == 'vm' and
-             'GAE_LOCAL_VM_RUNTIME' in os.environ)):
+    if appyaml.GetEffectiveRuntime() == 'go':
+      if appyaml.runtime == 'vm':
+        raise RuntimeError(
+            'The Go runtime with "vm: true" is only supported with gcloud.')
 
       sdk_base = os.path.normpath(os.path.join(
           google.appengine.__file__, '..', '..', '..'))
@@ -3930,20 +3896,6 @@ class AppCfgApp(object):
                                             dispatch_yaml,
                                             self.error_fh)
       dispatch_upload.DoUpload()
-
-
-    if appyaml:
-      pagespeed_upload = PagespeedEntryUpload(
-          rpcserver, appyaml, appyaml.pagespeed, self.error_fh)
-      try:
-        pagespeed_upload.DoUpload()
-      except urllib2.HTTPError, e:
-        ErrorUpdate('Error %d: --- begin server output ---\n'
-                    '%s\n--- end server output ---' %
-                    (e.code, e.read().rstrip('\n')))
-        print >> self.error_fh, (
-            'Your app was updated, but there was an error updating PageSpeed. '
-            'Please try the update again later.')
 
   def _UpdateOptions(self, parser):
     """Adds update-specific options to 'parser'.

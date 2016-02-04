@@ -104,6 +104,10 @@ class ModuleConfiguration(object):
           containing the configuration for this module.
       app_id: A string that is the application id, or None if the application id
           from the yaml or xml file should be used.
+
+    Raises:
+      errors.DockerfileError: Raised if a user supplied a Dockerfile and a
+        non-custom runtime.
     """
     self._config_path = config_path
     self._forced_app_id = app_id
@@ -121,6 +125,12 @@ class ModuleConfiguration(object):
 
     self._app_info_external, files_to_check = self._parse_configuration(
         self._config_path)
+
+    # TODO: As in AppengineApiClient._CreateVersionResource,
+    # add deprecation warnings and remove this code
+    if self._app_info_external.service:
+      self._app_info_external.module = self._app_info_external.service
+
     self._mtimes = self._get_mtimes(files_to_check)
     self._application = '%s~%s' % (self.partition,
                                    self.application_external_name)
@@ -132,6 +142,20 @@ class ModuleConfiguration(object):
     self._manual_scaling = self._app_info_external.manual_scaling
     self._automatic_scaling = self._app_info_external.automatic_scaling
     self._runtime = self._app_info_external.runtime
+    self._effective_runtime = self._app_info_external.GetEffectiveRuntime()
+
+    dockerfile_dir = os.path.dirname(self._config_path)
+    dockerfile = os.path.join(dockerfile_dir, 'Dockerfile')
+
+    if self._effective_runtime != 'custom' and os.path.exists(dockerfile):
+      raise errors.DockerfileError(
+          'When there is a Dockerfile in the current directory, the only '
+          'supported runtime is runtime: custom.  Please switch to runtime: '
+          'custom.  The devappserver does not actually use your Dockerfile, so '
+          'please use either the --runtime flag to specify the runtime you '
+          'want or use the --custom_entrypoint flag to describe how to start '
+          'your application.')
+
     if self._runtime == 'python':
       logging.warning(
           'The "python" runtime specified in "%s" is not supported - the '
@@ -234,7 +258,11 @@ class ModuleConfiguration(object):
 
   @property
   def effective_runtime(self):
-    return self._app_info_external.GetEffectiveRuntime()
+    return self._effective_runtime
+
+  @effective_runtime.setter
+  def effective_runtime(self, value):
+    self._effective_runtime = value
 
   @property
   def forwarded_ports(self):
