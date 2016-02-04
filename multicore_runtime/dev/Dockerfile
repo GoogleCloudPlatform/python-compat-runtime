@@ -12,8 +12,7 @@ ADD https://github.com/GoogleCloudPlatform/appengine-python-vm-runtime/releases/
 # COPY appengine-python-vm-runtime-0.2.tar.gz /home/vmagent/python-runtime.tar.gz
 
 RUN easy_install pip
-RUN pip install gunicorn==19.4.1 futures==3.0.3
-RUN pip install google-python-cloud-debugger
+RUN pip install --upgrade gunicorn==19.4.1 futures==3.0.3
 RUN pip install /home/vmagent/python-runtime.tar.gz
 
 EXPOSE 8080
