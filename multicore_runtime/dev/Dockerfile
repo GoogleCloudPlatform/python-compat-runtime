@@ -1,8 +1,13 @@
 FROM gcr.io/google_appengine/base
 
+# Install Python and C dev libraries necessary to compile the most popular
+# Python libraries.
 RUN apt-get -q update && \
   apt-get install --no-install-recommends -y -q \
-    python2.7 python-setuptools && \
+    build-essential python2.7 python2.7-dev python-setuptools \
+    git mercurial libffi-dev libssl-dev libxml2-dev \
+    libxslt1-dev libpq-dev libmysqlclient-dev libcurl4-openssl-dev \
+    libjpeg-dev zlib1g-dev libpng12-dev && \
   apt-get clean && rm /var/lib/apt/lists/*_*
 
 ADD https://github.com/GoogleCloudPlatform/appengine-python-vm-runtime/releases/download/v0.1/appengine-python-vm-runtime-0.1.tar.gz /home/vmagent/python-runtime.tar.gz
