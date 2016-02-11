@@ -43,18 +43,26 @@ from google.appengine.datastore import entity_pb
 from google.appengine.datastore import datastore_v4_pb
 from google.appengine.datastore import entity_v4_pb
 
+_MIN_CLOUD_DATASTORE_VERSION = (4, 0, 0, 'b1')
 _CLOUD_DATASTORE_ENABLED = False
+
 try:
   
   
   import googledatastore
-  _CLOUD_DATASTORE_ENABLED = True
+
+  if googledatastore.VERSION >= _MIN_CLOUD_DATASTORE_VERSION:
+    _CLOUD_DATASTORE_ENABLED = True
 except ImportError:
   pass
+except AttributeError:
 
-MISSING_CLOUD_DATASTORE_MESSAGE = ('Could not import googledatastore. This '
-                                   'library must be installed to use the '
-                                   'Cloud Datastore API.')
+  pass
+
+MISSING_CLOUD_DATASTORE_MESSAGE = (
+    'Could not import googledatastore. This library must be installed with '
+    'version >= %s to use the Cloud Datastore API.' %
+    '.'.join([str(v) for v in _MIN_CLOUD_DATASTORE_VERSION]))
 
 
 MEANING_ATOM_CATEGORY = 1

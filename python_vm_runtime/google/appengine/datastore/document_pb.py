@@ -153,7 +153,7 @@ class FieldValue(ProtocolBuffer.ProtocolMessage):
   DATE         =    3
   NUMBER       =    4
   GEO          =    5
-  PREFIX       =    6
+  UNTOKENIZED_PREFIX =    6
   TOKENIZED_PREFIX =    7
 
   _ContentType_NAMES = {
@@ -163,7 +163,7 @@ class FieldValue(ProtocolBuffer.ProtocolMessage):
     3: "DATE",
     4: "NUMBER",
     5: "GEO",
-    6: "PREFIX",
+    6: "UNTOKENIZED_PREFIX",
     7: "TOKENIZED_PREFIX",
   }
 

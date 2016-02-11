@@ -136,6 +136,9 @@ class AppEngineWebXmlParser(object):
   def ProcessModuleNode(self, node):
     self.app_engine_web_xml.module = node.text
 
+  def ProcessServiceNode(self, node):
+    self.app_engine_web_xml.service = node.text
+
   def ProcessInstanceClassNode(self, node):
     self.app_engine_web_xml.instance_class = node.text
 
@@ -460,6 +463,7 @@ class AppEngineWebXml(ValueMixin):
     self.version_id = None
     self.source_language = None
     self.module = None
+    self.service = None
     self.system_properties = {}
     self.beta_settings = {}
     self.vm_settings = {}

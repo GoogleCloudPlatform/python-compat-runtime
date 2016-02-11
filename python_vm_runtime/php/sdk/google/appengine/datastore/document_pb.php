@@ -30,7 +30,7 @@ namespace storage_onestore_v3\FieldValue {
     const DATE = 3;
     const NUMBER = 4;
     const GEO = 5;
-    const PREFIX = 6;
+    const UNTOKENIZED_PREFIX = 6;
     const TOKENIZED_PREFIX = 7;
   }
 }
