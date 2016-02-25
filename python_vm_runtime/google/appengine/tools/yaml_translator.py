@@ -93,7 +93,6 @@ class AppYamlTranslator(object):
     stmnt_list += self.TranslateInboundServices()
     stmnt_list += self.TranslateAdminConsolePages()
     stmnt_list += self.TranslateApiConfig()
-    stmnt_list += self.TranslatePagespeed()
     stmnt_list += self.TranslateEnvVariables()
     stmnt_list += self.TranslateBetaSettings()
     stmnt_list += self.TranslateVmSettings()
@@ -193,21 +192,6 @@ class AppYamlTranslator(object):
   def TranslateApiVersion(self):
     return ['api_version: %s' % self.SanitizeForYaml(
         self.api_version or NO_API_VERSION)]
-
-  def TranslatePagespeed(self):
-    """Translates pagespeed settings in appengine-web.xml to yaml."""
-    pagespeed = self.app_engine_web_xml.pagespeed
-    if not pagespeed:
-      return []
-    statements = ['pagespeed:']
-    for title, urls in [('domains_to_rewrite', pagespeed.domains_to_rewrite),
-                        ('url_blacklist', pagespeed.url_blacklist),
-                        ('enabled_rewriters', pagespeed.enabled_rewriters),
-                        ('disabled_rewriters', pagespeed.disabled_rewriters)]:
-      if urls:
-        statements.append('  %s:' % title)
-        statements += ['  - %s' % url for url in urls]
-    return statements
 
   def TranslateEnvVariables(self):
     if not self.app_engine_web_xml.env_variables:

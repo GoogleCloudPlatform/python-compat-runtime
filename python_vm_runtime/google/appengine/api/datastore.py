@@ -234,6 +234,7 @@ class _BaseIndex(object):
 
 
 
+
   ASCENDING = datastore_query.PropertyOrder.ASCENDING
   DESCENDING = datastore_query.PropertyOrder.DESCENDING
 

@@ -1546,6 +1546,8 @@ class TokenizedPrefixField(Field):
 class DateField(Field):
   """A Field that has a date or datetime value.
 
+  Only Python "naive" date or datetime values may be used (not "aware" values).
+
   The following example shows a date field named creation_date:
     DateField(name='creation_date', value=datetime.date(2011, 03, 11))
   """

@@ -159,7 +159,7 @@ STATIC_FILE_PREFIX = '__static__'
 
 METADATA_BASE = 'http://metadata.google.internal'
 SERVICE_ACCOUNT_BASE = (
-    'computeMetadata/v1beta1/instance/service-accounts/default')
+    'computeMetadata/v1/instance/service-accounts/default')
 
 
 APP_YAML_FILENAME = 'app.yaml'
@@ -2377,7 +2377,7 @@ class AppVersionUpload(object):
     start_time_usec = self.logging_context.GetCurrentTimeUsec()
     logging.info('Reading app configuration.')
 
-    StatusUpdate('\nStarting update of %s' % self.Describe(), self.error_fh)
+    StatusUpdate('Starting update of %s' % self.Describe(), self.error_fh)
 
 
     path = ''
@@ -2736,7 +2736,7 @@ def _ReadUrlContents(url):
   Raises:
     urllib2.URLError: If the URL cannot be read.
   """
-  req = urllib2.Request(url)
+  req = urllib2.Request(url, headers={'Metadata-Flavor': 'Google'})
   return urllib2.urlopen(req).read()
 
 
