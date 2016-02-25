@@ -32,6 +32,7 @@ namespace storage_onestore_v3\FieldValue {
     const GEO = 5;
     const UNTOKENIZED_PREFIX = 6;
     const TOKENIZED_PREFIX = 7;
+    const VECTOR = 8;
   }
 }
 namespace storage_onestore_v3\FieldValue {
@@ -149,6 +150,7 @@ namespace storage_onestore_v3\FieldValue {
 }
 namespace storage_onestore_v3 {
   class FieldValue extends \google\net\ProtocolMessage {
+    private $vector_value = array();
     public function getType() {
       if (!isset($this->type)) {
         return 0;
@@ -222,11 +224,32 @@ namespace storage_onestore_v3 {
     public function hasGeo() {
       return isset($this->geo);
     }
+    public function getVectorValueSize() {
+      return sizeof($this->vector_value);
+    }
+    public function getVectorValueList() {
+      return $this->vector_value;
+    }
+    public function getVectorValue($idx) {
+      return $this->vector_value[$idx];
+    }
+    public function setVectorValue($idx, $val) {
+      $this->vector_value[$idx] = $val;
+      return $this;
+    }
+    public function addVectorValue($val) {
+      $this->vector_value[] = $val;
+      return $this;
+    }
+    public function clearVectorValue() {
+      $this->vector_value = array();
+    }
     public function clear() {
       $this->clearType();
       $this->clearLanguage();
       $this->clearStringValue();
       $this->clearGeo();
+      $this->clearVectorValue();
     }
     public function byteSizePartial() {
       $res = 0;
@@ -246,6 +269,8 @@ namespace storage_onestore_v3 {
         $res += 2;
         $res += $this->geo->byteSizePartial();
       }
+      $this->checkProtoArray($this->vector_value);
+      $res += 9 * sizeof($this->vector_value);
       return $res;
     }
     public function outputPartial($out) {
@@ -265,6 +290,11 @@ namespace storage_onestore_v3 {
         $out->putVarInt32(35);
         $this->geo->outputPartial($out);
         $out->putVarInt32(36);
+      }
+      $this->checkProtoArray($this->vector_value);
+      foreach ($this->vector_value as $value) {
+        $out->putVarInt32(57);
+        $out->putDouble($value);
       }
     }
     public function tryMerge($d) {
@@ -286,6 +316,9 @@ namespace storage_onestore_v3 {
             break;
           case 35:
             $this->mutableGeo()->tryMerge($d);
+            break;
+          case 57:
+            $this->addVectorValue($d->getDouble());
             break;
           case 0:
             throw new \google\net\ProtocolBufferDecodeError();
@@ -313,6 +346,9 @@ namespace storage_onestore_v3 {
       if ($x->hasGeo()) {
         $this->mutableGeo()->mergeFrom($x->getGeo());
       }
+      foreach ($x->getVectorValueList() as $v) {
+        $this->addVectorValue($v);
+      }
     }
     public function equals($x) {
       if ($x === $this) { return true; }
@@ -324,6 +360,10 @@ namespace storage_onestore_v3 {
       if (isset($this->string_value) && $this->string_value !== $x->string_value) return false;
       if (isset($this->geo) !== isset($x->geo)) return false;
       if (isset($this->geo) && !$this->geo->equals($x->geo)) return false;
+      if (sizeof($this->vector_value) !== sizeof($x->vector_value)) return false;
+      foreach (array_map(null, $this->vector_value, $x->vector_value) as $v) {
+        if ($v[0] !== $v[1]) return false;
+      }
       return true;
     }
     public function shortDebugString($prefix = "") {
@@ -339,6 +379,9 @@ namespace storage_onestore_v3 {
       }
       if (isset($this->geo)) {
         $res .= $prefix . "Geo {\n" . $this->geo->shortDebugString($prefix . "  ") . $prefix . "}\n";
+      }
+      foreach ($this->vector_value as $value) {
+        $res .= $prefix . "vector_value: " . $this->debugFormatDouble($value) . "\n";
       }
       return $res;
     }

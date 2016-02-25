@@ -18,9 +18,10 @@
 
 
 from __future__ import with_statement
-
 import logging
 import SocketServer
+import sys
+import traceback
 from wsgiref import simple_server
 
 from google.appengine.api import appinfo_includes
@@ -28,6 +29,13 @@ from google.appengine.ext.vmruntime import meta_app
 from google.appengine.ext.vmruntime import middlewares
 from google.appengine.ext.vmruntime import vmconfig
 from google.appengine.ext.vmruntime import vmstub
+
+
+
+try:
+  import googleclouddebugger
+except ImportError:
+  pass
 
 LISTENING_HOST = '0.0.0.0'
 HTTP_PORT = 8080
@@ -125,6 +133,20 @@ class VmService(object):
 
     appengine_config = vmconfig.BuildVmAppengineEnvConfig()
     vmstub.Register(vmstub.VMStub(appengine_config.default_ticket))
+
+
+
+
+
+
+
+
+    if 'googleclouddebugger' in sys.modules:
+      try:
+        googleclouddebugger.AttachDebugger()
+      except Exception as e:
+        logging.warn('Exception while initializing Cloud Debugger: %s',
+                     traceback.format_exc(e))
 
 
 

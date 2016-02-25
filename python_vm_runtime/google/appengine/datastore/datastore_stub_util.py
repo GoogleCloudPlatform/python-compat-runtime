@@ -2547,10 +2547,9 @@ class BaseDatastore(BaseTransactionManager, BaseIndexManager):
     index_pb = composite_index_pb.mutable_definition()
     index_pb.set_entity_type(kind)
     index_pb.set_ancestor(bool(ancestor))
-    for name, direction in datastore_index.GetRecommendedIndexProperties(props):
+    for prop in datastore_index.GetRecommendedIndexProperties(props):
       prop_pb = entity_pb.Index_Property()
-      prop_pb.set_name(name)
-      prop_pb.set_direction(direction)
+      prop.CopyToIndexPb(prop_pb)
       index_pb.property_list().append(prop_pb)
     return [composite_index_pb]
 
