@@ -14,7 +14,7 @@ ADD https://github.com/GoogleCloudPlatform/appengine-python-vm-runtime/releases/
 
 # To use a custom-built version of the runtime, comment out the above ADD
 # command and instead use the following line:
-# COPY appengine-python-vm-runtime-0.3.tar.gz /home/vmagent/python-runtime.tar.gz
+# COPY appengine-python-vm-runtime-0.4.tar.gz /home/vmagent/python-runtime.tar.gz
 
 RUN easy_install pip
 RUN pip install --upgrade gunicorn==19.4.1 futures==3.0.3
