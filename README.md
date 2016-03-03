@@ -4,7 +4,7 @@ Google Managed VMs Python Runtime
 Warning
 -------
 The instructions here are for a multi-process version of the Python 2.7 runtime
-**currently in beta**. To use the stable version of the runtime, follow the
+**currently in alpha**. To use the stable version of the runtime, follow the
 documentation at https://cloud.google.com/appengine/docs/managed-vms/ instead.
 
 Contents
@@ -20,7 +20,7 @@ Using the multi-process runtime
 already been deployed successfully to Managed VMs using the default runtime
 version.*
 
-As this version of the Python runtime is currently in beta, it is not built
+As this version of the Python runtime is currently in alpha, it is not built
 as a stable Docker image like other runtimes. Instead it can be put into place
 via modifications to an application's Dockerfile.
 
@@ -82,7 +82,7 @@ rejected for addition because it is too large can be ignored.
 
 Caveats
 -------
-As this is a beta product, some functionality has not yet been implemented.
+As this is a alpha product, some functionality has not yet been implemented.
 
 - Handlers that are flagged as `login: required` or `login: admin` are not
 supported. Attemping to access these handlers will result in a 404 as the
