@@ -1714,7 +1714,7 @@ _SERVICEOPTIONS = _descriptor.Descriptor(
     _descriptor.FieldDescriptor(
       name='failure_detection_delay', full_name='proto2.ServiceOptions.failure_detection_delay', index=1,
       number=16, type=1, cpp_type=5, label=1,
-      has_default_value=True, default_value=-1,
+      has_default_value=True, default_value=float(-1),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
@@ -1766,7 +1766,7 @@ _METHODOPTIONS = _descriptor.Descriptor(
     _descriptor.FieldDescriptor(
       name='deadline', full_name='proto2.MethodOptions.deadline', index=1,
       number=8, type=1, cpp_type=5, label=1,
-      has_default_value=True, default_value=-1,
+      has_default_value=True, default_value=float(-1),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
@@ -1983,7 +1983,7 @@ _STREAMOPTIONS = _descriptor.Descriptor(
     _descriptor.FieldDescriptor(
       name='deadline', full_name='proto2.StreamOptions.deadline', index=7,
       number=8, type=1, cpp_type=5, label=1,
-      has_default_value=True, default_value=-1,
+      has_default_value=True, default_value=float(-1),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
@@ -2115,7 +2115,7 @@ _UNINTERPRETEDOPTION = _descriptor.Descriptor(
     _descriptor.FieldDescriptor(
       name='double_value', full_name='proto2.UninterpretedOption.double_value', index=4,
       number=6, type=1, cpp_type=5, label=1,
-      has_default_value=False, default_value=0,
+      has_default_value=False, default_value=float(0),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),

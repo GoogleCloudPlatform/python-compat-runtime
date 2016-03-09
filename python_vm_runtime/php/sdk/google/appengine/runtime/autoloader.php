@@ -471,6 +471,7 @@ if (!defined('GOOGLE_APPENGINE_CLASSLOADER')) {
         'google\appengine\memcacheflushresponse' => 'google/appengine/api/memcache/memcache_service_pb.php',
         'google\appengine\memcachestatsrequest' => 'google/appengine/api/memcache/memcache_service_pb.php',
         'google\appengine\mergednamespacestats' => 'google/appengine/api/memcache/memcache_service_pb.php',
+        'google\appengine\memcachehotkey' => 'google/appengine/api/memcache/memcache_service_pb.php',
         'google\appengine\memcachestatsresponse' => 'google/appengine/api/memcache/memcache_service_pb.php',
         'google\appengine\memcachegrabtailrequest' => 'google/appengine/api/memcache/memcache_service_pb.php',
         'google\appengine\memcachegrabtailresponse\item' => 'google/appengine/api/memcache/memcache_service_pb.php',
