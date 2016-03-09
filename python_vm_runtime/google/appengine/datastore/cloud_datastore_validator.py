@@ -72,6 +72,12 @@ _PARTITION_DIMENSION_RE = re.compile(r'^[0-9A-Za-z\._\-]{0,%d}$'
                                      % datastore_pbs.MAX_PARTITION_ID_LENGTH)
 
 
+_INTEGER_VALUE_MEANINGS = frozenset([
+    datastore_pbs.MEANING_NON_RFC_3339_TIMESTAMP,
+    datastore_pbs.MEANING_PERCENT,
+    ])
+
+
 _STRING_VALUE_MEANINGS = frozenset([
     datastore_pbs.MEANING_TEXT,
     datastore_pbs.MEANING_ATOM_CATEGORY,
@@ -626,7 +632,7 @@ class _EntityValidator(object):
     elif meaning == datastore_pbs.MEANING_POINT_WITHOUT_V3_MEANING:
       _assert_condition(field == 'geo_point_value',
                         message % (meaning, 'geo_point_value'))
-    elif meaning == datastore_pbs.MEANING_PERCENT:
+    elif meaning in _INTEGER_VALUE_MEANINGS:
       _assert_condition(field == 'integer_value',
                         message % (meaning, 'integer_value'))
     elif meaning == datastore_pbs.MEANING_INDEX_ONLY:
@@ -670,6 +676,12 @@ class _EntityValidator(object):
                          <= datastore_pbs.MAX_URL_CHARS),
                         'URL value has more than permitted %d characters.'
                         % datastore_pbs.MAX_URL_CHARS)
+    elif meaning == datastore_pbs.MEANING_NON_RFC_3339_TIMESTAMP:
+      _assert_condition(
+          not datastore_pbs.is_in_rfc_3339_bounds(value.integer_value),
+          ('A timestamp in range [0001-01-01T00:00:00Z, '
+           '9999-12-31T23:59:59.999999Z] must be stored as a timestamp '
+           'value.'))
     elif meaning == datastore_pbs.MEANING_PERCENT:
       _assert_condition((value.integer_value >= 0
                          and value.integer_value <= 100),

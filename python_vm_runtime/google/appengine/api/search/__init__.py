@@ -42,6 +42,7 @@ from search import FieldExpression
 from search import GeoField
 from search import GeoPoint
 from search import get_indexes
+from search import get_indexes_async
 from search import GetResponse
 from search import HtmlField
 from search import Index

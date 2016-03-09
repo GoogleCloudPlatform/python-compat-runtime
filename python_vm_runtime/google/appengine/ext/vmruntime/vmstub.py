@@ -31,7 +31,6 @@ import multiprocessing.dummy
 import os
 import sys
 import threading
-import time
 import traceback
 import urlparse
 
@@ -53,10 +52,6 @@ requests = imp.load_module('requests_nologs', *imp.find_module('requests'))
 
 
 logging.getLogger('requests_nologs').setLevel(logging.ERROR)
-
-
-vmstub_logger = logging.getLogger(__name__)
-vmstub_logger.setLevel(logging.INFO)
 
 TICKET_HEADER = 'HTTP_X_APPENGINE_API_TICKET'
 DEV_TICKET_HEADER = 'HTTP_X_APPENGINE_DEV_REQUEST_ID'
@@ -128,118 +123,13 @@ _DEADLINE_EXCEEDED_EXCEPTION = _EXCEPTIONS_MAP[
 app_is_loaded = False
 
 
-def CreateRequestPB(package, call, ticket, body):
-  """Create a remote_api_pb.Request functionally.
-
-  Args:
-    package: String to set as the service name (package name).
-    call: String to set as the method (API call name).
-    ticket: String to set as the request ID (ticket).
-    body: String to set as the request body.
-
-  Returns:
-    A remote_api_pb.Request.
-  """
-
-  request = remote_api_pb.Request()
-  request.set_service_name(package)
-  request.set_method(call)
-  request.set_request_id(ticket)
-  request.set_request(body)
-  return request
-
-
-def BodyAndHeadersForRequestPB(request_pb, deadline, dapper_trace=None):
-  """Wrap a Request PB in an HTTP body and generate appropriate headers.
-
-  Args:
-    request_pb: An instance of remote_api_pb.Request.
-    deadline: A deadline, in integer seconds, for the RPC response.
-    dapper_trace: A string identifying the request for dapper tracing.
-
-  Returns:
-    A tuple of (body, headers) suitable for passing to requests.post().
-  """
-
-
-  body = request_pb.SerializeToString()
-
-  headers = {
-      SERVICE_DEADLINE_HEADER: deadline,
-      SERVICE_ENDPOINT_HEADER: SERVICE_ENDPOINT_NAME,
-      SERVICE_METHOD_HEADER: APIHOST_METHOD,
-      'Content-type': RPC_CONTENT_TYPE,
-  }
-
-
-  if dapper_trace:
-    headers[DAPPER_HEADER] = dapper_trace
-
-
-
-  return body, headers
-
-
-def EndpointURLForHostAndPort(api_host, api_port):
-  """Return a proxied endpoint URL for a given host and port."""
-  return urlparse.urlunparse(
-      ('http', '%s:%s' % (api_host, api_port), PROXY_PATH,
-       '', '', ''))
-
-
-def MakeAPICallWithLogging(package, call, ticket, request_pb_body, endpoint_url,
-                           deadline=DEFAULT_TIMEOUT, dapper_trace=None,
-                           suppress_logging=False):
-  """Make a post request to the API with logging.
-
-  Args:
-    package: String to set as the service name (package name).
-    call: String to set as the method (API call name).
-    ticket: String to set as the request ID (ticket).
-    request_pb_body: String to set as the request body.
-    endpoint_url: The service bridge endpoint to target.
-    deadline: A deadline, in integer seconds, for the RPC response.
-    dapper_trace: A string identifying the request for dapper tracing.
-    suppress_logging: True if logging should not be performed, for instance
-        to avoid infinite loops during calls to logservice.
-
-  Returns:
-    A requests.Response object containing the service bridge's response.
-  """
-
-
-  request_pb = CreateRequestPB(package, call, ticket, request_pb_body)
-
-
-  body, headers = BodyAndHeadersForRequestPB(request_pb, deadline, dapper_trace)
-
-  start_time = time.clock()
-
+def CaptureStacktrace(func, *args, **kwargs):
+  """Ensure the trace is not discarded by appending it to the error message."""
   try:
-    response = requests.post(url=endpoint_url,
-                             headers=headers,
-                             data=body,
-                             timeout=DEADLINE_DELTA_SECONDS + deadline)
+    return func(*args, **kwargs)
   except Exception as e:
-    if not suppress_logging:
-      ms = int((time.clock() - start_time) / 1000)
-      vmstub_logger.exception(
-          'Exception during service bridge API call to package: %s, call: %s, '
-          'of size: %s bytes. Took %s ms. %s', package, call,
-          len(request_pb_body), ms, e)
 
     raise type(e)(''.join(traceback.format_exception(*sys.exc_info())))
-  else:
-    if not suppress_logging:
-      ms = int((time.clock() - start_time) / 1000)
-      vmstub_logger.info(
-          'Service bridge API call to package: %s, call: %s, of size: %s '
-          'complete. Service bridge status code: %s; response '
-          'content-length: %s. Took %s ms.', package, call,
-          len(request_pb_body), response.status_code,
-          response.headers.get('content-length'), ms)
-
-  return response
 
 
 class SyncResult(object):
@@ -313,6 +203,10 @@ class VMEngineRPC(apiproxy_rpc.RPC):
     self.event = threading.Event()
 
 
+
+
+
+
     if VMStub.ShouldUseRequestSecurityTicketForThread():
 
 
@@ -322,49 +216,60 @@ class VMEngineRPC(apiproxy_rpc.RPC):
     else:
       ticket = self.stub.DefaultTicket()
 
+    request = remote_api_pb.Request()
+    request.set_service_name(self.package)
+    request.set_method(self.call)
+    request.set_request_id(ticket)
+    request.set_request(self.request.SerializeToString())
+
+    deadline = self.deadline or DEFAULT_TIMEOUT
+
+    body_data = request.SerializeToString()
+    headers = {
+        SERVICE_DEADLINE_HEADER: deadline,
+        SERVICE_ENDPOINT_HEADER: SERVICE_ENDPOINT_NAME,
+        SERVICE_METHOD_HEADER: APIHOST_METHOD,
+        'Content-type': RPC_CONTENT_TYPE,
+    }
+
+
+    dapper_header_value = os.environ.get(DAPPER_ENV_KEY)
+    if dapper_header_value:
+      headers[DAPPER_HEADER] = dapper_header_value
+
+
+
+
+
+    api_host = os.environ.get('API_HOST', SERVICE_BRIDGE_HOST)
+    api_port = os.environ.get('API_PORT', API_PORT)
+
+    endpoint_url = urlparse.urlunparse(
+        ('http', '%s:%s' % (api_host, api_port), PROXY_PATH,
+         '', '', ''))
+
     self._state = apiproxy_rpc.RPC.RUNNING
 
-    endpoint_url = EndpointURLForHostAndPort(
-        os.environ.get('API_HOST', SERVICE_BRIDGE_HOST),
-        os.environ.get('API_PORT', API_PORT))
-
-    request_pb_body = self.request.SerializeToString()
-
-
-
-
-
-
-
-    suppress_logging = self.package == 'logservice' and self.call == 'Flush'
+    request_kwargs = dict(url=endpoint_url,
+                          timeout=DEADLINE_DELTA_SECONDS + deadline,
+                          headers=headers, data=body_data)
 
 
 
     if imp.lock_held() and not app_is_loaded:
       try:
-        value = MakeAPICallWithLogging(
-            self.package, self.call, ticket, request_pb_body, endpoint_url,
-            deadline=self.deadline or DEFAULT_TIMEOUT,
-            dapper_trace=os.environ.get(DAPPER_ENV_KEY),
-            suppress_logging=suppress_logging)
+        value = CaptureStacktrace(requests.post, **request_kwargs)
         success = True
       except Exception as e:
         value = e
         success = False
       self._result_future = SyncResult(value, success)
 
-
     else:
 
 
-
       self._result_future = self.stub.thread_pool.apply_async(
-          MakeAPICallWithLogging,
-          args=[self.package, self.call, ticket, request_pb_body, endpoint_url],
-          kwds={'deadline': self.deadline or DEFAULT_TIMEOUT,
-                'dapper_trace': os.environ.get(DAPPER_ENV_KEY),
-                'suppress_logging': suppress_logging}
-          )
+          CaptureStacktrace, args=[requests.post], kwds=request_kwargs)
 
   def _WaitImpl(self):
 

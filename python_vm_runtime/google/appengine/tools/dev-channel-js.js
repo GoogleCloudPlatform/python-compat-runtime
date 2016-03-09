@@ -21,6 +21,9 @@ goog.STRICT_MODE_COMPATIBLE = !1;
 goog.DISALLOW_TEST_ONLY_CODE = !goog.DEBUG;
 goog.ENABLE_CHROME_APP_SAFE_SCRIPT_LOADING = !1;
 goog.provide = function(name) {
+  if (goog.isInModuleLoader_()) {
+    throw Error("goog.provide can not be used within a goog.module.");
+  }
   goog.constructNamespace_(name);
 };
 goog.constructNamespace_ = function(name, opt_obj) {
@@ -535,6 +538,9 @@ goog.base = function(me, opt_methodName, var_args) {
   throw Error("goog.base called from a method of one name to a method of a different name");
 };
 goog.scope = function(fn) {
+  if (goog.isInModuleLoader_()) {
+    throw Error("goog.scope is not supported within a goog.module.");
+  }
   fn.call(goog.global);
 };
 goog.defineClass = function(superClass, def) {
@@ -974,6 +980,20 @@ goog.string.splitLimit = function(str, separator, limit) {
   parts.length && returnVal.push(parts.join(separator));
   return returnVal;
 };
+goog.string.lastComponent = function(str, separators) {
+  if (separators) {
+    "string" == typeof separators && (separators = [separators]);
+  } else {
+    return str;
+  }
+  for (var lastSeparatorIndex = -1, i = 0;i < separators.length;i++) {
+    if ("" != separators[i]) {
+      var currentSeparatorIndex = str.lastIndexOf(separators[i]);
+      currentSeparatorIndex > lastSeparatorIndex && (lastSeparatorIndex = currentSeparatorIndex);
+    }
+  }
+  return -1 == lastSeparatorIndex ? str : str.slice(lastSeparatorIndex + 1);
+};
 goog.string.editDistance = function(a, b) {
   var v0 = [], v1 = [];
   if (a == b) {
@@ -1251,6 +1271,10 @@ goog.array.remove = function(arr, obj) {
   (rv = 0 <= i) && goog.array.removeAt(arr, i);
   return rv;
 };
+goog.array.removeLast = function(arr, obj) {
+  var i = goog.array.lastIndexOf(arr, obj);
+  return 0 <= i ? (goog.array.removeAt(arr, i), !0) : !1;
+};
 goog.array.removeAt = function(arr, i) {
   goog.asserts.assert(null != arr.length);
   return 1 == Array.prototype.splice.call(arr, i, 1).length;
@@ -1335,13 +1359,13 @@ goog.array.stableSort = function(arr, opt_compareFn) {
   function stableCompareFn(obj1, obj2) {
     return valueCompareFn(obj1.value, obj2.value) || obj1.index - obj2.index;
   }
-  for (var i = 0;i < arr.length;i++) {
-    arr[i] = {index:i, value:arr[i]};
+  for (var compArr = Array(arr.length), i = 0;i < arr.length;i++) {
+    compArr[i] = {index:i, value:arr[i]};
   }
   var valueCompareFn = opt_compareFn || goog.array.defaultCompare;
-  goog.array.sort(arr, stableCompareFn);
+  goog.array.sort(compArr, stableCompareFn);
   for (i = 0;i < arr.length;i++) {
-    arr[i] = arr[i].value;
+    arr[i] = compArr[i].value;
   }
 };
 goog.array.sortByKey = function(arr, keyFn, opt_compareFn) {
@@ -2312,6 +2336,20 @@ goog.html.SafeHtml.createIframe = function(opt_src, opt_srcdoc, opt_attributes, 
   fixedAttributes.srcdoc = opt_srcdoc && goog.html.SafeHtml.unwrap(opt_srcdoc);
   var defaultAttributes = {sandbox:""}, attributes = goog.html.SafeHtml.combineAttributes(fixedAttributes, defaultAttributes, opt_attributes);
   return goog.html.SafeHtml.createSafeHtmlTagSecurityPrivateDoNotAccessOrElse("iframe", attributes, opt_content);
+};
+goog.html.SafeHtml.createSandboxIframe = function(opt_src, opt_srcdoc, opt_attributes, opt_content) {
+  if (!goog.html.SafeHtml.canUseSandboxIframe()) {
+    throw Error("The browser does not support sandboxed iframes.");
+  }
+  var fixedAttributes = {};
+  fixedAttributes.src = opt_src ? goog.html.SafeUrl.unwrap(goog.html.SafeUrl.sanitize(opt_src)) : null;
+  fixedAttributes.srcdoc = opt_srcdoc || null;
+  fixedAttributes.sandbox = "";
+  var attributes = goog.html.SafeHtml.combineAttributes(fixedAttributes, {}, opt_attributes);
+  return goog.html.SafeHtml.createSafeHtmlTagSecurityPrivateDoNotAccessOrElse("iframe", attributes, opt_content);
+};
+goog.html.SafeHtml.canUseSandboxIframe = function() {
+  return goog.global.HTMLIFrameElement && "sandbox" in goog.global.HTMLIFrameElement.prototype;
 };
 goog.html.SafeHtml.createScriptSrc = function(src, opt_attributes) {
   goog.html.TrustedResourceUrl.unwrap(src);
@@ -3847,6 +3885,10 @@ goog.reflect.canAccessProperty = function(obj, prop) {
   } catch (e) {
   }
   return !1;
+};
+goog.reflect.cache = function(cacheObj, key, valueFn, opt_keyFn) {
+  var storedKey = opt_keyFn ? opt_keyFn(key) : key;
+  return storedKey in cacheObj ? cacheObj[storedKey] : cacheObj[storedKey] = valueFn(key);
 };
 goog.events.BrowserFeature = {HAS_W3C_BUTTON:!goog.userAgent.IE || goog.userAgent.isDocumentModeOrHigher(9), HAS_W3C_EVENT_SUPPORT:!goog.userAgent.IE || goog.userAgent.isDocumentModeOrHigher(9), SET_KEY_CODE_TO_PREVENT_DEFAULT:goog.userAgent.IE && !goog.userAgent.isVersionOrHigher("9"), HAS_NAVIGATOR_ONLINE_PROPERTY:!goog.userAgent.WEBKIT || goog.userAgent.isVersionOrHigher("528"), HAS_HTML5_NETWORK_EVENT_SUPPORT:goog.userAgent.GECKO && goog.userAgent.isVersionOrHigher("1.9b") || goog.userAgent.IE && 
 goog.userAgent.isVersionOrHigher("8") || goog.userAgent.OPERA && goog.userAgent.isVersionOrHigher("9.5") || goog.userAgent.WEBKIT && goog.userAgent.isVersionOrHigher("528"), HTML5_NETWORK_EVENTS_FIRE_ON_BODY:goog.userAgent.GECKO && !goog.userAgent.isVersionOrHigher("8") || goog.userAgent.IE && !goog.userAgent.isVersionOrHigher("9"), TOUCH_ENABLED:"ontouchstart" in goog.global || !!(goog.global.document && document.documentElement && "ontouchstart" in document.documentElement) || !(!goog.global.navigator || 
