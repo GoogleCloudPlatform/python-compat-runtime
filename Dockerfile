@@ -10,24 +10,37 @@ RUN apt-get -q update && \
     libjpeg-dev zlib1g-dev libpng12-dev && \
   apt-get clean && rm /var/lib/apt/lists/*_*
 
-# This step adds the actual compiled runtime ('python setup.py sdist') to the
-# docker image.
-COPY python-runtime.tar.gz /home/vmagent/python-runtime.tar.gz
+# Add the appengine compat library.
+COPY appengine-compat /opt/appengine-compat
 
+# Add the vmruntime
+COPY appengine-vmruntime /opt/appengine-vmruntime
+
+# Install the compat library and the vmruntime.
 RUN easy_install pip
-RUN pip install --upgrade gunicorn==19.4.1 futures==3.0.3
-RUN pip install /home/vmagent/python-runtime.tar.gz
+RUN pip install --upgrade /opt/appengine-compat /opt/appengine-vmruntime
 
-EXPOSE 8080
+# Install requirements needed by the default configuration.
+COPY resources/requirements.txt /opt/requirements.txt
+RUN pip install --upgrade -r /opt/requirements.txt
 
+# Setup the application directory
 RUN ln -s /home/vmagent/app /app
 WORKDIR /app
 
 # Add the default gunicorn configuration file to the app directory. This
 # default file will be overridden if the user adds a file called
 # "gunicorn.conf.py" to their app's root directory.
-ADD gunicorn.conf.py /app/gunicorn.conf.py
+ADD resources/gunicorn.conf.py /app/gunicorn.conf.py
+
+# Expose port 8080, the default HTTP traffic port
+EXPOSE 8080
 
 # Configure the entrypoint with Managed VMs-essential configuration like "bind",
 # but leave the rest up to the config file.
-ENTRYPOINT ["/usr/bin/env", "gunicorn", "-b", "0.0.0.0:8080", "google.appengine.vmruntime.wsgi:meta_app", "--log-file=-", "-c", "gunicorn.conf.py"]
+ENTRYPOINT [\
+    "/usr/bin/env",\
+    "gunicorn", "-b", ":8080",\
+    "vmruntime.wsgi:meta_app",\
+    "--log-file=-",\
+    "-c", "gunicorn.conf.py"]
