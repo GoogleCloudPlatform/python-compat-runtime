@@ -1,0 +1,4 @@
+# These are requirements needed for the default configuration of the runtime:
+# gunicorn with gthread worker.
+gunicorn==19.4.1
+futures==3.0.3

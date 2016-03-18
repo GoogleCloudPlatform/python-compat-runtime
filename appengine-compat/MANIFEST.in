@@ -1,0 +1,6 @@
+graft exported_appengine_sdk
+
+include README
+include LICENSE
+
+global-exclude *.py[co] __pycache__ *.so *.pyd
