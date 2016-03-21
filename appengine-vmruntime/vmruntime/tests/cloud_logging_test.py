@@ -30,7 +30,8 @@ class CloudLoggingTestCase(unittest.TestCase):
     EXPECTED_SECONDS = 1437589520
     EXPECTED_NANOS = 830589056
 
-    def setUp(self):
+    @mock.patch.object(cloud_logging.CloudLoggingHandler, '_open')
+    def setUp(self, mock_open):
         self.handler = cloud_logging.CloudLoggingHandler()
         with mock.patch('time.time', return_value=self.TEST_TIME):
             self.record = logging.makeLogRecord({'msg': self.EXPECTED_MESSAGE,
