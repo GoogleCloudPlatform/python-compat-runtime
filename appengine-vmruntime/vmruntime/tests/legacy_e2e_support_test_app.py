@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
+
 """Hello World web app that mimics a legacy end-to-end test."""
 
 from google.appengine.ext import webapp
@@ -19,19 +19,16 @@ from google.appengine.ext.webapp import util
 
 
 class DefaultRequestHandler(webapp.RequestHandler):
+    def get(self):
+        self.response.out.write('Hello World!')
 
-  def get(self):
-    self.response.out.write('Hello World!')
 
-
-application = webapp.WSGIApplication([
-    ('/', DefaultRequestHandler),
-    ])
+application = webapp.WSGIApplication([('/', DefaultRequestHandler), ])
 
 
 def main():
-  util.run_wsgi_app(application)
+    util.run_wsgi_app(application)
 
 
 if __name__ == '__main__':
-  main()
+    main()

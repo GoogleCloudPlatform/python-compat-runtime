@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
+
 """Configure a user project and instantiate WSGI app meta_app to serve it.
 
 Importing this module will result in side-effects, such as registering the
@@ -23,29 +23,28 @@ WSGI app.
 import logging
 import os
 
-from . import cloud_logging
-from . import dispatcher
-from . import middleware
-from . import wsgi_config
-
 from google.appengine.ext.vmruntime import vmconfig
 from google.appengine.ext.vmruntime import vmstub
+from vmruntime import cloud_logging
+from vmruntime import dispatcher
+from vmruntime import middleware
+from vmruntime import wsgi_config
 
 # Configure logging to output structured JSON to Cloud Logging.
 root_logger = logging.getLogger('')
 try:
-  handler = cloud_logging.CloudLoggingHandler()
-  root_logger.addHandler(handler)
+    handler = cloud_logging.CloudLoggingHandler()
+    root_logger.addHandler(handler)
 except IOError:
-  # If the Cloud Logging endpoint does not exist, just use the default handler
-  # instead. This will be the case when running in local dev mode.
-  pass
+    # If the Cloud Logging endpoint does not exist, just use the default
+    # handler instead. This will be the case when running in local dev mode.
+    pass
 
 root_logger.setLevel(logging.INFO)
 
 # Fetch application configuration via the config file.
-appinfo = wsgi_config.get_module_config(
-    wsgi_config.get_module_config_filename())
+appinfo = wsgi_config.get_module_config(wsgi_config.get_module_config_filename(
+))
 env_config = vmconfig.BuildVmAppengineEnvConfig()
 
 # Ensure API requests include a valid ticket by default.
@@ -54,15 +53,15 @@ vmstub.Register(vmstub.VMStub(env_config.default_ticket))
 # Take an immutable snapshot of env data from env_config. This is added to the
 # environment in `reset_environment_middleware` in a particular order to ensure
 # that it cannot be overridden by other steps.
-frozen_env_config_env = tuple(
-    wsgi_config.env_vars_from_env_config(env_config).iteritems())
+frozen_env_config_env = tuple(wsgi_config.env_vars_from_env_config(
+    env_config).iteritems())
 
 # Also freeze user env vars specified in app.yaml. Later steps to modify the
 # environment such as env_vars_from_env_config and request middleware
 # will overwrite these changes. This is added to the environment in
 # `reset_environment_middleware`.
-frozen_user_env = tuple(
-    wsgi_config.user_env_vars_from_appinfo(appinfo).iteritems())
+frozen_user_env = tuple(wsgi_config.user_env_vars_from_appinfo(
+    appinfo).iteritems())
 
 # While the primary use of the frozen env vars is for
 # `reset_environment_middleware`, we'll also add them to the env here to make
@@ -77,12 +76,11 @@ os.environ.update(frozen_env_config_env)
 # TODO(apphosting): Modify the end-to-end test runner to make this decision
 # unnecessary.
 if appinfo.vm_settings.get('vm_runtime') == 'python':
-  import legacy_e2e_support  # pylint: disable=g-import-not-at-top
-  preloaded_handlers = legacy_e2e_support.load_legacy_scripts_into_handlers(
-      appinfo.handlers)
+    import legacy_e2e_support  # pylint: disable=g-import-not-at-top
+    preloaded_handlers = legacy_e2e_support.load_legacy_scripts_into_handlers(
+        appinfo.handlers)
 else:
-  preloaded_handlers = wsgi_config.load_user_scripts_into_handlers(
-      appinfo)
+    preloaded_handlers = wsgi_config.load_user_scripts_into_handlers(appinfo)
 
 # Now that all scripts are fully imported, it is safe to use asynchronous
 # API calls.
@@ -117,6 +115,5 @@ meta_app = dispatcher.dispatcher(preloaded_handlers)
 meta_app = middleware.health_check_middleware(meta_app)
 
 # Reset os.environ to the frozen state and add request-specific data.
-meta_app = middleware.reset_environment_middleware(meta_app, frozen_environment,
-                                                   frozen_user_env,
-                                                   frozen_env_config_env)
+meta_app = middleware.reset_environment_middleware(
+    meta_app, frozen_environment, frozen_user_env, frozen_env_config_env)
