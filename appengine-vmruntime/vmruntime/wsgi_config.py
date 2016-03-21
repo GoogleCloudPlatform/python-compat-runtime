@@ -20,7 +20,7 @@ import os
 import threading
 import UserDict
 
-from . import static_files
+from vmruntime import static_files
 
 from google.appengine.api import appinfo
 from google.appengine.api import appinfo_includes

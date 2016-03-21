@@ -18,7 +18,7 @@ import mock
 import os
 import unittest
 
-from . import cloud_logging
+from vmruntime import cloud_logging
 
 
 class CloudLoggingTestCase(unittest.TestCase):

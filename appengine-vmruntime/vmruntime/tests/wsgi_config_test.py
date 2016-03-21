@@ -19,7 +19,7 @@ from mock import patch
 from werkzeug import test
 from werkzeug import wrappers
 
-from . import wsgi_config
+from vmruntime import wsgi_config
 from . import wsgi_test
 
 @wrappers.Request.application

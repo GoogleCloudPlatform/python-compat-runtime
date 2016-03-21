@@ -21,7 +21,7 @@ import os
 import threading
 import unittest
 
-from . import wsgi_config
+from vmruntime import wsgi_config
 
 from mock import MagicMock
 from mock import patch
@@ -154,7 +154,7 @@ class MetaAppTestCase(unittest.TestCase):
                         return_value=FAKE_APPINFO_EXTERNAL):
         with patch.object(vmconfig, 'BuildVmAppengineEnvConfig',
                           return_value=FAKE_APPENGINE_CONFIG):
-          import wsgi
+          from vmruntime import wsgi
           self.app = wsgi.meta_app
     self.client = test.Client(self.app, wrappers.Response)
     # Separate client for concurrent tests.
