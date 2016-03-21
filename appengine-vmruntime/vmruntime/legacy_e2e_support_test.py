@@ -26,7 +26,7 @@ class LegacyAppConfigTestCase(unittest.TestCase):
 
   def test_legacy_app_for_script(self):
     app = legacy_e2e_support.legacy_app_for_script(
-        'legacy_e2e_support_test_app.py')
+        'vmruntime.legacy_e2e_support_test_app.py')
     client = test.Client(app, wrappers.Response)
     response = client.get('/')
     self.assertEqual(response.status_code, httplib.OK)
