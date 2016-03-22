@@ -64,6 +64,8 @@ FAKE_HANDLERS = [
                    script=script_path('add_to_os_environ')),
     appinfo.URLMap(url='/wait',
                    script=script_path('wait_on_global_event')),
+    appinfo.URLMap(url='/callback',
+                   script=script_path('set_callback')),
     appinfo.URLMap(url='/favicon.ico',
                    static_files=static_path('test_statics/favicon.ico'),
                    upload=static_path('test_statics/favicon.ico')),
@@ -112,6 +114,9 @@ FAKE_APPENGINE_CONFIG = MagicMock(server_software='server',
 concurrent_request_is_started = threading.Event()
 concurrent_request_should_proceed = threading.Event()
 
+# Global flags used for callback tests.
+callback_called = False
+
 # These tests will deliberately cause ERROR level logs, so let's disable them.
 logging.basicConfig(level=logging.CRITICAL)
 
@@ -144,6 +149,17 @@ def sort_os_environ_keys(request):  # pylint: disable=unused-argument
     # See test_env_sort method for explanation.
     return wrappers.Response(''.join('%s=%s\n' % (
         k, v) for k, v in sorted(os.environ.iteritems())))
+
+
+@wrappers.Request.application
+def setup_callback(request):
+    def callback():
+        global callback_called
+        callback_called = True
+
+    callback.SetRequestEndCallbacks(callback)
+    return wrappers.Response("pass!")
+
 
 
 class MetaAppTestCase(unittest.TestCase):
@@ -362,3 +378,10 @@ class MetaAppTestCase(unittest.TestCase):
         # validate contents extensively.
         self.assertIn('REQUEST_METHOD', response.data)
         self.assertIn('GET', response.data)
+
+    # Tests the callback middleware.
+    def test_callback(self):
+      self.assertFalse(callback_called)
+      response = self.client.get('/callback')
+      self.assertEqual(response.status_code, httplib.OK)
+      self.assertTrue(callback_called)
