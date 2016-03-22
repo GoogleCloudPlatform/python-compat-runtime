@@ -36,6 +36,7 @@ RESERVED_ENV_KEYS = {
     'USER_IS_ADMIN': '0',  # Default admin flag to explicit '0'.
     'USER_NICKNAME': '',
     'USER_ORGANIZATION': '',
+    'SERVER_SOFTWARE': 'Google App Engine/0.5',
 }
 
 X_APPENGINE_USER_IP_ENV_KEY = 'HTTP_X_APPENGINE_USER_IP'
@@ -140,10 +141,16 @@ def reserved_env_keys_for_wsgi_env(wsgi_env):
 
     # Use the default value for a reserved key if the corresponding header is
     # not set, or if the header exists but its value is blank.
+    # If the reserved key already exists, move the old value under a new key.
     for key, default in RESERVED_ENV_KEYS.iteritems():
-        value = wsgi_env.get('HTTP_X_APPENGINE_{key}'.format(key=key))
-        output[
-            key] = value or default  # Must be set to a valid value or default.
+        appengine_val = wsgi_env.get('HTTP_X_APPENGINE_{key}'.format(key=key))
+        original_val = wsgi_env.get(key)
+        if original_val:
+            output['WSGI_{key}'.format(key=key)] = original_val
+        if appengine_val:
+            output[key] = value
+        else:
+            output[key] = default
 
     return output
 
