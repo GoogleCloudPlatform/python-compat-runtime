@@ -148,7 +148,7 @@ def reserved_env_keys_for_wsgi_env(wsgi_env):
         if original_val:
             output['WSGI_{key}'.format(key=key)] = original_val
         if appengine_val:
-            output[key] = value
+            output[key] = appengine_val
         else:
             output[key] = default
 
