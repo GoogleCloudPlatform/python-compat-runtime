@@ -99,7 +99,8 @@ FAKE_APPINFO_EXTERNAL = MagicMock(handlers=FAKE_HANDLERS,
                                                  'USER_EMAIL': BAD_USER_EMAIL},
                                   default_expiration='2d 3h')
 
-FAKE_APPENGINE_CONFIG = MagicMock(partition='partition',
+FAKE_APPENGINE_CONFIG = MagicMock(server_software='server',
+                                  partition='partition',
                                   appid='appid',
                                   module='module',
                                   instance='instance',
