@@ -99,8 +99,7 @@ FAKE_APPINFO_EXTERNAL = MagicMock(handlers=FAKE_HANDLERS,
                                                  'USER_EMAIL': BAD_USER_EMAIL},
                                   default_expiration='2d 3h')
 
-FAKE_APPENGINE_CONFIG = MagicMock(server_software='server',
-                                  partition='partition',
+FAKE_APPENGINE_CONFIG = MagicMock(partition='partition',
                                   appid='appid',
                                   module='module',
                                   instance='instance',
@@ -288,9 +287,6 @@ class MetaAppTestCase(unittest.TestCase):
     def test_appengine_config_data_in_env(self):
         response = self.client.get('/env')
         env = json.loads(response.data)
-        # Key SERVER_SOFTWARE is rewritten to WSGI_SERVER_SOFTWARE
-        # to maintain GAE Standard compatability
-        self.assertEqual(env['WSGI_SERVER_SOFTWARE'], 'server')
         self.assertEqual(env['APPENGINE_RUNTIME'], 'python27')
         self.assertEqual(env['APPLICATION_ID'], 'partition~appid')
         self.assertEqual(env['INSTANCE_ID'], 'instance')
