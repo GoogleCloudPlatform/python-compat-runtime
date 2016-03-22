@@ -1,3 +1,0 @@
-FROM gcr.io/$GCLOUD_PROJECT/google-python-compat
-
-ADD . /app/
