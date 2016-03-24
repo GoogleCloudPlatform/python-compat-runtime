@@ -1,0 +1,11 @@
+sudo: required
+services:
+- docker
+env:
+  global:
+    - DOCKER_IMAGE_NAME=google/python-compat
+before_script:
+- sudo pip install --upgrade tox
+script:
+- make test-vmruntime
+- make build
