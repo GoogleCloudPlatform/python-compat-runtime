@@ -17,7 +17,7 @@ from setuptools import setup
 
 setup(
     name='appengine-compat',
-    version='0.5',
+    version='0.6',
     description='Google App Engine-compatible Python libraries for Managed VMs',
     url='https://github.com/GoogleCloudPlatform/appengine-python-vm-runtime',
     author='Google',

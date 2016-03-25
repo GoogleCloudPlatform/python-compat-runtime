@@ -37,7 +37,7 @@ RESERVED_ENV_KEYS = {
     'USER_IS_ADMIN': '0',  # Default admin flag to explicit '0'.
     'USER_NICKNAME': '',
     'USER_ORGANIZATION': '',
-    'SERVER_SOFTWARE': 'Google App Engine/0.5',
+    'SERVER_SOFTWARE': 'Google App Engine/0.6',
 }
 
 X_APPENGINE_USER_IP_ENV_KEY = 'HTTP_X_APPENGINE_USER_IP'
