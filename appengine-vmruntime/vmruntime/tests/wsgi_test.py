@@ -20,8 +20,10 @@ from multiprocessing.pool import ThreadPool
 import os
 import threading
 import unittest
+import uuid
 
 from google.appengine.api import appinfo
+from google.appengine.ext.vmruntime import callback
 from mock import MagicMock
 from mock import patch
 from vmruntime import wsgi_config
@@ -152,12 +154,16 @@ def sort_os_environ_keys(request):  # pylint: disable=unused-argument
 
 
 @wrappers.Request.application
-def setup_callback(request):
-    def callback():
+def set_callback(request):
+    def my_callback():
         global callback_called
         callback_called = True
 
-    callback.SetRequestEndCallbacks(callback)
+    # Setting the REQUEST_ID_KEY in callback.py signals that we are inside
+    # a request.  In flex and mvm, the REQUEST_ID_KEY is set elsewhere.
+    os.environ[callback.REQUEST_ID_KEY] = str(uuid.uuid4())
+
+    callback.SetRequestEndCallback(my_callback)
     return wrappers.Response("pass!")
 
 
@@ -185,6 +191,7 @@ class MetaAppTestCase(unittest.TestCase):
         # Clear the global event flags (only used in concurrency tests).
         concurrent_request_is_started.clear()
         concurrent_request_should_proceed.clear()
+
 
     def test_hello(self):
         response = self.client.get('/hello')
