@@ -26,6 +26,7 @@ import time
 import traceback
 
 from google.appengine.api import logservice
+from google.appengine.ext.vmruntime import callback
 from google.appengine.ext.vmruntime import vmstub
 from google.appengine.runtime import request_environment
 
@@ -386,3 +387,17 @@ def FixServerEnvVarsMiddleware(app):
     return app(wsgi_env, start_response)
 
   return FixVars
+
+
+def CallbackMiddleware(app):
+  """Calls the request-end callback that the app may have set."""
+
+  def CallbackWrapper(wsgi_env, start_response):
+    """Calls the WSGI app and the invokes the request-end callback."""
+    try:
+      return app(wsgi_env, start_response)
+    finally:
+      callback.InvokeCallbacks()
+
+  return CallbackWrapper
+

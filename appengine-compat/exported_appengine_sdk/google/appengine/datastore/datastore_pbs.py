@@ -1191,7 +1191,8 @@ class _EntityConverter(object):
     elif v3_property_value.has_booleanvalue():
       v1_value.boolean_value = v3_property_value.booleanvalue()
     elif v3_property_value.has_int64value():
-      if v3_meaning == entity_pb.Property.GD_WHEN:
+      if (v3_meaning == entity_pb.Property.GD_WHEN
+          and is_in_rfc_3339_bounds(v3_property_value.int64value())):
         googledatastore.helper.micros_to_timestamp(
             v3_property_value.int64value(), v1_value.timestamp_value)
         v3_meaning = None

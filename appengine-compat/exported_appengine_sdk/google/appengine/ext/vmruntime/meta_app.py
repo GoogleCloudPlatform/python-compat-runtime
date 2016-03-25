@@ -98,6 +98,7 @@ def FullyWrappedApp(appinfo_external, appengine_config):
   app = middlewares.LogFlushCounter(app)
   app = middlewares.RequestQueueingMiddleware(app, appinfo_external)
   app = middlewares.UseRequestSecurityTicketForApiMiddleware(app)
+  app = middlewares.CallbackMiddleware(app)
   return app
 
 

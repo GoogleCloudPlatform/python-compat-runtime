@@ -1,0 +1,78 @@
+#!/usr/bin/env python
+#
+# Copyright 2007 Google Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+
+"""Callbacks the runtime invokes when requests end."""
+
+
+
+import os
+
+
+
+REQUEST_ID_KEY = 'HTTP_X_CLOUD_TRACE_CONTEXT'
+_callback_storage = {}
+
+
+class OnlyOneCallbackPerRequestException(Exception):
+  """Raised when a second callback is set in a single request."""
+
+
+def SetRequestEndCallback(callback):
+  """Stores a callback by the request ID.
+
+  The request ID currently uses the cloud trace ID.
+
+  Args:
+    callback: A zero-argument callable whose return value is unused.
+
+  Raises:
+    OnlyOneCallbackPerRequestException: Raised on registering second callback.
+  """
+  key = _GetRequestId()
+
+
+
+
+  if key:
+
+
+
+
+
+    if key not in _callback_storage:
+      _callback_storage[key] = callback
+    else:
+      raise OnlyOneCallbackPerRequestException()
+
+
+def InvokeCallbacks():
+  """Invokes the callback associated with the current request ID."""
+
+  key = _GetRequestId()
+  if key in _callback_storage:
+    _callback_storage[key]()
+    del _callback_storage[key]
+
+
+def _GetRequestId():
+  """Returns a unique ID using the cloud trace ID."""
+  if REQUEST_ID_KEY in os.environ:
+    return os.environ[REQUEST_ID_KEY]
+  else:
+    return None
+
