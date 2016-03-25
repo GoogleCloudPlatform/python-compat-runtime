@@ -117,3 +117,6 @@ meta_app = middleware.health_check_middleware(meta_app)
 # Reset os.environ to the frozen state and add request-specific data.
 meta_app = middleware.reset_environment_middleware(
     meta_app, frozen_environment, frozen_user_env, frozen_env_config_env)
+
+# Invoke a request-end callback as the request returns.
+meta_app = middleware.callback_middleware(meta_app)

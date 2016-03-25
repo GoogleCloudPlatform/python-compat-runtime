@@ -20,8 +20,10 @@ from multiprocessing.pool import ThreadPool
 import os
 import threading
 import unittest
+import uuid
 
 from google.appengine.api import appinfo
+from google.appengine.ext.vmruntime import callback
 from mock import MagicMock
 from mock import patch
 from vmruntime import wsgi_config
@@ -64,6 +66,8 @@ FAKE_HANDLERS = [
                    script=script_path('add_to_os_environ')),
     appinfo.URLMap(url='/wait',
                    script=script_path('wait_on_global_event')),
+    appinfo.URLMap(url='/callback',
+                   script=script_path('set_callback')),
     appinfo.URLMap(url='/favicon.ico',
                    static_files=static_path('test_statics/favicon.ico'),
                    upload=static_path('test_statics/favicon.ico')),
@@ -112,6 +116,9 @@ FAKE_APPENGINE_CONFIG = MagicMock(server_software='server',
 concurrent_request_is_started = threading.Event()
 concurrent_request_should_proceed = threading.Event()
 
+# Global flags used for callback tests.
+callback_called = False
+
 # These tests will deliberately cause ERROR level logs, so let's disable them.
 logging.basicConfig(level=logging.CRITICAL)
 
@@ -146,6 +153,21 @@ def sort_os_environ_keys(request):  # pylint: disable=unused-argument
         k, v) for k, v in sorted(os.environ.iteritems())))
 
 
+@wrappers.Request.application
+def set_callback(request):
+    def my_callback():
+        global callback_called
+        callback_called = True
+
+    # Setting the REQUEST_ID_KEY in callback.py signals that we are inside
+    # a request.  In flex and mvm, the REQUEST_ID_KEY is set elsewhere.
+    os.environ[callback.REQUEST_ID_KEY] = str(uuid.uuid4())
+
+    callback.SetRequestEndCallback(my_callback)
+    return wrappers.Response("pass!")
+
+
+
 class MetaAppTestCase(unittest.TestCase):
     def setUp(self):
         # pylint: disable=g-import-not-at-top
@@ -169,6 +191,7 @@ class MetaAppTestCase(unittest.TestCase):
         # Clear the global event flags (only used in concurrency tests).
         concurrent_request_is_started.clear()
         concurrent_request_should_proceed.clear()
+
 
     def test_hello(self):
         response = self.client.get('/hello')
@@ -362,3 +385,10 @@ class MetaAppTestCase(unittest.TestCase):
         # validate contents extensively.
         self.assertIn('REQUEST_METHOD', response.data)
         self.assertIn('GET', response.data)
+
+    # Tests the callback middleware.
+    def test_callback(self):
+      self.assertFalse(callback_called)
+      response = self.client.get('/callback')
+      self.assertEqual(response.status_code, httplib.OK)
+      self.assertTrue(callback_called)
