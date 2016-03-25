@@ -54,7 +54,13 @@ import urllib2
 
 import google
 from oauth2client import devshell
+
+try:
+  from oauth2client.contrib import gce as oauth2client_gce
+except ImportError:
+  from oauth2client import gce as oauth2client_gce
 import yaml
+
 
 from google.appengine.cron import groctimespecification
 from google.appengine.api import appinfo
@@ -3239,14 +3245,14 @@ class AppCfgApp(object):
             scope=self.oauth_scopes,
             refresh_token=self.options.oauth2_refresh_token,
             credential_file=self.options.oauth2_credential_file,
-            token_uri=self._GetTokenUri()))
+            credentials=self._GetCredentials()))
     return oauth2_parameters
 
-  def _GetTokenUri(self):
-    """Returns the OAuth2 token_uri, or None to use the default URI.
+  def _GetCredentials(self):
+    """Return appropriate credentials if we are running in a GCE environment.
 
     Returns:
-      A string that is the token_uri, or None.
+      AppAssertionCredentials if we are running on GCE, None if not.
 
     Raises:
       RuntimeError: The user has requested authentication for a service account
@@ -3269,7 +3275,7 @@ class AppCfgApp(object):
         raise RuntimeError('Required scopes %s missing from %s. '
                            'This VM instance probably needs to be recreated '
                            'with the missing scopes.' % (missing, vm_scopes))
-      return '%s/%s/token' % (METADATA_BASE, SERVICE_ACCOUNT_BASE)
+      return oauth2client_gce.AppAssertionCredentials()
     else:
       return None
 
@@ -3679,8 +3685,6 @@ class AppCfgApp(object):
         ]
         if goroot:
           gab_argv.extend(['-goroot', goroot])
-        if appyaml.runtime == 'vm':
-          gab_argv.append('-vm')
         gab_argv.extend(go_files)
 
         env = {
