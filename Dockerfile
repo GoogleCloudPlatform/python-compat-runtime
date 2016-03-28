@@ -1,14 +1,4 @@
-FROM gcr.io/google_appengine/base
-
-# Install Python and C dev libraries necessary to compile the most popular
-# Python libraries.
-RUN apt-get -q update && \
-  apt-get install --no-install-recommends -y -q \
-    build-essential python2.7 python2.7-dev python-setuptools \
-    git mercurial libffi-dev libssl-dev libxml2-dev \
-    libxslt1-dev libpq-dev libmysqlclient-dev libcurl4-openssl-dev \
-    libjpeg-dev zlib1g-dev libpng12-dev && \
-  apt-get clean && rm /var/lib/apt/lists/*_*
+FROM gcr.io/google_appengine/python
 
 # Add the appengine compat library.
 COPY appengine-compat /opt/appengine-compat
