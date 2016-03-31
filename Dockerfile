@@ -14,6 +14,9 @@ RUN pip install --upgrade /opt/appengine-compat /opt/appengine-vmruntime
 COPY resources/requirements.txt /opt/requirements.txt
 RUN pip install --upgrade -r /opt/requirements.txt
 
+# Install the Cloud Debugger
+RUN pip install google-python-cloud-debugger
+
 # Setup the application directory
 RUN ln -s /home/vmagent/app /app
 WORKDIR /app

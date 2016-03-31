@@ -22,6 +22,7 @@ WSGI app.
 
 import logging
 import os
+import traceback
 
 from google.appengine.ext.vmruntime import vmconfig
 from google.appengine.ext.vmruntime import vmstub
@@ -49,6 +50,22 @@ env_config = vmconfig.BuildVmAppengineEnvConfig()
 
 # Ensure API requests include a valid ticket by default.
 vmstub.Register(vmstub.VMStub(env_config.default_ticket))
+
+# Enable Python Cloud Debugger if one is present. The debugger agent
+# communicates with the Cloud Debugger backend.
+#
+# The debugger has no effect on the application until snapshot is
+# requested.
+#
+# For details see: https://github.com/GoogleCloudPlatform/cloud-debug-python
+try:
+  import googleclouddebugger
+  googleclouddebugger.AttachDebugger()
+except ImportError:
+  pass
+except Exception as e:
+  logging.warn('Exception while initializing Cloud Debugger: %s',
+               traceback.format_exc(e))
 
 # Take an immutable snapshot of env data from env_config. This is added to the
 # environment in `reset_environment_middleware` in a particular order to ensure
