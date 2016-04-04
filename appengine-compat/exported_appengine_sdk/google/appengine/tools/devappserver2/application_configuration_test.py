@@ -152,7 +152,7 @@ class TestModuleConfiguration(unittest.TestCase):
     self.assertEqual('module1', config.module_name)
     self.assertEqual('1', config.major_version)
 
-  def test_vm_app_yaml_configuration_with_env(self):
+  def _test_vm_app_yaml_configuration_with_env(self, env):
     manual_scaling = appinfo.ManualScaling()
     vm_settings = appinfo.VmSettings()
     vm_settings['vm_runtime'] = 'myawesomeruntime'
@@ -164,7 +164,7 @@ class TestModuleConfiguration(unittest.TestCase):
         module='module1',
         version='1',
         runtime='vm',
-        env='2',
+        env=env,
         vm_settings=vm_settings,
         threadsafe=False,
         manual_scaling=manual_scaling,
@@ -179,7 +179,16 @@ class TestModuleConfiguration(unittest.TestCase):
     config = application_configuration.ModuleConfiguration('/appdir/app.yaml')
 
     self.mox.VerifyAll()
-    self.assertEqual('2', config.env)
+    self.assertEqual(env, config.env)
+
+  def test_vm_app_yaml_configuration_with_env_2(self):
+    self._test_vm_app_yaml_configuration_with_env('2')
+
+  def test_vm_app_yaml_configuration_with_env_flex(self):
+    self._test_vm_app_yaml_configuration_with_env('flex')
+
+  def test_vm_app_yaml_configuration_with_env_flexible(self):
+    self._test_vm_app_yaml_configuration_with_env('flexible')
 
   def test_vm_app_yaml_configuration(self):
     manual_scaling = appinfo.ManualScaling()

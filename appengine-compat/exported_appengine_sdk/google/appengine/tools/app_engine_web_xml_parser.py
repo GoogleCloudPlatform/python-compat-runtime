@@ -304,6 +304,10 @@ class AppEngineWebXmlParser(object):
       if api_id:
         self.app_engine_web_xml.api_endpoint_ids.append(api_id)
 
+  def ProcessPagespeedNode(self, node):
+    """Ignore pagespeed node."""
+    pass
+
   def ProcessClassLoaderConfigNode(self, node):
     for node in xml_parser_utils.GetNodes(node, 'priority-specifier'):
       entry = PrioritySpecifierEntry()

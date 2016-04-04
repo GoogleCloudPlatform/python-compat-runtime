@@ -31,6 +31,7 @@ from google.appengine.tools.devappserver2 import go_errors
 from google.appengine.tools.devappserver2 import go_managedvm
 from google.appengine.tools.devappserver2 import http_runtime
 from google.appengine.tools.devappserver2 import instance
+from google.appengine.tools.devappserver2 import util
 
 _REBUILD_CONFIG_CHANGES = frozenset(
     [application_configuration.SKIP_FILES_CHANGED,
@@ -103,7 +104,8 @@ class GoRuntimeInstanceFactory(instance.InstanceFactory):
     self._runtime_config_getter = runtime_config_getter
     self._module_configuration = module_configuration
     self._application_lock = threading.Lock()
-    if module_configuration.runtime == 'vm' or module_configuration.env == '2':
+    if (module_configuration.runtime == 'vm' or
+        util.is_env_flex(module_configuration.env)):
       self._start_process_flavor = http_runtime.START_PROCESS_REVERSE
       self._go_application = go_managedvm.GoManagedVMApp(
           self._module_configuration)
