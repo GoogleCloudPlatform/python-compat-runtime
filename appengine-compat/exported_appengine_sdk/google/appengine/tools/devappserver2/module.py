@@ -132,7 +132,7 @@ _FILESAPI_DEPRECATION_WARNING_GO = (
     ' is available here: https://cloud.google.com/appengine/docs/deprecations'
     '/files_api')
 
-_ALLOWED_RUNTIMES_ENV2 = (
+_ALLOWED_RUNTIMES_ENV_FLEX = (
     'python-compat', 'java', 'java7', 'go', 'custom')
 
 def _static_files_regex_from_handlers(handlers):
@@ -215,11 +215,12 @@ class Module(object):
       runtime = module_configuration.effective_runtime
       # NOTE(bryanmau): b/24139391
       # If in env: 2, users either use a compat runtime or custom.
-      if module_configuration.env == '2':
-        if runtime not in _ALLOWED_RUNTIMES_ENV2:
+      if util.is_env_flex(module_configuration.env):
+        if runtime not in _ALLOWED_RUNTIMES_ENV_FLEX:
           raise errors.InvalidAppConfigError(
-              'In env: 2, only the following runtimes '
-              'are allowed: {0}'.format(allowed_runtimes))
+              'In env: {0}, only the following runtimes '
+              'are allowed: {1}'
+              .format(module_configuration.env, _ALLOWED_RUNTIMES_ENV_FLEX))
 
     if runtime not in runtime_factories.FACTORIES:
       raise RuntimeError(

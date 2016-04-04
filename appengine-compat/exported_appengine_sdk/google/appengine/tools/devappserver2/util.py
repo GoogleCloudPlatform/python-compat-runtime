@@ -60,3 +60,7 @@ def put_headers_in_environ(headers, environ):
   """
   for key, value in headers:
     environ['HTTP_%s' % key.upper().replace('-', '_')] = value
+
+
+def is_env_flex(env):
+  return env in ['2', 'flex', 'flexible']

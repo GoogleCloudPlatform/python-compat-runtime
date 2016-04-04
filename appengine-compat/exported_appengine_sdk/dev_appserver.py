@@ -69,12 +69,13 @@ def _run_file(file_path, globals_):
 
 
 
-
-
-
-
   if 'google' in sys.modules:
-    del sys.modules['google']
+    google_path = os.path.join(os.path.dirname(__file__), 'google')
+    google_module = sys.modules['google']
+    google_module.__path__.append(google_path)
+
+
+    google_module.__file__ = google_path
 
   execfile(_PATHS.script_file(script_name), globals_)
 

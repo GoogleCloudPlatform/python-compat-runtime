@@ -579,6 +579,8 @@ class _EntityValidator(object):
     """
     if value.HasField('string_value'):
       _assert_valid_utf8(value.string_value, 'string value')
+    elif value.HasField('timestamp_value'):
+      self.validate_timestamp(value.timestamp_value)
     elif value.HasField('key_value'):
       self.validate_key(KEY_IN_VALUE, value.key_value)
     elif value.HasField('geo_point_value'):
@@ -786,6 +788,13 @@ class _EntityValidator(object):
 
     if not constraint.reserved_property_name_allowed:
       _assert_string_not_reserved(property_name, desc)
+
+  def validate_timestamp(self, timestamp):
+    _assert_condition(0 <= timestamp.nanos < 1000000000,
+                      'Timestamp nanos exceeds limit for field')
+    _assert_condition(
+        datastore_pbs.is_in_rfc_3339_bounds(timestamp.seconds * 1000 * 1000),
+        'Timestamp seconds exceeds limit for field')
 
 
 

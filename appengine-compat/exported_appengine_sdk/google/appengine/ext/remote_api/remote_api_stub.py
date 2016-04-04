@@ -795,10 +795,13 @@ def ConfigureRemoteApi(app_id,
     app_id: The app_id of your app, as declared in app.yaml, or None.
     path: The path to the remote_api handler for your app
       (for example, '/_ah/remote_api').
-    auth_func: A function that takes no arguments and returns a
+    auth_func: If rpc_server_factory=appengine_rpc.HttpRpcServer, auth_func is
+      a function that takes no arguments and returns a
       (username, password) tuple. This will be called if your application
       requires authentication to access the remote_api handler (it should!)
       and you do not already have a valid auth cookie.
+      If rpc_server_factory=appengine_rpc_httplib2.HttpRpcServerOAuth2,
+      auth_func is appengine_rpc_httplib2.HttpRpcServerOAuth2.OAuth2Parameters.
     servername: The hostname your app is deployed on. Defaults to
       <app_id>.appspot.com.
     rpc_server_factory: A factory to construct the rpc server for the datastore.

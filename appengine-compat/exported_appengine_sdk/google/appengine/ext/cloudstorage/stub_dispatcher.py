@@ -252,7 +252,29 @@ def _handle_get(gcs_stub, filename, param_dict, headers):
   mo = re.match(BUCKET_ONLY_PATH, filename)
   if mo is not None:
 
-    return _handle_get_bucket(gcs_stub, mo.group(1), param_dict)
+    if 'location' in param_dict:
+      builder = ET.TreeBuilder()
+      builder.start('LocationConstraint', {})
+      builder.data('US')
+      builder.end('LocationConstraint')
+      root = builder.close()
+      body = ET.tostring(root)
+      response_headers = {'content-length': len(body),
+                          'content-type': 'application/xml'}
+      return _FakeUrlFetchResult(httplib.OK, response_headers, body)
+    elif 'storageClass' in param_dict:
+      builder = ET.TreeBuilder()
+      builder.start('StorageClass', {})
+      builder.data('STANDARD')
+      builder.end('StorageClass')
+      root = builder.close()
+      body = ET.tostring(root)
+      response_headers = {'content-length': len(body),
+                          'content-type': 'application/xml'}
+      return _FakeUrlFetchResult(httplib.OK, response_headers, body)
+    else:
+
+      return _handle_get_bucket(gcs_stub, mo.group(1), param_dict)
   else:
 
     result = _handle_head(gcs_stub, filename)
