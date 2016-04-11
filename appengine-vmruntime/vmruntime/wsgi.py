@@ -50,6 +50,22 @@ env_config = vmconfig.BuildVmAppengineEnvConfig()
 # Ensure API requests include a valid ticket by default.
 vmstub.Register(vmstub.VMStub(env_config.default_ticket))
 
+# Enable Python Cloud Debugger if one is present. The debugger agent
+# communicates with the Cloud Debugger backend.
+#
+# The debugger has no effect on the application until snapshot is
+# requested.
+#
+# For details see: https://github.com/GoogleCloudPlatform/cloud-debug-python
+try:
+  import googleclouddebugger
+  googleclouddebugger.AttachDebugger()
+except ImportError:
+  pass
+except Exception:
+  logging.warn('Exception while initializing the Cloud Debugger. Debugging '
+               'will not be available.', exc_info=True)
+
 # Take an immutable snapshot of env data from env_config. This is added to the
 # environment in `reset_environment_middleware` in a particular order to ensure
 # that it cannot be overridden by other steps.
