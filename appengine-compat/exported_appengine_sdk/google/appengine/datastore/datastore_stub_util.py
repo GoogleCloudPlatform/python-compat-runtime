@@ -2496,6 +2496,8 @@ class BaseDatastore(BaseTransactionManager, BaseIndexManager):
     CheckAppId(trusted, calling_app, raw_query.app())
 
 
+
+
     filters, orders = datastore_index.Normalize(raw_query.filter_list(),
                                                 raw_query.order_list(),
                                                 raw_query.property_name_list())
@@ -2504,7 +2506,8 @@ class BaseDatastore(BaseTransactionManager, BaseIndexManager):
     CheckQuery(raw_query, filters, orders, self._MAX_QUERY_COMPONENTS)
     FillUsersInQuery(filters)
 
-    self._CheckHasIndex(raw_query, trusted, calling_app)
+    if self._require_indexes:
+      self._CheckHasIndex(raw_query, trusted, calling_app)
 
 
     index_list = self.__IndexListForQuery(raw_query)
@@ -2826,8 +2829,11 @@ class BaseDatastore(BaseTransactionManager, BaseIndexManager):
       query: the datastore_pb.Query to check
       trusted: True if the calling app is trusted (like dev_admin_console)
       calling_app: app_id of the current running application
+    Raises:
+      apiproxy_errors.ApplicationError: if the query can be satisfied
+      given the existing indexes.
     """
-    if query.kind() in self._pseudo_kinds or not self._require_indexes:
+    if query.kind() in self._pseudo_kinds:
       return
 
     minimal_index = datastore_index.MinimalCompositeIndexForQuery(query,
