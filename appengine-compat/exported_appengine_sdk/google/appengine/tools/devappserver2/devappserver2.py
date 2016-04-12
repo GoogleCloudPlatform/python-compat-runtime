@@ -295,7 +295,7 @@ def create_command_line_parser():
   parser = argparse.ArgumentParser(
       formatter_class=argparse.ArgumentDefaultsHelpFormatter)
   arg_name = 'yaml_path'
-  arg_help = 'Path to a yaml file, or a directory containing yaml files'
+  arg_help = 'Path to one or more app.yaml files'
   if application_configuration.java_supported():
     arg_name = 'yaml_or_war_path'
     arg_help += ', or a directory containing WEB-INF/web.xml'
