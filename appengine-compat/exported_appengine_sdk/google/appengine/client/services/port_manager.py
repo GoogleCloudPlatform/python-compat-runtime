@@ -21,7 +21,7 @@ import re
 
 # These ports are reserved for future usage.
 # Port 10400 reserved for gitkit container.
-RESERVED_INTERNAL_PORTS = range(10400, 10499)
+RESERVED_INTERNAL_PORTS = range(10400, 10500)
 
 # These ports are used by our code or critical system daemons.
 RESERVED_HOST_PORTS = [22,  # SSH
