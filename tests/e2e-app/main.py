@@ -12,15 +12,36 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import sys
+import contextlib
+from cStringIO import StringIO
+
 import webapp2
+import pytest
 
 
-class MainPage(webapp2.RequestHandler):
+@contextlib.contextmanager
+def capture():
+    oldout, olderr = sys.stdout, sys.stderr
+    try:
+        out = StringIO()
+        sys.stdout, sys.stderr = out, out
+        yield out
+    finally:
+        sys.stdout, sys.stderr = oldout, olderr
+
+
+class TestRunnerHandler(webapp2.RequestHandler):
     def get(self):
-        from google.appengine.api import app_identity
-        self.response.write(app_identity.get_application_id())
+        with capture() as outf:
+            result = pytest.main(['tests'])
+
+        self.response.headers['Content-Type'] = 'text/plain'
+        self.response.write(outf.getvalue())
+        if result != 0:
+            self.response.status = 500
 
 
 app = webapp2.WSGIApplication([
-    ('/', MainPage),
+    ('/', TestRunnerHandler),
 ], debug=True)
