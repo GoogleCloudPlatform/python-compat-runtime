@@ -590,7 +590,7 @@ def CheckPropertyValue(name, value, max_length, meaning):
           'Property %s is too long. Maximum length is %d.' % (name, max_length))
     if (meaning not in _BLOB_MEANINGS and
         meaning != entity_pb.Property.BYTESTRING):
-      CheckValidUTF8(value.stringvalue(), 'String property value')
+      CheckValidUTF8(value.stringvalue(), 'String property "%s" value' % name)
 
 
 def CheckTransaction(request_trusted, request_app_id, transaction):
