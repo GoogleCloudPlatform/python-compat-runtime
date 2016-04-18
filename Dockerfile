@@ -7,7 +7,6 @@ COPY appengine-compat /opt/appengine-compat
 COPY appengine-vmruntime /opt/appengine-vmruntime
 
 # Install the compat library and the vmruntime.
-RUN easy_install pip
 RUN pip install --upgrade /opt/appengine-compat /opt/appengine-vmruntime
 
 # Install requirements needed by the default configuration.
