@@ -14,7 +14,7 @@ test-vmruntime:
 
 .PHONY: test-e2e
 test-e2e:
-	$(MAKE) -C tests/e2e-app all
+	$(MAKE) -C tests/e2e all
 
 .PHONY: test
 test: test-vmruntime test-e2e
