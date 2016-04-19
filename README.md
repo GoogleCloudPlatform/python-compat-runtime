@@ -1,16 +1,14 @@
-Google App Engine Managed VMs Python Compat Runtime
+Google App Engine Flexible Environment Python Compat Runtime
 ===================================================
 
-Warning
--------
-The instructions here are for a multi-process version of the Python 2.7 runtime
-**currently in alpha**. To use the stable version of the runtime, follow the
-documentation at https://cloud.google.com/appengine/docs/managed-vms/ instead.
+This repository contains the source code used for the [App Engine Flexible Environment](https://cloud.google.com/appengine/docs/flexible/) Python Compat runtime.  This runtime provides best effort compatibility with applications written to target the App Engine Standard Environment with Python 2.7. 
+
+This runtime is intended for users migrating applications from App Engine Standard to App Engine Flex. For users building new applications on App Engine with Python, we recommend following the [getting started guide](https://cloud.google.com/python).  
+
 
 Using this runtime
 ------------------
-
-Please refer to [the docs](https://cloud.google.com/appengine/docs/managed-vms/python/migrating-an-existing-app) on how to use and customize this runtime.
+Please refer to [the docs](https://cloud.google.com/appengine/docs/flexible/python/migrating-an-existing-app) on how to use and customize this runtime.
 
 Gunicorn configuration
 ----------------------
