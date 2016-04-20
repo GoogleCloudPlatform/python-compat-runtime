@@ -12,12 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import sys
-import contextlib
 from cStringIO import StringIO
+from gcloud import storage
 
-import webapp2
+import contextlib
 import pytest
+import os
+import shutil
+import sys
+import webapp2
+
+# Configure this environment variable via app.yaml.in.
+# Cut off the 'gs://' portion of the name.
+GCLOUD_STORAGE_BUCKET = os.environ['CLOUD_STORAGE_BUCKET'][5:]
 
 
 @contextlib.contextmanager
@@ -32,7 +39,20 @@ def capture():
 
 
 class TestRunnerHandler(webapp2.RequestHandler):
+
     def get(self):
+        # Set up test directory.
+        if os.path.isdir('tests'):
+          shutil.rmtree('tests')
+        os.mkdir('tests')
+
+        # Refresh the tests from cloud storage.
+        bucket = storage.Client().get_bucket(GCLOUD_STORAGE_BUCKET)
+        blob_iter = bucket.list_blobs()
+        for blob in blob_iter:
+          blob.download_to_filename('tests/%s' % blob.name)
+
+        # Run the tests.
         with capture() as outf:
             result = pytest.main(['tests'])
 

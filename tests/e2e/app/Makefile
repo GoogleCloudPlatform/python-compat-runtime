@@ -4,7 +4,7 @@ include ../../../common.mk
 all: deploy
 
 .PHONY: deploy
-deploy: build-base generate-dockerfile copy-tests
+deploy: build-base generate-dockerfile generate-app-yaml
 	gcloud preview app deploy -q
 
 .PHONY: build-base
@@ -15,6 +15,6 @@ build-base:
 generate-dockerfile:
 	sed "s#\$$DOCKER_IMAGE_NAME#$(DOCKER_IMAGE_NAME)#g" Dockerfile.in > Dockerfile
 
-.PHONY: copy-tests
-copy-tests:
-	cp -r ../tests .
+.PHONY: generate-app-yaml
+generate-app-yaml:
+	sed "s#\$$CLOUD_STORAGE_BUCKET#$(BUCKET)#g" app.yaml.in > app.yaml

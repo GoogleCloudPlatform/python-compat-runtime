@@ -52,3 +52,8 @@ docs/_build/
 
 # PyBuilder
 target/
+
+# Generated test files
+tests/e2e/app/app.yaml
+tests/e2e/app/Dockerfile
+

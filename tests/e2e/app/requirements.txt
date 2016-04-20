@@ -1,3 +1,4 @@
+gcloud
 pytest
 webapp2
 webob
