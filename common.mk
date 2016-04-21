@@ -4,3 +4,4 @@ ifeq ($(origin DOCKER_IMAGE_NAME), undefined)
 	GCLOUD_PROJECT:=$(shell gcloud config list project --format="value(core.project)")
 	DOCKER_IMAGE_NAME:=gcr.io/$(GCLOUD_PROJECT)/google-python-compat
 endif
+BUCKET=gs://${GCLOUD_PROJECT}-python-compat-e2e-tests

@@ -4,3 +4,6 @@ vm: true
 handlers:
 - url: .*
   script: main.app
+
+env_variables:
+  CLOUD_STORAGE_BUCKET: $CLOUD_STORAGE_BUCKET
