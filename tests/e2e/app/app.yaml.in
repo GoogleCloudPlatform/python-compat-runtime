@@ -5,5 +5,8 @@ handlers:
 - url: .*
   script: main.app
 
+manual_scaling:
+  instances: 1
+
 env_variables:
   CLOUD_STORAGE_BUCKET: $CLOUD_STORAGE_BUCKET

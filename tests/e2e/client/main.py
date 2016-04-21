@@ -5,7 +5,8 @@ import requests
 
 
 def main(url):
-    response = requests.get(url)
+    requests.get(url + 'refresh')
+    response = requests.get(url + 'test')
 
     print(response.text)
 
