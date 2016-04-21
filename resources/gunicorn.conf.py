@@ -17,3 +17,6 @@ threads = 25
 
 # Settings specific to the Managed VMs production environment such as "bind"
 # and "logfile" are set in the Dockerfile's ENTRYPOINT directive.
+
+# Store the process ID of gunicorn.  Used for testing.
+pidfile = 'gunicorn_pid.txt'

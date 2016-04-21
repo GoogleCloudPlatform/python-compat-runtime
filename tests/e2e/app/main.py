@@ -19,6 +19,7 @@ import contextlib
 import pytest
 import os
 import shutil
+import signal
 import sys
 import webapp2
 
@@ -37,21 +38,34 @@ def capture():
     finally:
         sys.stdout, sys.stderr = oldout, olderr
 
+class RefreshHandler(webapp2.RequestHandler):
+
+  def get(self):
+      # Set up test directory.
+      if os.path.isdir('tests'):
+          shutil.rmtree('tests')
+      os.mkdir('tests')
+
+      # Refresh the tests from cloud storage.
+      bucket = storage.Client().get_bucket(GCLOUD_STORAGE_BUCKET)
+      blob_iter = bucket.list_blobs()
+      for blob in blob_iter:
+          blob.download_to_filename('tests/%s' % blob.name)
+
+      # Tell Gunicorn to refresh this process so that our modules
+      # will be refreshed with the new files.  The gunicorn process
+      # is stored in gunicorn_pid.txt.
+      with open('gunicorn_pid.txt') as f:
+          for line in f:
+              pid = int(line)
+
+      os.kill(pid, signal.SIGHUP)
+
+
 
 class TestRunnerHandler(webapp2.RequestHandler):
 
     def get(self):
-        # Set up test directory.
-        if os.path.isdir('tests'):
-          shutil.rmtree('tests')
-        os.mkdir('tests')
-
-        # Refresh the tests from cloud storage.
-        bucket = storage.Client().get_bucket(GCLOUD_STORAGE_BUCKET)
-        blob_iter = bucket.list_blobs()
-        for blob in blob_iter:
-          blob.download_to_filename('tests/%s' % blob.name)
-
         # Run the tests.
         with capture() as outf:
             result = pytest.main(['tests'])
@@ -62,6 +76,9 @@ class TestRunnerHandler(webapp2.RequestHandler):
             self.response.status = 500
 
 
+
+
 app = webapp2.WSGIApplication([
-    ('/', TestRunnerHandler),
+    ('/refresh', RefreshHandler),
+    ('/test', TestRunnerHandler),
 ], debug=True)
