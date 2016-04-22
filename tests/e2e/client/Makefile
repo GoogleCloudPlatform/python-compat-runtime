@@ -7,7 +7,7 @@ all: upload test
 test:
 	virtualenv env
 	env/bin/pip install -r requirements.txt
-	env/bin/python main.py https://${GCLOUD_PROJECT}.appspot.com/
+	env/bin/python main.py http://${GCLOUD_PROJECT}.appspot.com/
 
 .PHONY: upload
 upload:
