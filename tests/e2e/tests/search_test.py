@@ -1,10 +1,6 @@
-"""Tests for the search API."""
-
+from google.appengine.api import search
 import pytest
 import time
-
-from google.appengine.api import search
-
 
 @pytest.fixture
 def index():

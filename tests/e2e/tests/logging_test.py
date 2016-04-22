@@ -1,13 +1,9 @@
-"""E2E test for logging API.
-
-Currently DOES NOT work.
-"""
+from google.appengine.api.logservice import logservice
 import json
 import logging
 import os
 import pytest
 
-from google.appengine.api.logservice import logservice
 
 
 @pytest.fixture

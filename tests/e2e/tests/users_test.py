@@ -1,12 +1,7 @@
-"""E2E test for Users API."""
+from google.appengine.api import users
 import pytest
 
-from google.appengine.api import users
+user = users.get_current_user()
 
-
-@pytest.fixture
-def user():
-  return users.get_current_user()
-
-def test_current_user(user):
+def test_current_user():
   assert user == None
