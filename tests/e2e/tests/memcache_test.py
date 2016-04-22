@@ -1,7 +1,4 @@
-"""Tests for the memcache API.
-
-This test module is incomplete but is a starter.
-"""
+"""Tests for the memcache API."""
 
 import pytest
 import time

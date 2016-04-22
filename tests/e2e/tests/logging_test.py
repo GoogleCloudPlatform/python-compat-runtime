@@ -14,13 +14,10 @@ from google.appengine.api.logservice import logservice
 def request_id():
   return os.environ.get('REQUEST_LOG_ID')
 
-def test_log(request_id):
-  logging.info('TESTING')
-
-
-# This test must happen after test_log.
+@pytest.mark.xfail
 def do_not_run_test_logservice_fetch(request_id):
   """This test fails at logservice.fetch"""
+  logging.info('TESTING')
   found_log = False
   for req_log in logservice.fetch(
       request_ids=[request_id],

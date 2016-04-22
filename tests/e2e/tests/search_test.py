@@ -1,7 +1,4 @@
-"""Tests for the search API.
-
-This test module is incomplete but is a starter.
-"""
+"""Tests for the search API."""
 
 import pytest
 import time
