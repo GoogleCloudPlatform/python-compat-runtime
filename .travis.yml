@@ -9,3 +9,4 @@ before_script:
 script:
 - make test-vmruntime
 - make build
+- make -C tests/e2e/client lint

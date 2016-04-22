@@ -1,22 +1,36 @@
-import os
-import pytest
+# Copyright 2016 Google Inc. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 from google.appengine.ext.ndb import model, tasklets
+import pytest
+
 
 class Employee(model.Model):
-  name = model.StringProperty()
-  age = model.IntegerProperty()
+    name = model.StringProperty()
+    age = model.IntegerProperty()
 
 
 @pytest.fixture
 def ctx():
-  ctx = tasklets.get_context()
-  ctx.set_cache_policy(False)
-  ctx.set_memcache_policy(False)
-  return ctx
+    ctx = tasklets.get_context()
+    ctx.set_cache_policy(False)
+    ctx.set_memcache_policy(False)
+    return ctx
+
 
 def test_basics(ctx):
-  worker = Employee(name='Alice', age=55)
-  key = worker.put()
-  same_worker = key.get()
-  assert worker == same_worker
+    worker = Employee(name='Alice', age=55)
+    key = worker.put()
+    same_worker = key.get()
+    assert worker == same_worker
