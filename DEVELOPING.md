@@ -48,8 +48,4 @@ This will build the base image and then deploy the application. Once it's done d
 
 ## Developing
 
-When developing, it's best to use the `tests-e2e` app as a guide:
-
-* Build a custom version of the base image.
-* Write an app with a custom dockerfile that extends from your custom base image.
-* Deploy the app.
+When developing, refer to the developing app under [`/develop`](develop).
