@@ -1,0 +1,9 @@
+runtime: custom
+vm: true
+
+handlers:
+- url: .*
+  script: main.app
+
+manual_scaling:
+  instances: 1
