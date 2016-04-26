@@ -253,9 +253,9 @@ def create_upload_url(success_path,
     max_bytes_total: The maximum size in bytes that the aggregate sizes of all
       of the blobs in the upload can be or None for no maximum size.
     rpc: Optional UserRPC object.
-    gs_bucket_name: The Google Storage bucket name that the blobs should be
-      uploaded to. The application's service account must have the correct
-      permissions to write to this bucket. The bucket name may be of the foramt
+    gs_bucket_name: The Google Cloud Storage bucket name that the blobs should
+      be uploaded to. The application's service account must have the correct
+      permissions to write to this bucket. The bucket name may be of the format
       'bucket/path/', in which case the included path will be prepended to the
       uploaded object name.
 
@@ -290,9 +290,9 @@ def create_upload_url_async(success_path,
     max_bytes_total: The maximum size in bytes that the aggregate sizes of all
       of the blobs in the upload can be or None for no maximum size.
     rpc: Optional UserRPC object.
-    gs_bucket_name: The Google Storage bucket name that the blobs should be
-      uploaded to. The application's service account must have the correct
-      permissions to write to this bucket. The bucket name may be of the foramt
+    gs_bucket_name: The Google Cloud Storage bucket name that the blobs should
+      be uploaded to. The application's service account must have the correct
+      permissions to write to this bucket. The bucket name may be of the format
       'bucket/path/', in which case the included path will be prepended to the
       uploaded object name.
 

@@ -17,7 +17,7 @@ from setuptools import setup
 
 setup(
     name='appengine-vm-runtime',
-    version='0.63',
+    version='0.64',
     description='Python Managed VMs Runtime',
     url='https://github.com/GoogleCloudPlatform/appengine-python-vm-runtime',
     author='Google',
