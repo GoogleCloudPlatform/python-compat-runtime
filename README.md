@@ -1,7 +1,7 @@
 Google App Engine Flexible Environment Python Compat Runtime
 ===================================================
 
-This repository contains the source code used for the [App Engine Flexible Environment](https://cloud.google.com/appengine/docs/flexible/) Python Compat runtime.  This runtime provides best effort compatibility with applications written to target the App Engine Standard Environment with Python 2.7. 
+This repository contains the source code used for the [App Engine Flexible Environment](https://cloud.google.com/appengine/docs/flexible/) Python Compat runtime.  This runtime provides best effort compatibility with applications written to target the App Engine Standard Environment with Python 2.7. This runtime is currently in *alpha*.
 
 This runtime is intended for users migrating applications from App Engine Standard to App Engine Flex. For users building new applications on App Engine with Python, we recommend following the [getting started guide](https://cloud.google.com/python).  
 
@@ -22,7 +22,7 @@ application's root directory, which will override the default
 
 Caveats
 -------
-As this is a alpha product, some functionality has not yet been implemented.
+This runtime is currently an alpha.  As this is a alpha product, some functionality has not yet been implemented, and a few things may change.  
 
 Notably:
 * Handlers in `app.yaml `that are flagged as `login: required` or `login: admin` are not supported. Attemping to access these handlers will result in a 404 as the handlers will not be registered.
