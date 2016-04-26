@@ -28,10 +28,6 @@ REQUEST_ID_KEY = 'HTTP_X_CLOUD_TRACE_CONTEXT'
 _callback_storage = {}
 
 
-class OnlyOneCallbackPerRequestException(Exception):
-  """Raised when a second callback is set in a single request."""
-
-
 def SetRequestEndCallback(callback):
   """Stores a callback by the request ID.
 
@@ -39,9 +35,6 @@ def SetRequestEndCallback(callback):
 
   Args:
     callback: A zero-argument callable whose return value is unused.
-
-  Raises:
-    OnlyOneCallbackPerRequestException: Raised on registering second callback.
   """
   key = _GetRequestId()
 
@@ -49,23 +42,17 @@ def SetRequestEndCallback(callback):
 
 
   if key:
-
-
-
-
-
-    if key not in _callback_storage:
-      _callback_storage[key] = callback
-    else:
-      raise OnlyOneCallbackPerRequestException()
+    _callback_storage.setdefault(key, []).append(callback)
 
 
 def InvokeCallbacks():
-  """Invokes the callback associated with the current request ID."""
+  """Invokes the callbacks associated with the current request ID."""
 
   key = _GetRequestId()
   if key in _callback_storage:
-    _callback_storage[key]()
+    for callback in _callback_storage[key]:
+      callback()
+
     del _callback_storage[key]
 
 
