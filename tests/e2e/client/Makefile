@@ -11,7 +11,7 @@ test: virtualenv
 .PHONY: upload
 upload:
 	-gsutil mb ${BUCKET} &> /dev/null
-	gsutil rm ${BUCKET}/**
+	-gsutil rm ${BUCKET}/**
 	gsutil cp ../tests/* ${BUCKET} &> /dev/null
 
 .PHONY: virtualenv
