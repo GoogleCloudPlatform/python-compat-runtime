@@ -10,7 +10,7 @@ test: virtualenv
 
 .PHONY: upload
 upload:
-	-e gsutil mb ${BUCKET} &> /dev/null
+	-gsutil mb ${BUCKET} &> /dev/null
 	gsutil rm ${BUCKET}/**
 	gsutil cp ../tests/* ${BUCKET} &> /dev/null
 
