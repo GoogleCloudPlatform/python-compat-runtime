@@ -11,9 +11,42 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
+
+import os
+
 from setuptools import find_packages
 from setuptools import setup
+
+
+NAMESPACE_DECLARATION = """
+try:
+  __import__('pkg_resources').declare_namespace(__name__)
+except ImportError:
+  __path__ = __import__('pkgutil').extend_path(__path__, __name__)
+"""
+
+
+def patch_namespace_package(file):
+    with open(file, 'r') as f:
+        contents = f.read()
+
+    if NAMESPACE_DECLARATION in contents:
+        return
+
+    with open(file, 'a') as f:
+        f.write(NAMESPACE_DECLARATION)
+
+# WARNING: GIANT FLAMING LAVA PIT HACK.
+# Patch the App Engine SDK's google/__init__.py to force it to be a namespace
+# package. Without this, none of the other google namespace packages will work
+# (e.g. protobuf).
+# To be removed with github issue #91.
+patch_namespace_package(os.path.join(
+    os.path.dirname(__file__),
+    'exported_appengine_sdk',
+    'google',
+    '__init__.py'))
+
 
 setup(
     name='appengine-compat',
@@ -32,7 +65,7 @@ setup(
     package_dir={'': 'exported_appengine_sdk'},
     include_package_data=True,
     packages=find_packages('exported_appengine_sdk', exclude=['lib.*']),
-    # namespace_packages=['google'],  # This skips google/__init__.py
+    namespace_packages=['google'],
     install_requires=[
         'requests>=2.5.0',
         'webapp2>=2.5.2',

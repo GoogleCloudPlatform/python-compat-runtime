@@ -6,10 +6,16 @@ COPY appengine-compat /opt/appengine-compat
 # Add the vmruntime
 COPY appengine-vmruntime /opt/appengine-vmruntime
 
+# Create a virtualenv. This virtualenv will contain the compat library,
+# vmruntime, and the user's app's dependencies.
+RUN virtualenv /env
+ENV VIRTUAL_ENV /env
+ENV PATH /env/bin:$PATH
+
 # Install the compat library and the vmruntime.
 RUN pip install --upgrade /opt/appengine-compat /opt/appengine-vmruntime
 
-# Install requirements needed by the default configuration.
+# Install the default WSGI server and dependencies.
 COPY resources/requirements.txt /opt/requirements.txt
 RUN pip install --upgrade -r /opt/requirements.txt
 
@@ -28,8 +34,8 @@ EXPOSE 8080
 # Configure the entrypoint with Managed VMs-essential configuration like "bind",
 # but leave the rest up to the config file.
 ENTRYPOINT [\
-    "/usr/bin/env",\
-    "gunicorn", "-b", ":8080",\
+    "/env/bin/gunicorn",\
+    "-b", ":8080",\
     "vmruntime.wsgi:meta_app",\
     "--log-file=-",\
     "-c", "gunicorn.conf.py"]
