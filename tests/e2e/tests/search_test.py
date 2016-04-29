@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import time
+
 from google.appengine.api import search
 import pytest
 
@@ -27,6 +29,10 @@ def index():
                 value='hello world'),
         ])
     index.put(doc)
+
+    # Search is eventually consistent, so sleep for 2 seconds before continuing
+    time.sleep(2)
+
     return index
 
 
