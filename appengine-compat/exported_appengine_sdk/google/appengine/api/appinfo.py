@@ -46,14 +46,12 @@ import wsgiref.util
 
 
 if os.environ.get('APPENGINE_RUNTIME') == 'python27':
-  from google.appengine.api import pagespeedinfo
   from google.appengine.api import validation
   from google.appengine.api import yaml_builder
   from google.appengine.api import yaml_listener
   from google.appengine.api import yaml_object
 else:
 
-  from google.appengine.api import pagespeedinfo
   from google.appengine.api import validation
   from google.appengine.api import yaml_builder
   from google.appengine.api import yaml_listener
@@ -272,7 +270,6 @@ DATASTORE_AUTO_ID_POLICY = 'auto_id_policy'
 API_CONFIG = 'api_config'
 CODE_LOCK = 'code_lock'
 ENV_VARIABLES = 'env_variables'
-PAGESPEED = 'pagespeed'
 
 SOURCE_REPO_RE_STRING = r'^[a-z][a-z0-9\-\+\.]*:[^#]*$'
 SOURCE_REVISION_RE_STRING = r'^[0-9a-fA-F]+$'
@@ -1874,7 +1871,6 @@ class AppInfoExternal(validation.Validated):
       API_CONFIG: validation.Optional(ApiConfigHandler),
       CODE_LOCK: validation.Optional(bool),
       ENV_VARIABLES: validation.Optional(EnvironmentVariables),
-      PAGESPEED: validation.Optional(pagespeedinfo.PagespeedEntry),
   }
 
   def CheckInitialized(self):

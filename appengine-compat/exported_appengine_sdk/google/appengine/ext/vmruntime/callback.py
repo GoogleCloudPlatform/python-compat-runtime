@@ -36,27 +36,27 @@ def SetRequestEndCallback(callback):
   Args:
     callback: A zero-argument callable whose return value is unused.
   """
-  key = _GetRequestId()
+  req_id = GetRequestId()
 
 
 
 
-  if key:
-    _callback_storage.setdefault(key, []).append(callback)
+  if req_id:
+    _callback_storage.setdefault(req_id, []).append(callback)
 
 
 def InvokeCallbacks():
   """Invokes the callbacks associated with the current request ID."""
 
-  key = _GetRequestId()
-  if key in _callback_storage:
-    for callback in _callback_storage[key]:
-      callback()
+  req_id = GetRequestId()
+  if req_id in _callback_storage:
+    for callback in _callback_storage[req_id]:
+      callback(req_id)
 
-    del _callback_storage[key]
+    del _callback_storage[req_id]
 
 
-def _GetRequestId():
+def GetRequestId():
   """Returns a unique ID using the cloud trace ID."""
   if REQUEST_ID_KEY in os.environ:
     return os.environ[REQUEST_ID_KEY]

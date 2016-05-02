@@ -178,7 +178,7 @@ class _State(utils.threading_local):
       pending.append(line)
     return '\n'.join(pending)
 
-  def reset(self):
+  def reset(self, unused_req_id):
     self.current_context = None
     ev = eventloop.get_event_loop()
     ev.clear()
