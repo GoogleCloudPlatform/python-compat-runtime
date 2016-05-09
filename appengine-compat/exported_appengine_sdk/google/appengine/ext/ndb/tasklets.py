@@ -132,16 +132,21 @@ class _State(utils.threading_local):
     self.all_pending = set()
 
   def set_context(self, ctx):
-    if _request_callback and _CALLBACK_KEY not in os.environ:
-      _request_callback.SetRequestEndCallback(self.reset)
-      os.environ[_CALLBACK_KEY] = '1'
     self.current_context = ctx
 
   def add_generator(self, gen):
+    if _request_callback and _CALLBACK_KEY not in os.environ:
+      _request_callback.SetRequestEndCallback(self.reset)
+      os.environ[_CALLBACK_KEY] = '1'
+
     _logging_debug('all_generators: add %s', gen)
     self.all_generators.add(gen)
 
   def add_pending(self, fut):
+    if _request_callback and _CALLBACK_KEY not in os.environ:
+      _request_callback.SetRequestEndCallback(self.reset)
+      os.environ[_CALLBACK_KEY] = '1'
+
     _logging_debug('all_pending: add %s', fut)
     self.all_pending.add(fut)
 

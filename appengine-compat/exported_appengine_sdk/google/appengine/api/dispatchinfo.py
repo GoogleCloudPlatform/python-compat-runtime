@@ -69,6 +69,7 @@ APPLICATION = 'application'
 DISPATCH = 'dispatch'
 URL = 'url'
 MODULE = 'module'
+SERVICE = 'service'
 
 
 class Error(Exception):
@@ -168,7 +169,8 @@ class DispatchEntry(validation.Validated):
   """A Dispatch entry describes a mapping from a URL pattern to a module."""
   ATTRIBUTES = {
       URL: DispatchEntryURLValidator(),
-      MODULE: validation.Regex(appinfo.MODULE_ID_RE_STRING),
+      MODULE: validation.Optional(appinfo.MODULE_ID_RE_STRING),
+      SERVICE: validation.Optional(appinfo.MODULE_ID_RE_STRING)
   }
 
 
@@ -195,7 +197,7 @@ def LoadSingleDispatch(dispatch_info, open_fn=None):
 
   Raises:
     MalformedDispatchConfigurationError: The yaml file contains multiple
-      dispatch sections.
+      dispatch sections or is missing a required value.
     yaml_errors.EventError: An error occured while parsing the yaml file.
   """
   builder = yaml_object.ObjectBuilder(DispatchInfoExternal)
@@ -209,4 +211,19 @@ def LoadSingleDispatch(dispatch_info, open_fn=None):
   if len(parsed_yaml) > 1:
     raise MalformedDispatchConfigurationError('Multiple dispatch: sections '
                                               'in configuration.')
-  return parsed_yaml[0]
+
+
+
+  dispatch_info_external = parsed_yaml[0]
+  for dispatch in getattr(dispatch_info_external, DISPATCH) or []:
+    if dispatch.module and dispatch.service:
+      raise MalformedDispatchConfigurationError(
+          'Both module: and service: in dispatch entry. Please use only one.')
+    if not (dispatch.module or dispatch.service):
+      raise MalformedDispatchConfigurationError(
+          "Missing required value 'service'.")
+
+
+    dispatch.module = dispatch.module or dispatch.service
+    dispatch.service = None
+  return dispatch_info_external

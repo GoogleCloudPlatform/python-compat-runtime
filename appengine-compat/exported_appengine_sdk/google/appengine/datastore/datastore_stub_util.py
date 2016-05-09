@@ -1281,6 +1281,17 @@ class ListCursor(BaseCursor):
           new_results.append(result)
       results = new_results
 
+    if query.shallow():
+      key_path_length = 1
+      if query.has_ancestor():
+        key_path_length += query.ancestor().path().element_size()
+
+      new_results = []
+      for result in results:
+        if result.entity.key().path().element_size() == key_path_length:
+          new_results.append(result)
+      results = new_results
+
     if (query.has_compiled_cursor()
         and query.compiled_cursor().has_postfix_position()):
       start_cursor = self._DecodeCompiledCursor(query.compiled_cursor())
@@ -3820,7 +3831,7 @@ class StubQueryConverter(datastore_pbs._QueryConverter):
 
 
     num_v1_filters = len(v3_query.filter_list())
-    if v3_query.has_ancestor():
+    if v3_query.has_ancestor() or v3_query.shallow():
       num_v1_filters += 1
 
     if num_v1_filters == 1:
@@ -3830,7 +3841,7 @@ class StubQueryConverter(datastore_pbs._QueryConverter):
           googledatastore.CompositeFilter.AND)
       get_property_filter = self.__add_property_filter_from_V1
 
-    if v3_query.has_ancestor():
+    if v3_query.has_ancestor() or v3_query.shallow():
       self._v3_query_to_v1_ancestor_filter(v3_query,
                                            get_property_filter(v1_query))
     for v3_filter in v3_query.filter_list():
@@ -3861,19 +3872,30 @@ class StubQueryConverter(datastore_pbs._QueryConverter):
     if filter_type == 'property_filter':
       v1_property_filter = v1_filter.property_filter
       v1_property_name = v1_property_filter.property.name
-      if (v1_property_filter.op
-          == googledatastore.PropertyFilter.HAS_ANCESTOR):
-        datastore_pbs.check_conversion(
-            v1_property_filter.value.HasField('key_value'),
-            'HAS_ANCESTOR requires a reference value')
+      if (v1_property_filter.op == googledatastore.PropertyFilter.HAS_PARENT or
+          v1_property_filter.op == googledatastore.PropertyFilter.HAS_ANCESTOR):
+        if v1_property_filter.op == googledatastore.PropertyFilter.HAS_PARENT:
+          datastore_pbs.check_conversion(
+              v1_property_filter.value.HasField('key_value') or
+              v1_property_filter.value.HasField('null_value'),
+              'HAS_PARENT requires a key value or null')
+        else:
+          datastore_pbs.check_conversion(
+              v1_property_filter.value.HasField('key_value'),
+              'HAS_ANCESTOR requires a key value')
         datastore_pbs.check_conversion((v1_property_name
                                         == datastore_pbs.PROPERTY_NAME_KEY),
                                        'unsupported property')
-        datastore_pbs.check_conversion(not v3_query.has_ancestor(),
-                                       'duplicate ancestor constraint')
-        self._entity_converter.v1_to_v3_reference(
-            v1_property_filter.value.key_value,
-            v3_query.mutable_ancestor())
+        datastore_pbs.check_conversion(not v3_query.has_ancestor() and
+                                       not v3_query.shallow(),
+                                       'duplicate ancestor or parent '
+                                       'constraint')
+        if v1_property_filter.value.HasField('key_value'):
+          self._entity_converter.v1_to_v3_reference(
+              v1_property_filter.value.key_value,
+              v3_query.mutable_ancestor())
+        if v1_property_filter.op == googledatastore.PropertyFilter.HAS_PARENT:
+          v3_query.set_shallow(True)
       else:
         v3_filter = v3_query.add_filter()
         property_name = v1_property_name

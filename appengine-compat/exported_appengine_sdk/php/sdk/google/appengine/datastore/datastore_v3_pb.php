@@ -1156,6 +1156,23 @@ namespace google\appengine_datastore_v3 {
     public function hasDatabaseId() {
       return isset($this->database_id);
     }
+    public function getShallow() {
+      if (!isset($this->shallow)) {
+        return false;
+      }
+      return $this->shallow;
+    }
+    public function setShallow($val) {
+      $this->shallow = $val;
+      return $this;
+    }
+    public function clearShallow() {
+      unset($this->shallow);
+      return $this;
+    }
+    public function hasShallow() {
+      return isset($this->shallow);
+    }
     public function clear() {
       $this->clearApp();
       $this->clearKind();
@@ -1184,6 +1201,7 @@ namespace google\appengine_datastore_v3 {
       $this->clearSafeReplicaName();
       $this->clearPersistOffset();
       $this->clearDatabaseId();
+      $this->clearShallow();
     }
     public function byteSizePartial() {
       $res = 0;
@@ -1294,6 +1312,9 @@ namespace google\appengine_datastore_v3 {
       if (isset($this->database_id)) {
         $res += 2;
         $res += $this->lengthString(strlen($this->database_id));
+      }
+      if (isset($this->shallow)) {
+        $res += 3;
       }
       return $res;
     }
@@ -1419,6 +1440,10 @@ namespace google\appengine_datastore_v3 {
         $out->putVarInt32(338);
         $out->putPrefixedString($this->database_id);
       }
+      if (isset($this->shallow)) {
+        $out->putVarInt32(344);
+        $out->putBoolean($this->shallow);
+      }
     }
     public function tryMerge($d) {
       while($d->avail() > 0) {
@@ -1536,6 +1561,9 @@ namespace google\appengine_datastore_v3 {
             $this->setDatabaseId(substr($d->buffer(), $d->pos(), $length));
             $d->skip($length);
             break;
+          case 344:
+            $this->setShallow($d->getBoolean());
+            break;
           case 0:
             throw new \google\net\ProtocolBufferDecodeError();
             break;
@@ -1644,6 +1672,9 @@ namespace google\appengine_datastore_v3 {
       if ($x->hasDatabaseId()) {
         $this->setDatabaseId($x->getDatabaseId());
       }
+      if ($x->hasShallow()) {
+        $this->setShallow($x->getShallow());
+      }
     }
     public function equals($x) {
       if ($x === $this) { return true; }
@@ -1713,6 +1744,8 @@ namespace google\appengine_datastore_v3 {
       if (isset($this->persist_offset) && $this->persist_offset !== $x->persist_offset) return false;
       if (isset($this->database_id) !== isset($x->database_id)) return false;
       if (isset($this->database_id) && $this->database_id !== $x->database_id) return false;
+      if (isset($this->shallow) !== isset($x->shallow)) return false;
+      if (isset($this->shallow) && $this->shallow !== $x->shallow) return false;
       return true;
     }
     public function shortDebugString($prefix = "") {
@@ -1797,6 +1830,9 @@ namespace google\appengine_datastore_v3 {
       }
       if (isset($this->database_id)) {
         $res .= $prefix . "database_id: " . $this->debugFormatString($this->database_id) . "\n";
+      }
+      if (isset($this->shallow)) {
+        $res .= $prefix . "shallow: " . $this->debugFormatBool($this->shallow) . "\n";
       }
       return $res;
     }
@@ -3192,6 +3228,23 @@ namespace google\appengine_datastore_v3 {
     public function hasPlanLabel() {
       return isset($this->plan_label);
     }
+    public function getKeyPathLength() {
+      if (!isset($this->key_path_length)) {
+        return 0;
+      }
+      return $this->key_path_length;
+    }
+    public function setKeyPathLength($val) {
+      $this->key_path_length = $val;
+      return $this;
+    }
+    public function clearKeyPathLength() {
+      unset($this->key_path_length);
+      return $this;
+    }
+    public function hasKeyPathLength() {
+      return isset($this->key_path_length);
+    }
     public function clear() {
       $this->clearPrimaryScan();
       $this->clearMergeJoinScan();
@@ -3203,6 +3256,7 @@ namespace google\appengine_datastore_v3 {
       $this->clearPropertyName();
       $this->clearDistinctInfixSize();
       $this->clearPlanLabel();
+      $this->clearKeyPathLength();
     }
     public function byteSizePartial() {
       $res = 0;
@@ -3246,6 +3300,10 @@ namespace google\appengine_datastore_v3 {
       if (isset($this->plan_label)) {
         $res += 2;
         $res += $this->lengthString(strlen($this->plan_label));
+      }
+      if (isset($this->key_path_length)) {
+        $res += 2;
+        $res += $this->lengthVarInt64($this->key_path_length);
       }
       return $res;
     }
@@ -3296,6 +3354,10 @@ namespace google\appengine_datastore_v3 {
         $out->putVarInt32(210);
         $out->putPrefixedString($this->plan_label);
       }
+      if (isset($this->key_path_length)) {
+        $out->putVarInt32(216);
+        $out->putVarInt32($this->key_path_length);
+      }
     }
     public function tryMerge($d) {
       while($d->avail() > 0) {
@@ -3337,6 +3399,9 @@ namespace google\appengine_datastore_v3 {
             $length = $d->getVarInt32();
             $this->setPlanLabel(substr($d->buffer(), $d->pos(), $length));
             $d->skip($length);
+            break;
+          case 216:
+            $this->setKeyPathLength($d->getVarInt32());
             break;
           case 0:
             throw new \google\net\ProtocolBufferDecodeError();
@@ -3388,6 +3453,9 @@ namespace google\appengine_datastore_v3 {
       if ($x->hasPlanLabel()) {
         $this->setPlanLabel($x->getPlanLabel());
       }
+      if ($x->hasKeyPathLength()) {
+        $this->setKeyPathLength($x->getKeyPathLength());
+      }
     }
     public function equals($x) {
       if ($x === $this) { return true; }
@@ -3415,6 +3483,8 @@ namespace google\appengine_datastore_v3 {
       if (isset($this->distinct_infix_size) && !$this->integerEquals($this->distinct_infix_size, $x->distinct_infix_size)) return false;
       if (isset($this->plan_label) !== isset($x->plan_label)) return false;
       if (isset($this->plan_label) && $this->plan_label !== $x->plan_label) return false;
+      if (isset($this->key_path_length) !== isset($x->key_path_length)) return false;
+      if (isset($this->key_path_length) && !$this->integerEquals($this->key_path_length, $x->key_path_length)) return false;
       return true;
     }
     public function shortDebugString($prefix = "") {
@@ -3448,6 +3518,9 @@ namespace google\appengine_datastore_v3 {
       }
       if (isset($this->plan_label)) {
         $res .= $prefix . "plan_label: " . $this->debugFormatString($this->plan_label) . "\n";
+      }
+      if (isset($this->key_path_length)) {
+        $res .= $prefix . "key_path_length: " . $this->debugFormatInt32($this->key_path_length) . "\n";
       }
       return $res;
     }

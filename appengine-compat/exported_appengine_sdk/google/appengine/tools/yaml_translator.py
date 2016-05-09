@@ -208,7 +208,7 @@ class AppYamlTranslator(object):
   def TranslateBetaSettings(self):
     """Translates Beta settings in appengine-web.xml to yaml."""
     if ((not self.app_engine_web_xml.vm) and
-        (self.app_engine_web_xml.env != '2')):
+        (self.app_engine_web_xml.env not in ['flex', 'flexible'])):
       return []
 
     settings = self.app_engine_web_xml.beta_settings or {}
@@ -228,7 +228,7 @@ class AppYamlTranslator(object):
   def TranslateVmSettings(self):
     """Translates VM settings in appengine-web.xml to yaml."""
     if ((not self.app_engine_web_xml.vm) and
-        (self.app_engine_web_xml.env != '2')):
+        (self.app_engine_web_xml.env not in ['flex', 'flexible'])):
       return []
 
     settings = self.app_engine_web_xml.vm_settings or {}

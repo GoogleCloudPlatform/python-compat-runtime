@@ -825,7 +825,7 @@ class _QueryValidator(object):
       ValidationError: if the query is invalid
     """
     _assert_condition((not is_strong_read_consistency
-                       or self._has_ancestor(query.filter)),
+                       or self._has_ancestor_or_parent(query.filter)),
                       'Global queries do not support strong consistency.')
     if query.HasField('filter'):
       self.validate_filter(query.filter)
@@ -911,7 +911,7 @@ class _QueryValidator(object):
     """
     self.__validate_property_reference(property_order.property)
 
-  def _has_ancestor(self, filt):
+  def _has_ancestor_or_parent(self, filt):
     """Determines if a filter includes an ancestor filter.
 
     Args:
@@ -923,13 +923,16 @@ class _QueryValidator(object):
     if filt.HasField('property_filter'):
       op = filt.property_filter.op
       name = filt.property_filter.property.name
-      return (op == googledatastore.PropertyFilter.HAS_ANCESTOR
+      value = filt.property_filter.value
+      return ((op == googledatastore.PropertyFilter.HAS_ANCESTOR or
+               op == googledatastore.PropertyFilter.HAS_PARENT)
+              and value.HasField('key_value')
               and name == datastore_pbs.PROPERTY_NAME_KEY)
     if filt.HasField('composite_filter'):
       if (filt.composite_filter.op
           == googledatastore.CompositeFilter.AND):
         for sub_filter in filt.composite_filter.filters:
-          if self._has_ancestor(sub_filter):
+          if self._has_ancestor_or_parent(sub_filter):
             return True
     return False
 
