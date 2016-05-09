@@ -155,7 +155,7 @@ def sort_os_environ_keys(request):  # pylint: disable=unused-argument
 
 @wrappers.Request.application
 def set_callback(request):
-    def my_callback():
+    def my_callback(unused_req_id=None):
         global callback_called
         callback_called = True
 

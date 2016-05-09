@@ -10,3 +10,6 @@ manual_scaling:
 
 env_variables:
   CLOUD_STORAGE_BUCKET: $CLOUD_STORAGE_BUCKET
+
+beta_settings:
+  image: nextcanary
