@@ -16,13 +16,16 @@
 
 import json
 import logging
+import logging.handlers
 import math
 import os
 
 LOG_PATH_TEMPLATE = '/var/log/app_engine/app.{pid}.json'
+MAX_LOG_BYTES = 128 * 1024 * 1024
+LOG_FILE_COUNT = 3
 
 
-class CloudLoggingHandler(logging.FileHandler):
+class CloudLoggingHandler(logging.handlers.RotatingFileHandler):
     """A handler that emits logs to Cloud Logging.
 
     Writes to the Cloud Logging directory, wrapped in JSON and with appropriate
@@ -46,7 +49,9 @@ class CloudLoggingHandler(logging.FileHandler):
         # same file simultaneously, so we'll use the worker's PID to pick a log
         # filename.
         filename = LOG_PATH_TEMPLATE.format(pid=os.getpid())
-        super(CloudLoggingHandler, self).__init__(filename)
+        super(CloudLoggingHandler, self).__init__(filename,
+                                                  maxBytes=MAX_LOG_BYTES,
+                                                  backupCount=LOG_FILE_COUNT)
 
     def format(self, record):
         """Format the specified record default behavior, plus JSON and
