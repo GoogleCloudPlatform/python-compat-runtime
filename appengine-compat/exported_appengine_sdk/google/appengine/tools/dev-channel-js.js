@@ -227,9 +227,8 @@ goog.DEPENDENCIES_ENABLED && (goog.dependencies_ = {pathIsModule:{}, nameToPath:
       }
       throw Error('Cannot write "' + src + '" after document load');
     }
-    var isOldIE = goog.IS_OLD_IE_;
     if (void 0 === opt_sourceText) {
-      if (isOldIE) {
+      if (goog.IS_OLD_IE_) {
         var state = " onreadystatechange='goog.onScriptLoad_(this, " + ++goog.lastNonModuleScriptIndex_ + ")' ";
         doc.write('<script type="text/javascript" src="' + src + '"' + state + ">\x3c/script>");
       } else {

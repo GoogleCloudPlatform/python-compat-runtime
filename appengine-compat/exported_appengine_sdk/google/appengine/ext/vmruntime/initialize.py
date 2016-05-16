@@ -31,6 +31,7 @@ from google.appengine.api import app_logging
 
 from google.appengine.api.logservice import logservice
 from google.appengine.ext.vmruntime import background_thread
+from google.appengine.ext.vmruntime import utils
 from google.appengine.runtime import request_environment
 from google.appengine.runtime import runtime
 
@@ -122,7 +123,10 @@ def InitializeApiLogging():
 def InitializeThreadingApis():
   """Helper to monkey-patch various threading APIs."""
 
+
+
   runtime.PatchStartNewThread()
+  utils.PatchStartNewThread()
 
   sys.modules[api.__name__ + '.background_thread'] = background_thread
   api.background_thread = background_thread
