@@ -82,6 +82,7 @@ import urlparse
 
 from google.appengine.api import apiproxy_stub_map
 from google.appengine.api import app_identity
+from google.appengine.api import modules
 from google.appengine.api import namespace_manager
 from google.appengine.api import urlfetch
 from google.appengine.api.taskqueue import taskqueue_service_pb
@@ -871,11 +872,19 @@ class Task(object):
 
       return None
 
+    server_software = os.environ.get('SERVER_SOFTWARE', '')
     if target is DEFAULT_APP_VERSION:
       return default_hostname
+    elif server_software.startswith(
+        'Dev') and server_software != 'Development/1.0 (testbed)':
+
+      target_components = target.rsplit('.', 3)
+      module = target_components[-1]
+      version = len(target_components) > 1 and target_components[-2] or None
+      instance = len(target_components) > 2 and target_components[-3] or None
+      return modules.get_hostname(module=module, version=version,
+                                  instance=instance)
     else:
-
-
       return '%s.%s' % (target, default_hostname)
 
   @staticmethod

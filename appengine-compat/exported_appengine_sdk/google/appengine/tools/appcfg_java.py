@@ -146,6 +146,10 @@ class JavaAppUpdate(object):
     self._ValidateXmlFiles()
 
     self.app_engine_web_xml = self._ReadAppEngineWebXml()
+    if self.app_engine_web_xml.env in ['flex', 'flexible']:
+      raise ConfigurationError(
+          'Flex environment is not supported with this tool.'
+          ' Please use the Cloud SDK to perform a deployment.')
     self.app_engine_web_xml.app_root = self.basepath
     if self.options.app_id:
       self.app_engine_web_xml.app_id = self.options.app_id

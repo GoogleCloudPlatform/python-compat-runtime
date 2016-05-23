@@ -130,8 +130,8 @@ class AppEngineWebXmlParser(object):
   def ProcessVersionNode(self, node):
     self.app_engine_web_xml.version_id = node.text
 
-  def ProcessSourceLanguageNode(self, node):
-    self.app_engine_web_xml.source_language = node.text
+  def ProcessRuntimeNode(self, node):
+    self.app_engine_web_xml.runtime = node.text
 
   def ProcessModuleNode(self, node):
     self.app_engine_web_xml.module = node.text
@@ -448,7 +448,7 @@ class AppEngineWebXml(ValueMixin):
     """Initializes an empty AppEngineWebXml object."""
     self.app_id = None
     self.version_id = None
-    self.source_language = None
+    self.runtime = None
     self.module = None
     self.service = None
     self.system_properties = {}

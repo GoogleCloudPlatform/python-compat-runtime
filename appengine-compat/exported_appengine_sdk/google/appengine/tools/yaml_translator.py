@@ -80,7 +80,12 @@ class AppYamlTranslator(object):
     self.api_version = api_version
 
   def GetRuntime(self):
-    return 'java7'
+    """Returns the runtime to use for this deployment.
+
+    Returns:
+      the runtimeid to use in the runtime: section.
+    """
+    return self.app_engine_web_xml.runtime or 'java7'
 
   def GetYaml(self):
     """Returns full yaml text."""
@@ -113,7 +118,6 @@ class AppYamlTranslator(object):
 
     for entry_name, field in [
         ('application', self.app_engine_web_xml.app_id),
-        ('source_language', self.app_engine_web_xml.source_language),
         ('module', self.app_engine_web_xml.module),
         ('service', self.app_engine_web_xml.service),
         ('version', self.app_engine_web_xml.version_id)
