@@ -24,6 +24,7 @@ import uuid
 
 from google.appengine.api import appinfo
 from google.appengine.ext.vmruntime import callback
+from google.appengine.ext.vmruntime import utils
 from mock import MagicMock
 from mock import patch
 from vmruntime import wsgi_config
@@ -159,9 +160,7 @@ def set_callback(request):
         global callback_called
         callback_called = True
 
-    # Setting the REQUEST_ID_KEY in callback.py signals that we are inside
-    # a request.  In flex and mvm, the REQUEST_ID_KEY is set elsewhere.
-    os.environ[callback.REQUEST_ID_KEY] = str(uuid.uuid4())
+    utils.SetRequestId(str(uuid.uuid4()))
 
     callback.SetRequestEndCallback(my_callback)
     return wrappers.Response("pass!")
