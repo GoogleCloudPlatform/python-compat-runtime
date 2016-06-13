@@ -2,7 +2,8 @@ include common.mk
 
 .PHONY: build
 build:
-	docker build -t $(DOCKER_IMAGE_NAME) .
+	docker build --no-cache=$(FORCE_REBUILD) --pull=$(FORCE_REBUILD) \
+		-t $(DOCKER_IMAGE_NAME) .
 
 .PHONY: push
 push: build
