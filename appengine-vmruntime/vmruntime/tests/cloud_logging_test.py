@@ -74,11 +74,11 @@ class CloudLoggingTestCaseWithTraceIdEnv(CloudLoggingTestCase):
 
     def setUp(self):
         super(CloudLoggingTestCaseWithTraceIdEnv, self).setUp()
-        os.environ['X-Cloud-Trace-Context'] = '{}/12345;o=1'.format(
+        os.environ['HTTP_X_CLOUD_TRACE_CONTEXT'] = '{}/12345;o=1'.format(
             self.EXPECTED_TRACE_ID)
 
     def tearDown(self):
-        os.unsetenv('X-Cloud-Trace-Context')
+        os.unsetenv('HTTP_X_CLOUD_TRACE_CONTEXT')
 
 
 class CloudLoggingTestCaseWithTraceIdEnvNoOptions(CloudLoggingTestCase):
@@ -87,7 +87,7 @@ class CloudLoggingTestCaseWithTraceIdEnvNoOptions(CloudLoggingTestCase):
 
     def setUp(self):
         super(CloudLoggingTestCaseWithTraceIdEnvNoOptions, self).setUp()
-        os.environ['X-Cloud-Trace-Context'] = self.EXPECTED_TRACE_ID
+        os.environ['HTTP_X_CLOUD_TRACE_CONTEXT'] = self.EXPECTED_TRACE_ID
 
     def tearDown(self):
-        os.unsetenv('X-Cloud-Trace-Context')
+        os.unsetenv('HTTP_X_CLOUD_TRACE_CONTEXT')
