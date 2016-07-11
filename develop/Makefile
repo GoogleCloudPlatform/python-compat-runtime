@@ -5,7 +5,7 @@ all: deploy
 
 .PHONY: deploy
 deploy: build-base generate-dockerfile
-	gcloud preview app deploy -q
+	gcloud app deploy -q
 
 .PHONY: build-base
 build-base:
