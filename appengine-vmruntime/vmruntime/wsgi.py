@@ -43,8 +43,17 @@ except IOError:
 root_logger.setLevel(logging.INFO)
 
 # Fetch application configuration via the config file.
-appinfo = wsgi_config.get_module_config(wsgi_config.get_module_config_filename(
-))
+try:
+    appinfo = wsgi_config.get_module_config(
+        wsgi_config.get_module_config_filename())
+except KeyError as e:
+  if e.args[0] == 'MODULE_YAML_PATH':
+    raise RuntimeError('An error occured when initializing the runtime. If you '
+        'are using \'env: flex\', this may be because you forgot to set '
+        '\'enable_app_engine_apis: true\' under beta_settings in app.yaml.')
+  else:
+    raise
+
 env_config = vmconfig.BuildVmAppengineEnvConfig()
 
 # Ensure API requests include a valid ticket by default.

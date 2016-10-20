@@ -165,6 +165,14 @@ def set_callback(request):
     callback.SetRequestEndCallback(my_callback)
     return wrappers.Response("pass!")
 
+class EnableAppEngineApisTestCase(unittest.TestCase):
+    def test_enable_app_engine_apis_warning(self):
+        from google.appengine.ext.vmruntime import vmconfig
+        with patch.object(wsgi_config, 'get_module_config_filename') as m:
+            m.side_effect = KeyError('MODULE_YAML_PATH')
+            with self.assertRaises(RuntimeError) as a:
+                from vmruntime import wsgi
+            self.assertIn('enable_app_engine_apis: true', a.exception.args[0])
 
 
 class MetaAppTestCase(unittest.TestCase):
