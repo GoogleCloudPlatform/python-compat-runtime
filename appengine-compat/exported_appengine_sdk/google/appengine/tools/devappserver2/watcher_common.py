@@ -37,11 +37,12 @@ _IGNORED_FILE_SUFFIXES = (
 )
 
 
-def ignore_file(filename):
+def ignore_file(filename, skip_files_re=None):
   """Report whether a file should not be watched."""
   filename = os.path.basename(filename)
   return (
       filename.startswith(_IGNORED_PREFIX) or
+      skip_files_re and skip_files_re.match(filename) or
       any(filename.endswith(suffix) for suffix in _IGNORED_FILE_SUFFIXES))
 
 
@@ -55,10 +56,16 @@ def _remove_pred(lst, pred):
       del lst[idx]
 
 
-def skip_ignored_dirs(dirs):
+def ignore_dir(dirname, skip_files_re):
+  """Report whether a directory should not be watched."""
+  return (dirname.startswith(_IGNORED_PREFIX) or
+          skip_files_re and skip_files_re.match(dirname))
+
+
+def skip_ignored_dirs(dirs, skip_files_re=None):
   """Skip directories that should not be watched."""
 
-  _remove_pred(dirs, lambda d: d.startswith(_IGNORED_PREFIX))
+  _remove_pred(dirs, lambda d: ignore_dir(d, skip_files_re))
 
 
 def skip_local_symlinks(roots, dirpath, directories):

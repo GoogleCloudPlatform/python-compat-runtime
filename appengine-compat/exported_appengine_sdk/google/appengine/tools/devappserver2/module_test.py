@@ -424,7 +424,7 @@ class TestModuleCreateUrlHandlers(googletest.TestCase):
         script='warmup_handler',
         login='admin')
     # Built-in: login, blob_upload, blob_image, channel, gcs, endpoints
-    self.num_builtin_handlers = 6
+    self.num_builtin_handlers = 5
 
   def test_match_all(self):
     self.module_configuration.handlers = [appinfo.URLMap(url=r'.*',

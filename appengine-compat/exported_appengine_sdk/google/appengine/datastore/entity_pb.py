@@ -3368,12 +3368,12 @@ class CompositeIndex(ProtocolBuffer.ProtocolMessage):
   only_use_if_required_ = 0
   has_disabled_index_ = 0
   disabled_index_ = 0
-  has_write_division_family_ = 0
-  write_division_family_ = ""
+  has_deprecated_write_division_family_ = 0
+  deprecated_write_division_family_ = ""
 
   def __init__(self, contents=None):
     self.definition_ = Index()
-    self.read_division_family_ = []
+    self.deprecated_read_division_family_ = []
     if contents is not None: self.MergeFromString(contents)
 
   def app_id(self): return self.app_id_
@@ -3488,33 +3488,33 @@ class CompositeIndex(ProtocolBuffer.ProtocolMessage):
 
   def has_disabled_index(self): return self.has_disabled_index_
 
-  def read_division_family_size(self): return len(self.read_division_family_)
-  def read_division_family_list(self): return self.read_division_family_
+  def deprecated_read_division_family_size(self): return len(self.deprecated_read_division_family_)
+  def deprecated_read_division_family_list(self): return self.deprecated_read_division_family_
 
-  def read_division_family(self, i):
-    return self.read_division_family_[i]
+  def deprecated_read_division_family(self, i):
+    return self.deprecated_read_division_family_[i]
 
-  def set_read_division_family(self, i, x):
-    self.read_division_family_[i] = x
+  def set_deprecated_read_division_family(self, i, x):
+    self.deprecated_read_division_family_[i] = x
 
-  def add_read_division_family(self, x):
-    self.read_division_family_.append(x)
+  def add_deprecated_read_division_family(self, x):
+    self.deprecated_read_division_family_.append(x)
 
-  def clear_read_division_family(self):
-    self.read_division_family_ = []
+  def clear_deprecated_read_division_family(self):
+    self.deprecated_read_division_family_ = []
 
-  def write_division_family(self): return self.write_division_family_
+  def deprecated_write_division_family(self): return self.deprecated_write_division_family_
 
-  def set_write_division_family(self, x):
-    self.has_write_division_family_ = 1
-    self.write_division_family_ = x
+  def set_deprecated_write_division_family(self, x):
+    self.has_deprecated_write_division_family_ = 1
+    self.deprecated_write_division_family_ = x
 
-  def clear_write_division_family(self):
-    if self.has_write_division_family_:
-      self.has_write_division_family_ = 0
-      self.write_division_family_ = ""
+  def clear_deprecated_write_division_family(self):
+    if self.has_deprecated_write_division_family_:
+      self.has_deprecated_write_division_family_ = 0
+      self.deprecated_write_division_family_ = ""
 
-  def has_write_division_family(self): return self.has_write_division_family_
+  def has_deprecated_write_division_family(self): return self.has_deprecated_write_division_family_
 
 
   def MergeFrom(self, x):
@@ -3528,8 +3528,8 @@ class CompositeIndex(ProtocolBuffer.ProtocolMessage):
     if (x.has_error_message()): self.set_error_message(x.error_message())
     if (x.has_only_use_if_required()): self.set_only_use_if_required(x.only_use_if_required())
     if (x.has_disabled_index()): self.set_disabled_index(x.disabled_index())
-    for i in xrange(x.read_division_family_size()): self.add_read_division_family(x.read_division_family(i))
-    if (x.has_write_division_family()): self.set_write_division_family(x.write_division_family())
+    for i in xrange(x.deprecated_read_division_family_size()): self.add_deprecated_read_division_family(x.deprecated_read_division_family(i))
+    if (x.has_deprecated_write_division_family()): self.set_deprecated_write_division_family(x.deprecated_write_division_family())
 
   def Equals(self, x):
     if x is self: return 1
@@ -3551,11 +3551,11 @@ class CompositeIndex(ProtocolBuffer.ProtocolMessage):
     if self.has_only_use_if_required_ and self.only_use_if_required_ != x.only_use_if_required_: return 0
     if self.has_disabled_index_ != x.has_disabled_index_: return 0
     if self.has_disabled_index_ and self.disabled_index_ != x.disabled_index_: return 0
-    if len(self.read_division_family_) != len(x.read_division_family_): return 0
-    for e1, e2 in zip(self.read_division_family_, x.read_division_family_):
+    if len(self.deprecated_read_division_family_) != len(x.deprecated_read_division_family_): return 0
+    for e1, e2 in zip(self.deprecated_read_division_family_, x.deprecated_read_division_family_):
       if e1 != e2: return 0
-    if self.has_write_division_family_ != x.has_write_division_family_: return 0
-    if self.has_write_division_family_ and self.write_division_family_ != x.write_division_family_: return 0
+    if self.has_deprecated_write_division_family_ != x.has_deprecated_write_division_family_: return 0
+    if self.has_deprecated_write_division_family_ and self.deprecated_write_division_family_ != x.deprecated_write_division_family_: return 0
     return 1
 
   def IsInitialized(self, debug_strs=None):
@@ -3590,9 +3590,9 @@ class CompositeIndex(ProtocolBuffer.ProtocolMessage):
     if (self.has_error_message_): n += 1 + self.lengthString(len(self.error_message_))
     if (self.has_only_use_if_required_): n += 2
     if (self.has_disabled_index_): n += 2
-    n += 1 * len(self.read_division_family_)
-    for i in xrange(len(self.read_division_family_)): n += self.lengthString(len(self.read_division_family_[i]))
-    if (self.has_write_division_family_): n += 1 + self.lengthString(len(self.write_division_family_))
+    n += 1 * len(self.deprecated_read_division_family_)
+    for i in xrange(len(self.deprecated_read_division_family_)): n += self.lengthString(len(self.deprecated_read_division_family_[i]))
+    if (self.has_deprecated_write_division_family_): n += 1 + self.lengthString(len(self.deprecated_write_division_family_))
     return n + 4
 
   def ByteSizePartial(self):
@@ -3614,9 +3614,9 @@ class CompositeIndex(ProtocolBuffer.ProtocolMessage):
     if (self.has_error_message_): n += 1 + self.lengthString(len(self.error_message_))
     if (self.has_only_use_if_required_): n += 2
     if (self.has_disabled_index_): n += 2
-    n += 1 * len(self.read_division_family_)
-    for i in xrange(len(self.read_division_family_)): n += self.lengthString(len(self.read_division_family_[i]))
-    if (self.has_write_division_family_): n += 1 + self.lengthString(len(self.write_division_family_))
+    n += 1 * len(self.deprecated_read_division_family_)
+    for i in xrange(len(self.deprecated_read_division_family_)): n += self.lengthString(len(self.deprecated_read_division_family_[i]))
+    if (self.has_deprecated_write_division_family_): n += 1 + self.lengthString(len(self.deprecated_write_division_family_))
     return n
 
   def Clear(self):
@@ -3629,8 +3629,8 @@ class CompositeIndex(ProtocolBuffer.ProtocolMessage):
     self.clear_error_message()
     self.clear_only_use_if_required()
     self.clear_disabled_index()
-    self.clear_read_division_family()
-    self.clear_write_division_family()
+    self.clear_deprecated_read_division_family()
+    self.clear_deprecated_write_division_family()
 
   def OutputUnchecked(self, out):
     out.putVarInt32(10)
@@ -3645,12 +3645,12 @@ class CompositeIndex(ProtocolBuffer.ProtocolMessage):
     if (self.has_only_use_if_required_):
       out.putVarInt32(48)
       out.putBoolean(self.only_use_if_required_)
-    for i in xrange(len(self.read_division_family_)):
+    for i in xrange(len(self.deprecated_read_division_family_)):
       out.putVarInt32(58)
-      out.putPrefixedString(self.read_division_family_[i])
-    if (self.has_write_division_family_):
+      out.putPrefixedString(self.deprecated_read_division_family_[i])
+    if (self.has_deprecated_write_division_family_):
       out.putVarInt32(66)
-      out.putPrefixedString(self.write_division_family_)
+      out.putPrefixedString(self.deprecated_write_division_family_)
     if (self.has_disabled_index_):
       out.putVarInt32(72)
       out.putBoolean(self.disabled_index_)
@@ -3681,12 +3681,12 @@ class CompositeIndex(ProtocolBuffer.ProtocolMessage):
     if (self.has_only_use_if_required_):
       out.putVarInt32(48)
       out.putBoolean(self.only_use_if_required_)
-    for i in xrange(len(self.read_division_family_)):
+    for i in xrange(len(self.deprecated_read_division_family_)):
       out.putVarInt32(58)
-      out.putPrefixedString(self.read_division_family_[i])
-    if (self.has_write_division_family_):
+      out.putPrefixedString(self.deprecated_read_division_family_[i])
+    if (self.has_deprecated_write_division_family_):
       out.putVarInt32(66)
-      out.putPrefixedString(self.write_division_family_)
+      out.putPrefixedString(self.deprecated_write_division_family_)
     if (self.has_disabled_index_):
       out.putVarInt32(72)
       out.putBoolean(self.disabled_index_)
@@ -3722,10 +3722,10 @@ class CompositeIndex(ProtocolBuffer.ProtocolMessage):
         self.set_only_use_if_required(d.getBoolean())
         continue
       if tt == 58:
-        self.add_read_division_family(d.getPrefixedString())
+        self.add_deprecated_read_division_family(d.getPrefixedString())
         continue
       if tt == 66:
-        self.set_write_division_family(d.getPrefixedString())
+        self.set_deprecated_write_division_family(d.getPrefixedString())
         continue
       if tt == 72:
         self.set_disabled_index(d.getBoolean())
@@ -3760,12 +3760,12 @@ class CompositeIndex(ProtocolBuffer.ProtocolMessage):
     if self.has_only_use_if_required_: res+=prefix+("only_use_if_required: %s\n" % self.DebugFormatBool(self.only_use_if_required_))
     if self.has_disabled_index_: res+=prefix+("disabled_index: %s\n" % self.DebugFormatBool(self.disabled_index_))
     cnt=0
-    for e in self.read_division_family_:
+    for e in self.deprecated_read_division_family_:
       elm=""
       if printElemNumber: elm="(%d)" % cnt
-      res+=prefix+("read_division_family%s: %s\n" % (elm, self.DebugFormatString(e)))
+      res+=prefix+("deprecated_read_division_family%s: %s\n" % (elm, self.DebugFormatString(e)))
       cnt+=1
-    if self.has_write_division_family_: res+=prefix+("write_division_family: %s\n" % self.DebugFormatString(self.write_division_family_))
+    if self.has_deprecated_write_division_family_: res+=prefix+("deprecated_write_division_family: %s\n" % self.DebugFormatString(self.deprecated_write_division_family_))
     return res
 
 
@@ -3781,8 +3781,8 @@ class CompositeIndex(ProtocolBuffer.ProtocolMessage):
   kerror_message = 11
   konly_use_if_required = 6
   kdisabled_index = 9
-  kread_division_family = 7
-  kwrite_division_family = 8
+  kdeprecated_read_division_family = 7
+  kdeprecated_write_division_family = 8
 
   _TEXT = _BuildTagLookupTable({
     0: "ErrorCode",
@@ -3791,8 +3791,8 @@ class CompositeIndex(ProtocolBuffer.ProtocolMessage):
     3: "definition",
     4: "state",
     6: "only_use_if_required",
-    7: "read_division_family",
-    8: "write_division_family",
+    7: "deprecated_read_division_family",
+    8: "deprecated_write_division_family",
     9: "disabled_index",
     10: "workflow_state",
     11: "error_message",

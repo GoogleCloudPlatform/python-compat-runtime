@@ -38,12 +38,22 @@ class MtimeFileWatcher(object):
   def __init__(self, directory):
     self._directory = directory
     self._quit_event = threading.Event()
+    self._skip_files_re = None
     self._filename_to_mtime = None
     self._timeout = threading.Event()
     self._startup_thread = None
 
   def _refresh(self):
     self._filename_to_mtime = self._generate_filename_to_mtime()
+
+  def set_skip_files_re(self, skip_files_re):
+    """Allows the file watcher to respect skip_files in app.yaml.
+
+    Args:
+      skip_files_re: The skip_files field of current ModuleConfiguration,
+          defined in app.yaml.
+    """
+    self._skip_files_re = skip_files_re
 
   def start(self):
     """Start watching a directory for changes."""
@@ -63,8 +73,8 @@ class MtimeFileWatcher(object):
     start() must be called before this method.
 
     Args:
-      timeout_ms: interface compatibility with the other watchers.
-                  It will just wait at most this time if no change is found.
+      timeout_ms: Interface compatibility with the other watchers.
+          It will just wait at most this time if no change is found.
 
     Returns:
       Returns the set of file paths changes if the watched directory has changed
@@ -105,8 +115,12 @@ class MtimeFileWatcher(object):
                                                 followlinks=True):
       if self._quit_event.is_set():
         raise ShutdownError()
-      watcher_common.skip_ignored_dirs(dirnames)
-      filenames = [f for f in filenames if not watcher_common.ignore_file(f)]
+
+      # skip_files_re should only apply to the application root.
+      skip_files_re = dirname == self._directory and self._skip_files_re
+      watcher_common.skip_ignored_dirs(dirnames, skip_files_re)
+      filenames = [f for f in filenames if not
+                   watcher_common.ignore_file(f, skip_files_re)]
       for filename in filenames + dirnames:
         if self._quit_event.is_set():
           raise ShutdownError()

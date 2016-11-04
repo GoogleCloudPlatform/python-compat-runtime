@@ -100,7 +100,7 @@ class GoRuntimeInstanceFactory(instance.InstanceFactory):
           instance respresenting the configuration of the module that owns the
           runtime.
     """
-    super(GoRuntimeInstanceFactory, self).__init__(request_data, 1)
+    super(GoRuntimeInstanceFactory, self).__init__(request_data, 8, 10)
     self._runtime_config_getter = runtime_config_getter
     self._module_configuration = module_configuration
     self._application_lock = threading.Lock()

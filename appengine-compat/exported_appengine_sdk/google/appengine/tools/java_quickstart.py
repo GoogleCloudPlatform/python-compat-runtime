@@ -19,6 +19,7 @@
 from __future__ import with_statement
 
 import cStringIO
+import glob
 import itertools
 import os
 import subprocess
@@ -29,10 +30,12 @@ from google.appengine.tools import java_utils
 _JAVA_VMRUNTIME_PATH = os.path.join(
     'google', 'appengine', 'tools', 'java', 'lib',
     'java-managed-vm', 'appengine-java-vmruntime')
+_JETTY_LIB_PATH = os.path.join(_JAVA_VMRUNTIME_PATH, 'lib')
 _QUICKSTART_JAR_PATH = os.path.join(
     _JAVA_VMRUNTIME_PATH, 'quickstartgenerator.jar')
 _WEBDEFAULT_XML_PATH = os.path.join(
     _JAVA_VMRUNTIME_PATH, 'etc', 'webdefault.xml')
+_QUICKSTART_CLASS = 'com.google.appengine.tools.development.jetty9.QuickStartGenerator'
 
 _OLD_NAMESPACE_PREFIX = '{http://java.sun.com/xml/ns/javaee}'
 _NEW_NAMESPACE_PREFIX = '{http://xmlns.jcp.org/xml/ns/javaee}'
@@ -74,11 +77,17 @@ def quickstart_generator(war_path, sdk_root=None):
   java_home, exec_suffix = java_utils.JavaHomeAndSuffix()
   java_command = os.path.join(java_home, 'bin', 'java') + exec_suffix
 
-  quickstartgenerator_jar = os.path.join(sdk_root, _QUICKSTART_JAR_PATH)
+  libpath = os.path.join(sdk_root, _JETTY_LIB_PATH)
+  jars = (glob.glob(os.path.join(libpath, '*.jar')) +
+          glob.glob(os.path.join(libpath, 'jsp', '*.jar')) +
+          glob.glob(os.path.join(libpath, 'jndi', '*.jar')) +
+          [os.path.join(sdk_root, _QUICKSTART_JAR_PATH)])
+  quickstartclasspath = os.pathsep.join(jars)
+
   webdefaultxml = os.path.join(sdk_root, _JAVA_VMRUNTIME_PATH, 'etc',
                                'webdefault.xml')
-  command = [java_command, '-jar', quickstartgenerator_jar, war_path,
-             webdefaultxml]
+  command = [java_command, '-cp', quickstartclasspath, _QUICKSTART_CLASS,
+             war_path, webdefaultxml]
   subprocess.check_call(command)
 
   with open(quickstart_xml_path) as f:

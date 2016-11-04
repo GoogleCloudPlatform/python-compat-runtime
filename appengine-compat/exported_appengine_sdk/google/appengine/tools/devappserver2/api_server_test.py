@@ -20,7 +20,6 @@
 
 import cStringIO
 import pickle
-import re
 import tempfile
 import unittest
 import urllib
@@ -54,7 +53,6 @@ MAIL_SMTP_USER = 'user'
 MAIL_SMTP_PASSWORD = 'abc123'
 MAIL_ENABLE_SENDMAIL = False
 MAIL_SHOW_MAIL_BODY = True
-_, MATCHER_PROSPECTIVE_SEARCH_PATH = tempfile.mkstemp(prefix='ae-ps')
 TASKQUEUE_AUTO_RUN_TASKS = False
 TASKQUEUE_DEFAULT_HTTP_SERVER = 'localhost:8080'
 USER_LOGIN_URL = 'https://localhost/Login?continue=%s'
@@ -101,7 +99,6 @@ def setup_stubs():
       mail_smtp_password=MAIL_SMTP_PASSWORD,
       mail_enable_sendmail=MAIL_ENABLE_SENDMAIL,
       mail_show_mail_body=MAIL_SHOW_MAIL_BODY,
-      matcher_prospective_search_path=MATCHER_PROSPECTIVE_SEARCH_PATH,
       taskqueue_auto_run_tasks=TASKQUEUE_AUTO_RUN_TASKS,
       taskqueue_default_http_server=TASKQUEUE_DEFAULT_HTTP_SERVER,
       user_login_url=USER_LOGIN_URL,

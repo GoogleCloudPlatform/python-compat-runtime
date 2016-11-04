@@ -121,7 +121,8 @@ class AppLogsHandler(logging.Handler):
       return None
 
     def IsLogging(f):
-      return f.f_code.co_filename.endswith("/logging/__init__.py")
+      return (f.f_code.co_filename.endswith("/logging/__init__.py") or
+              f.f_code.co_filename.endswith("/pyglib/logging/adapter.py"))
 
     f = inspect.currentframe()
     while f and not IsLogging(f):

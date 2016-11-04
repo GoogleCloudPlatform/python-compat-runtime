@@ -57,7 +57,6 @@ from google.appengine.api.files import file_service_stub
 from google.appengine.api.logservice import logservice_stub
 from google.appengine.api.search import simple_search_stub
 from google.appengine.api.taskqueue import taskqueue_stub
-from google.appengine.api.prospective_search import prospective_search_stub
 from google.appengine.api.memcache import memcache_stub
 from google.appengine.api.system import system_stub
 from google.appengine.api.xmpp import xmpp_service_stub
@@ -71,6 +70,7 @@ from google.appengine.ext.remote_api import remote_api_pb
 from google.appengine.ext.remote_api import remote_api_services
 from google.appengine.runtime import apiproxy_errors
 
+from google.net.util.python import dualstack
 
 QUIT_PATH = '/quit'
 
@@ -91,18 +91,6 @@ def _ClearDatastoreStorage(datastore_path):
     except OSError, e:
       logging.warning('Failed to remove datastore file %r: %s',
                       datastore_path,
-                      e)
-
-
-def _ClearProspectiveSearchStorage(prospective_search_path):
-  """Delete the perspective search storage file at the given path."""
-
-  if os.path.lexists(prospective_search_path):
-    try:
-      os.remove(prospective_search_path)
-    except OSError, e:
-      logging.warning('Failed to remove prospective search file %r: %s',
-                      prospective_search_path,
                       e)
 
 
@@ -220,6 +208,7 @@ class APIRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     self.wfile.write(response.Encode())
 
 
+@dualstack.DecorateSocketServer
 class APIServer(SocketServer.ThreadingMixIn, BaseHTTPServer.HTTPServer):
   """Serves API calls over HTTP."""
 
@@ -249,7 +238,6 @@ def _SetupStubs(
     mail_enable_sendmail,
     mail_show_mail_body,
     mail_allow_tls,
-    matcher_prospective_search_path,
     taskqueue_auto_run_tasks,
     taskqueue_task_retry_seconds,
     taskqueue_default_http_server,
@@ -296,8 +284,6 @@ def _SetupStubs(
     mail_show_mail_body: A bool indicating whether the body of sent e-mails
         should be written to the logs.
     mail_allow_tls: A bool indicating whether to allow TLS support.
-    matcher_prospective_search_path: The path to the file that should be used to
-        save prospective search subscriptions.
     taskqueue_auto_run_tasks: A bool indicating whether taskqueue tasks should
         be run automatically or it the must be manually triggered.
     taskqueue_task_retry_seconds: An int representing the number of seconds to
@@ -440,12 +426,6 @@ def _SetupStubs(
       'xmpp',
       xmpp_service_stub.XmppServiceStub())
 
-  apiproxy_stub_map.apiproxy.RegisterStub(
-      'matcher',
-      prospective_search_stub.ProspectiveSearchStub(
-          matcher_prospective_search_path,
-          apiproxy_stub_map.apiproxy.GetStub('taskqueue')))
-
 
 def _TearDownStubs():
   """Clean up any stubs that need cleanup."""
@@ -540,13 +520,6 @@ def ParseCommandArguments(args):
                       default=True)
 
 
-  parser.add_argument('--prospective_search_path', default=None)
-  parser.add_argument('--clear_prospective_search',
-                      action=boolean_action.BooleanAction,
-                      const=True,
-                      default=False)
-
-
   parser.add_argument('--enable_task_running',
                       action=boolean_action.BooleanAction,
                       const=True,
@@ -583,13 +556,11 @@ class APIServerProcess(object):
                auto_id_policy=None,
                blobstore_path=None,
                clear_datastore=None,
-               clear_prospective_search=None,
                datastore_path=None,
                enable_sendmail=None,
                enable_task_running=None,
                high_replication=None,
                logs_path=None,
-               prospective_search_path=None,
                require_indexes=None,
                show_mail_body=None,
                smtp_host=None,
@@ -627,8 +598,6 @@ class APIServerProcess(object):
           storage.
       clear_datastore: Clears the file at datastore_path, emptying the
           datastore from previous runs.
-      clear_prospective_search: Clears the file at prospective_search_path,
-          emptying the perspective search state from previous runs.
       datastore_path: The path to the file that should be used for datastore
           storage.
       enable_sendmail: A bool indicating if sendmail should be used when sending
@@ -638,8 +607,6 @@ class APIServerProcess(object):
       high_replication: A bool indicating whether to use the high replication
           consistency model.
       logs_path: Path to the file to store the logs data in.
-      prospective_search_path: The path to the file that should be used to
-          save prospective search subscriptions.
       require_indexes: A bool indicating if the same production
           datastore indexes requirements should be enforced i.e. if True then
           a google.appengine.ext.db.NeedIndexError will be be raised if a query
@@ -682,13 +649,11 @@ class APIServerProcess(object):
     self._BindArgument('--auto_id_policy', auto_id_policy)
     self._BindArgument('--blobstore_path', blobstore_path)
     self._BindArgument('--clear_datastore', clear_datastore)
-    self._BindArgument('--clear_prospective_search', clear_prospective_search)
     self._BindArgument('--datastore_path', datastore_path)
     self._BindArgument('--enable_sendmail', enable_sendmail)
     self._BindArgument('--enable_task_running', enable_task_running)
     self._BindArgument('--high_replication', high_replication)
     self._BindArgument('--logs_path', logs_path)
-    self._BindArgument('--prospective_search_path', prospective_search_path)
     self._BindArgument('--require_indexes', require_indexes)
     self._BindArgument('--show_mail_body', show_mail_body)
     self._BindArgument('--smtp_host', smtp_host)
@@ -718,15 +683,21 @@ class APIServerProcess(object):
     self._process = subprocess.Popen(self._args)
 
   def _CanConnect(self):
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-      s.connect((self._host, self._port))
-    except socket.error:
-      connected = False
-    else:
-      connected = True
-    s.close()
-    return connected
+    """Tests reachability of the configured host:port via IPv4 or IPv6."""
+    for family in [socket.AF_INET, socket.AF_INET6]:
+      try:
+        s = socket.socket(family, socket.SOCK_STREAM)
+      except socket.error:
+        continue
+      try:
+        s.connect((self._host, self._port))
+      except socket.error:
+        continue
+      else:
+        return True
+      finally:
+        s.close()
+    return False
 
   def WaitUntilServing(self, timeout=30.0):
     """Waits until the API Server is ready to handle requests.
@@ -842,9 +813,6 @@ def main():
   if args.clear_datastore:
     _ClearDatastoreStorage(args.datastore_path)
 
-  if args.clear_prospective_search:
-    _ClearProspectiveSearchStorage(args.prospective_search_path)
-
   if args.blobstore_path is None:
     _, blobstore_temp_filename = tempfile.mkstemp(prefix='ae-blobstore')
     args.blobstore_path = blobstore_temp_filename
@@ -852,11 +820,6 @@ def main():
   if args.datastore_path is None:
     _, datastore_temp_filename = tempfile.mkstemp(prefix='ae-datastore')
     args.datastore_path = datastore_temp_filename
-
-  if args.prospective_search_path is None:
-    _, prospective_search_temp_filename = tempfile.mkstemp(
-        prefix='ae-prospective_search')
-    args.prospective_search_path = prospective_search_temp_filename
 
   if args.application_host:
     application_address = args.application_host
@@ -889,7 +852,6 @@ def main():
               mail_enable_sendmail=args.enable_sendmail,
               mail_show_mail_body=args.show_mail_body,
               mail_allow_tls=args.smtp_allow_tls,
-              matcher_prospective_search_path=args.prospective_search_path,
               taskqueue_auto_run_tasks=args.enable_task_running,
               taskqueue_task_retry_seconds=args.task_retry_seconds,
               taskqueue_default_http_server=application_address,

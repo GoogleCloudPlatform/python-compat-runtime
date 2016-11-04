@@ -35,8 +35,8 @@ from google.appengine.tools import boolean_action
 from google.appengine.tools.devappserver2 import api_server
 from google.appengine.tools.devappserver2 import application_configuration
 from google.appengine.tools.devappserver2 import dispatcher
-from google.appengine.tools.devappserver2 import gcd_application
 from google.appengine.tools.devappserver2 import login
+from google.appengine.tools.devappserver2 import metrics
 from google.appengine.tools.devappserver2 import runtime_config_pb2
 from google.appengine.tools.devappserver2 import runtime_factories
 from google.appengine.tools.devappserver2 import shutdown
@@ -526,13 +526,6 @@ def create_command_line_parser():
       'deprecated. This flag will be removed in a future '
       'release. Please do not rely on sequential IDs in your '
       'tests.')
-  datastore_group.add_argument(
-      '--enable_cloud_datastore',
-      action=boolean_action.BooleanAction,
-      const=True,
-      default=False,
-      help=argparse.SUPPRESS #'enable the Google Cloud Datastore API.'
-      )
 
   # Logs
   logs_group = parser.add_argument_group('Logs API')
@@ -582,21 +575,6 @@ def create_command_line_parser():
       help='Allow TLS to be used when the SMTP server announces TLS support '
       '(ignored if --smtp_host is not set)')
 
-  # Matcher
-  prospective_search_group = parser.add_argument_group('Prospective Search API')
-  prospective_search_group.add_argument(
-      '--prospective_search_path', default=None,
-      type=parse_path,
-      help='path to a file used to store the prospective '
-      'search subscription index (defaults to a file in '
-      '--storage_path if not set)')
-  prospective_search_group.add_argument(
-      '--clear_prospective_search',
-      action=boolean_action.BooleanAction,
-      const=True,
-      default=False,
-      help='clear the prospective search subscription index')
-
   # Search
   search_group = parser.add_argument_group('Search API')
   search_group.add_argument(
@@ -638,6 +616,14 @@ def create_command_line_parser():
       '--api_port', type=PortParser(), default=0,
       help='port to which the server for API calls should bind')
   misc_group.add_argument(
+      '--grpc_api', action='append', dest='grpc_apis',
+      help='apis that talk grpc to api_server. For example: '
+      '--grpc_api memcache --grpc_api datastore. Setting --grpc_api all '
+      'lets every api talk grpc.')
+  misc_group.add_argument(
+      '--grpc_api_port', type=PortParser(), default=0,
+      help='port to which the server for grpc API calls should bind')
+  misc_group.add_argument(
       '--automatic_restart',
       action=boolean_action.BooleanAction,
       const=True,
@@ -661,6 +647,20 @@ def create_command_line_parser():
   misc_group.add_argument(
       '--default_gcs_bucket_name', default=None,
       help='default Google Cloud Storage bucket name')
+  misc_group.add_argument(
+      '--env_var', action='append',
+      type=lambda kv: kv.split('=', 1), dest='env_variables',
+      help='user defined environment variable for the runtime. each env_var is '
+      'in the format of key=value, and you can define multiple envrionment '
+      'variables. For example: --env_var KEY_1=val1 --env_var KEY_2=val2. '
+      'You can also define environment variables in app.yaml.')
+  misc_group.add_argument(
+      '--google_analytics_client_id', default=None,
+      help='the client id user for Google Analytics usage reporting. If this '
+      'is set, usage metrics will be sent to Google Analytics.')
+  misc_group.add_argument(
+      '--google_analytics_user_agent', default=None,
+      help='the user agent to use for Google Analytics usage reporting.')
 
 
 
@@ -682,18 +682,6 @@ def _clear_datastore_storage(datastore_path):
     except OSError, e:
       logging.warning('Failed to remove datastore file %r: %s',
                       datastore_path,
-                      e)
-
-
-def _clear_prospective_search_storage(prospective_search_path):
-  """Delete the perspective search storage file at the given path."""
-  # lexists() returns True for broken symlinks, where exists() returns False.
-  if os.path.lexists(prospective_search_path):
-    try:
-      os.remove(prospective_search_path)
-    except OSError, e:
-      logging.warning('Failed to remove prospective search file %r: %s',
-                      prospective_search_path,
                       e)
 
 
@@ -732,6 +720,7 @@ class DevelopmentServer(object):
     self._running_modules = []
     self._module_to_port = {}
     self._dispatcher = None
+    self._options = None
 
   def module_to_address(self, module_name, instance=None):
     """Returns the address of a module."""
@@ -751,19 +740,25 @@ class DevelopmentServer(object):
     Args:
       options: An argparse.Namespace containing the command line arguments.
     """
+    self._options = options
+
     logging.getLogger().setLevel(
         _LOG_LEVEL_TO_PYTHON_CONSTANT[options.dev_appserver_log_level])
 
-    configuration = application_configuration.ApplicationConfiguration(
-        options.config_paths, options.app_id)
+    parsed_env_variables = dict(options.env_variables or [])
 
-    if options.enable_cloud_datastore:
-      # This requires the oauth server stub to return that the logged in user
-      # is in fact an admin.
-      os.environ['OAUTH_IS_ADMIN'] = '1'
-      gcd_module = application_configuration.ModuleConfiguration(
-          gcd_application.generate_gcd_app(configuration.app_id.split('~')[1]))
-      configuration.modules.append(gcd_module)
+    configuration = application_configuration.ApplicationConfiguration(
+        config_paths=options.config_paths,
+        app_id=options.app_id,
+        runtime=options.runtime,
+        env_variables=parsed_env_variables)
+
+    if options.google_analytics_client_id:
+      metrics_logger = metrics.GetMetricsLogger()
+      metrics_logger.Start(
+          options.google_analytics_client_id,
+          options.google_analytics_user_agent,
+          {module.runtime for module in configuration.modules})
 
     if options.skip_sdk_update_check:
       logging.info('Skipping SDK update check.')
@@ -816,12 +811,18 @@ class DevelopmentServer(object):
     if options.blobstore_warn_on_files_api_use:
       api_server.enable_filesapi_tracking(request_data)
 
-    apis = self._create_api_server(
+    apiserver = self._create_api_server(
         request_data, storage_path, options, configuration)
-    apis.start()
-    self._running_modules.append(apis)
+    apiserver.start()
+    self._running_modules.append(apiserver)
 
-    self._dispatcher.start(options.api_host, apis.port, request_data)
+    if options.grpc_apis:
+      grpc_apiserver = api_server.GRPCAPIServer(options.grpc_api_port)
+      grpc_apiserver.start()
+      self._running_modules.append(grpc_apiserver)
+
+    self._dispatcher.start(options.api_host, apiserver.port, request_data,
+                           options.grpc_apis)
 
     xsrf_path = os.path.join(storage_path, 'xsrf')
     admin = admin_server.AdminServer(options.admin_host, options.admin_port,
@@ -830,7 +831,7 @@ class DevelopmentServer(object):
     self._running_modules.append(admin)
     try:
       default = self._dispatcher.get_module_by_name('default')
-      apis.set_balanced_address(default.balanced_address)
+      apiserver.set_balanced_address(default.balanced_address)
     except request_info.ModuleDoesNotExistError:
       logging.warning('No default module found. Ignoring.')
 
@@ -840,6 +841,8 @@ class DevelopmentServer(object):
       self._running_modules.pop().quit()
     if self._dispatcher:
       self._dispatcher.quit()
+    if self._options.google_analytics_client_id:
+      metrics.GetMetricsLogger().Stop()
 
   @staticmethod
   def _create_api_server(request_data, storage_path, options, configuration):
@@ -850,22 +853,16 @@ class DevelopmentServer(object):
     search_index_path = options.search_indexes_path or os.path.join(
         storage_path, 'search_indexes')
 
-    prospective_search_path = options.prospective_search_path or os.path.join(
-        storage_path, 'prospective-search')
-
     blobstore_path = options.blobstore_path or os.path.join(storage_path,
                                                             'blobs')
 
     if options.clear_datastore:
       _clear_datastore_storage(datastore_path)
 
-    if options.clear_prospective_search:
-      _clear_prospective_search_storage(prospective_search_path)
-
     if options.clear_search_indexes:
       _clear_search_indexes_storage(search_index_path)
 
-    if options.auto_id_policy==datastore_stub_util.SEQUENTIAL:
+    if options.auto_id_policy == datastore_stub_util.SEQUENTIAL:
       logging.warn("--auto_id_policy='sequential' is deprecated. This option "
                    "will be removed in a future release.")
 
@@ -915,7 +912,6 @@ class DevelopmentServer(object):
         mail_enable_sendmail=options.enable_sendmail,
         mail_show_mail_body=options.show_mail_body,
         mail_allow_tls=options.smtp_allow_tls,
-        matcher_prospective_search_path=prospective_search_path,
         search_index_path=search_index_path,
         taskqueue_auto_run_tasks=options.enable_task_running,
         taskqueue_default_http_server=application_address,
@@ -1032,6 +1028,11 @@ def main():
   try:
     dev_server.start(options)
     shutdown.wait_until_shutdown()
+  except:  # pylint: disable=bare-except
+    metrics.GetMetricsLogger().LogOnceOnStop(
+        metrics.DEVAPPSERVER_CATEGORY, metrics.ERROR_ACTION,
+        label=metrics.GetErrorDetails())
+    raise
   finally:
     dev_server.stop()
 

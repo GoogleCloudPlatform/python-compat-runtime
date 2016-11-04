@@ -28,6 +28,7 @@ import webapp2
 from google.appengine.api import croninfo
 from google.appengine.api import yaml_errors
 from google.appengine.tools.devappserver2 import dispatcher
+from google.appengine.tools.devappserver2.admin import admin_request_handler
 from google.appengine.tools.devappserver2.admin import cron_handler
 
 CRON_INFO_EXTERNAL = croninfo.CronInfoExternal(cron=[
@@ -49,6 +50,8 @@ class CronHandlerTest(unittest.TestCase):
   def setUp(self):
     self.mox = mox.Mox()
     self._pytz = cron_handler.pytz
+    self.mox.StubOutWithMock(admin_request_handler.AdminRequestHandler, 'get')
+    self.mox.StubOutWithMock(admin_request_handler.AdminRequestHandler, 'post')
 
   def tearDown(self):
     cron_handler.pytz = self._pytz
@@ -59,6 +62,7 @@ class CronHandlerTest(unittest.TestCase):
     request = webapp2.Request.blank('/cron', POST={'url': '/url'})
     response = webapp2.Response()
     handler = cron_handler.CronHandler(request, response)
+    admin_request_handler.AdminRequestHandler(handler).post()
     handler.dispatcher = self.mox.CreateMock(dispatcher.Dispatcher)
     handler.dispatcher.add_request(
         method='GET',
@@ -78,6 +82,7 @@ class CronHandlerTest(unittest.TestCase):
     request = webapp2.Request.blank('/cron')
     response = webapp2.Response()
     handler = cron_handler.CronHandler(request, response)
+    admin_request_handler.AdminRequestHandler(handler).get()
     self.mox.StubOutWithMock(handler, '_get_cron_jobs')
     self.mox.StubOutWithMock(handler, 'render')
     handler._get_cron_jobs().AndReturn(jobs)
@@ -97,6 +102,7 @@ class CronHandlerTest(unittest.TestCase):
     request = webapp2.Request.blank('/cron')
     response = webapp2.Response()
     handler = cron_handler.CronHandler(request, response)
+    admin_request_handler.AdminRequestHandler(handler).get()
     self.mox.StubOutWithMock(handler, '_get_cron_jobs')
     self.mox.StubOutWithMock(handler, 'render')
     self.mox.StubOutWithMock(traceback, 'format_exc')
