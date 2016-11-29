@@ -34,8 +34,15 @@ import json
 import logging
 import os
 import re
-import subprocess
 
+try:
+
+
+
+
+  from googlecloudsdk.third_party.py27 import py27_subprocess as subprocess
+except ImportError:
+  import subprocess
 
 _REMOTE_URL_PATTERN = r'remote\.(.*)\.url'
 
@@ -47,10 +54,113 @@ _CLOUD_REPO_PATTERN = (
     '(/r/(?P<repo_name>[^/?#]+))?'
     '([/#?].*)?')
 
+_GIT_PENDING_CHANGE_PATTERN = (
+    '^# *('
+    'Untracked files|'
+    'Changes to be committed|'
+    'Changes not staged for commit'
+    '):')
+
 CAPTURE_CATEGORY = 'capture'
 REMOTE_REPO_CATEGORY = 'remote_repo'
 CONTEXT_FILENAME = 'source-context.json'
 EXT_CONTEXT_FILENAME = 'source-contexts.json'
+
+
+class _ContextType(object):
+  """Ordered enumeration of context types.
+
+  The ordering is based on which context information will provide the best
+  user experience. Higher numbers are considered better than lower numbers.
+  Google repositories have the highest ranking because they do not require
+  additional authorization to view.
+  """
+
+
+  OTHER = 0
+
+
+  GIT_UNKNOWN = 1
+
+
+  GIT_KNOWN_HOST_SSH = 2
+
+
+  GIT_KNOWN_HOST = 3
+
+
+  CLOUD_REPO = 4
+
+
+  SOURCE_CAPTURE = 5
+
+
+_PROTOCOL_PATTERN = re.compile(r'^(?P<protocol>\w+):')
+_DOMAIN_PATTERN = re.compile(r'^\w+://([^/]*[.@])?(?P<domain>\w+\.\w+)[/:]')
+
+
+def _GetGitContextTypeFromDomain(url):
+  """Returns the context type for the input Git url."""
+
+  if not url:
+    return _ContextType.GIT_UNKNOWN
+  if not _PROTOCOL_PATTERN.match(url):
+
+    url = 'ssh://' + url
+  domain_match = _DOMAIN_PATTERN.match(url)
+  protocol = _PROTOCOL_PATTERN.match(url).group('protocol')
+  if domain_match:
+    domain = domain_match.group('domain')
+    if domain == 'google.com':
+      return _ContextType.CLOUD_REPO
+    elif domain == 'github.com' or domain == 'bitbucket.org':
+      if protocol == 'ssh':
+        return _ContextType.GIT_KNOWN_HOST_SSH
+      else:
+        return _ContextType.GIT_KNOWN_HOST
+  return _ContextType.GIT_UNKNOWN
+
+
+def _GetContextType(context, labels):
+  """Returns the _ContextType for the input extended source context.
+
+  Args:
+    context: A source context dict.
+    labels: A dict containing the labels associated with the context.
+  Returns:
+    The context type.
+  """
+  if labels.get('category') == CAPTURE_CATEGORY:
+    return _ContextType.SOURCE_CAPTURE
+  git_context = context.get('git')
+  if git_context:
+    return _GetGitContextTypeFromDomain(git_context.get('url'))
+  if 'cloudRepo' in context:
+    return _ContextType.CLOUD_REPO
+  return _ContextType.OTHER
+
+
+def _IsRemoteBetter(new_name, old_name):
+  """Indicates if a new remote is better than an old one, based on remote name.
+
+  Names are ranked as follows: If either name is "origin", it is considered
+  best, otherwise the name that comes last alphabetically is considered best.
+
+  The alphabetical ordering is arbitrary, but it was chosen because it is
+  stable. We prefer "origin" because it is the standard name for the origin
+  of cloned repos.
+
+  Args:
+    new_name: The name to be evaluated.
+    old_name: The name to compare against.
+  Returns:
+    True iff new_name should replace old_name.
+  """
+  if not new_name or old_name == 'origin':
+    return False
+  if not old_name or new_name == 'origin':
+    return True
+  return new_name > old_name
 
 
 class GenerateSourceContextError(Exception):
@@ -62,17 +172,35 @@ def IsCaptureContext(context):
   return context.get('labels', {}).get('category', None) == CAPTURE_CATEGORY
 
 
-def ExtendContextDict(context, category=REMOTE_REPO_CATEGORY):
+def ExtendContextDict(context, category=REMOTE_REPO_CATEGORY, remote_name=None):
   """Converts a source context dict to an ExtendedSourceContext dict.
 
   Args:
     context: A SourceContext-compatible dict
     category:  string indicating the category of context (either
         CAPTURE_CATEGORY or REMOTE_REPO_CATEGORY)
+    remote_name: The name of the remote in git.
   Returns:
     An ExtendedSourceContext-compatible dict.
   """
-  return {'context': context, 'labels': {'category': category}}
+  labels = {'category': category}
+  if remote_name:
+    labels['remote_name'] = remote_name
+  return {'context': context, 'labels': labels}
+
+
+def HasPendingChanges(source_directory):
+  """Checks if the git repo in a directory has any pending changes.
+
+  Args:
+    source_directory: The path to directory containing the source code.
+  Returns:
+    True if there are any uncommitted or untracked changes in the local repo
+    for the given directory.
+  """
+  status = _CallGit(source_directory, 'status')
+  return re.search(_GIT_PENDING_CHANGE_PATTERN, status,
+                   flags=re.MULTILINE)
 
 
 def CalculateExtendedSourceContexts(source_directory):
@@ -110,8 +238,9 @@ def CalculateExtendedSourceContexts(source_directory):
 
 
   source_contexts = []
-  for remote_url in remote_urls.itervalues():
-    source_context = _ParseSourceContext(remote_url, source_revision)
+  for remote_name, remote_url in remote_urls.iteritems():
+    source_context = _ParseSourceContext(
+        remote_name, remote_url, source_revision)
 
 
 
@@ -126,71 +255,56 @@ def CalculateExtendedSourceContexts(source_directory):
   return source_contexts
 
 
-def BestSourceContext(source_contexts, source_directory):
+def BestSourceContext(source_contexts):
   """Returns the "best" source context from a list of contexts.
 
-  "Best" here means:
+  "Best" is a heuristic that attempts to define the most useful context in
+  a Google Cloud Platform application. The most useful context is defined as:
 
-  * The Cloud Repo context, if there is exactly one such.
-  * The Git Repo context, if there is no Cloud Repo context.
-  * If the above conditions are not met, raise an error.
+  1. The capture context, if there is one. (I.e., a context with category
+     'capture')
+  2. The Cloud Repo context, if there is one.
+  3. A repo context from another known provider (i.e. github or bitbucket), if
+     there is no Cloud Repo context.
+  4. The generic git repo context, if not of the above apply.
+
+  If there are two Cloud Repo contexts and one of them is a "capture" context,
+  that context is considered best.
+
+  If two Git contexts come from the same provider, they will be evaluated based
+  on remote name: "origin" is the best name, followed by the name that comes
+  last alphabetically.
+
+  If all of the above does not resolve a tie, the tied context that is
+  earliest in the source_contexts list wins.
 
   Args:
-    source_contexts: An array of source contexts.
-    source_directory: The source location (for error messages).
+    source_contexts: A list of extended source contexts.
   Returns:
-    A single source context.
+    A single source context, or None if source_contexts is empty.
   Raises:
-    GenerateSourceContextError: if source context could not be generated.
+    KeyError if any extended source context is malformed.
   """
   source_context = None
-  must_be_cloud = False
+  best_type = None
+  best_remote_name = None
   for ext_ctx in source_contexts:
     candidate = ext_ctx['context']
-    if not source_context:
-      source_context = candidate
+    labels = ext_ctx.get('labels', {})
+    context_type = _GetContextType(candidate, labels)
+
+
+
+    if best_type and context_type < best_type:
       continue
-    if 'cloudRepo' in candidate.keys():
-      if 'cloudRepo' in source_context.keys():
-        raise GenerateSourceContextError(
-            'Found multiple Google Cloud Repositories in the remote URLs for '
-            'source directory: %s' % source_directory)
-      source_context = candidate
-    else:
-
-
-
-      must_be_cloud = True
-  if must_be_cloud and 'cloudRepo' not in source_context.keys():
-    raise GenerateSourceContextError(
-        'Found multiple Git Repositories (and no Google Cloud Repository) in '
-        'the remote URLs for source directory: %s' % source_directory)
+    remote_name = labels.get('remote_name')
+    if context_type == best_type and not _IsRemoteBetter(remote_name,
+                                                         best_remote_name):
+      continue
+    source_context = candidate
+    best_remote_name = remote_name
+    best_type = context_type
   return source_context
-
-
-def GenerateSourceContext(source_directory, output_file):
-  """Generate a source context JSON blob.
-
-  Scans the remotes and revision of the git repository at source_directory,
-  which (in a successful case) results in a JSON blob as output_file.
-
-  Args:
-    source_directory: The path to directory containing the source code.
-    output_file: Output file for the source context JSON blob.
-  Raises:
-    GenerateSourceContextError: if source context could not be generated.
-  """
-
-  source_contexts = CalculateExtendedSourceContexts(source_directory)
-  source_context = BestSourceContext(source_contexts, source_directory)
-
-
-  output_file = os.path.abspath(output_file)
-  output_dir, unused_name = os.path.split(output_file)
-  if not os.path.isdir(output_dir):
-    os.makedirs(output_dir, mode=0777)
-  with open(output_file, 'w') as f:
-    json.dump(source_context, f, indent=2, sort_keys=True)
 
 
 def GetSourceContextFilesCreator(output_dir, source_contexts, source_dir=None):
@@ -240,13 +354,13 @@ def GetSourceContextFilesCreator(output_dir, source_contexts, source_dir=None):
 
 def CreateContextFiles(output_dir, source_contexts, overwrite=False,
                        source_dir=None):
-  """Creates source context files in the given directory.
+  """Creates source context files in the given directory if possible.
 
   Currently, two files will be produced, source-context.json and
   source-contexts.json. The old-style source-context.json file is deprecated,
   but will need to be produced until all components are updated to use the new
-  file. This process may take a while because there are managed VMs which may be
-  slow to update the debug agent to one that supports the new format.
+  file. This process may take a while because there are Flexible VMs which may
+  be slow to update the debug agent to one that supports the new format.
 
   The new format supports communicating multiple source contexts with labels to
   enable the UI to chose the best contexts for a given situation.
@@ -262,27 +376,26 @@ def CreateContextFiles(output_dir, source_contexts, overwrite=False,
         source contexts when source_contexts is empty or None. If not
         specified, output_dir will be used instead.
   Returns:
-    ([String]) A list containing the names of the files created.
+    ([String]) A list containing the names of the files created. If there are
+    no source contexts found, or if the contexts files could not be created, the
+    result will be an empty.
   """
   if not source_contexts:
     source_contexts = _GetSourceContexts(source_dir or output_dir)
     if not source_contexts:
       return []
   created = []
-  try:
-    for context_filename, context_object in [
-        (CONTEXT_FILENAME, BestSourceContext(source_contexts, output_dir)),
-        (EXT_CONTEXT_FILENAME, source_contexts)]:
-      context_filename = os.path.join(output_dir, context_filename)
+  for context_filename, context_object in [
+      (CONTEXT_FILENAME, BestSourceContext(source_contexts)),
+      (EXT_CONTEXT_FILENAME, source_contexts)]:
+    context_filename = os.path.join(output_dir, context_filename)
+    try:
       if overwrite or not os.path.exists(context_filename):
         with open(context_filename, 'w') as f:
           json.dump(context_object, f)
         created.append(context_filename)
-  except IOError as e:
-    logging.warn('Could not generate [%s]: %s', context_filename, e)
-  except GenerateSourceContextError as e:
-    logging.info('Could not select best source context [%s]: %s',
-                 source_contexts, e)
+    except IOError as e:
+      logging.warn('Could not generate [%s]: %s', context_filename, e)
 
   return created
 
@@ -367,10 +480,11 @@ def _GetGitHeadRevision(source_directory):
   return raw_output.strip() if raw_output else None
 
 
-def _ParseSourceContext(remote_url, source_revision):
+def _ParseSourceContext(remote_name, remote_url, source_revision):
   """Parses the URL into a source context blob, if the URL is a git or GCP repo.
 
   Args:
+    remote_name: The name of the remote.
     remote_url: The remote URL to parse.
     source_revision: The current revision of the source directory.
   Returns:
@@ -424,7 +538,7 @@ def _ParseSourceContext(remote_url, source_revision):
   if not context:
     context = {'git': {'url': remote_url, 'revisionId': source_revision}}
 
-  return ExtendContextDict(context)
+  return ExtendContextDict(context, remote_name=remote_name)
 
 
 def _GetJsonFileCreator(name, json_object):
@@ -439,6 +553,7 @@ def _GetJsonFileCreator(name, json_object):
   """
   if os.path.exists(name):
     logging.warn('%s already exists. It will not be updated.', name)
+    return lambda: (lambda: None)
   def Cleanup():
     os.remove(name)
   def Generate():
@@ -463,13 +578,7 @@ def _GetContextFileCreator(output_dir, contexts):
     A creator function that will create the file.
   """
   name = os.path.join(output_dir, CONTEXT_FILENAME)
-  try:
-    context = BestSourceContext(contexts, output_dir)
-  except GenerateSourceContextError as e:
-    logging.warn('Could not generate [%s]: %s', name, e)
-
-    return lambda: (lambda: None)
-  return _GetJsonFileCreator(name, context)
+  return _GetJsonFileCreator(name, BestSourceContext(contexts))
 
 
 def _GetExtContextFileCreator(output_dir, contexts):

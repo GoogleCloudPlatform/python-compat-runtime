@@ -44,7 +44,7 @@ from google.appengine.tools import yaml_translator
 
 _CLASSES_JAR_NAME_PREFIX = '_ah_webinf_classes'
 _COMPILED_JSP_JAR_NAME_PREFIX = '_ah_compiled_jsps'
-_LOCAL_JSPC_CLASS = 'com.google.appengine.tools.development.LocalJspC'
+_LOCAL_JSPC_CLASS = 'com.google.appengine.tools.admin.LocalJspC'
 _MAX_COMPILED_JSP_JAR_SIZE = 1024 * 1024 * 5
 
 
@@ -544,9 +544,8 @@ class JavaAppUpdate(object):
     """Builds the classpath for the JSP Compilation system call."""
     lib_dir = os.path.join(os.path.dirname(classes_dir), 'lib')
     elements = (
-        GetImplLibs(tools_dir) + GetSharedLibFiles(tools_dir) +
-        [classes_dir, gen_dir] +
-        _FilesMatching(
+        GetToolsJar(tools_dir) + GetImplLibs(tools_dir) +
+        GetSharedLibFiles(tools_dir) + [classes_dir, gen_dir] + _FilesMatching(
             lib_dir, lambda f: f.endswith('.jar') or f.endswith('.zip')))
 
     return (os.pathsep).join(elements)
@@ -558,6 +557,10 @@ class JavaAppUpdate(object):
         if re.search(regex, f):
           return True
     return False
+
+
+def GetToolsJar(tools_dir):
+  return [os.path.join(tools_dir, 'java', 'lib', 'appengine-tools-api.jar')]
 
 
 def GetImplLibs(tools_dir):

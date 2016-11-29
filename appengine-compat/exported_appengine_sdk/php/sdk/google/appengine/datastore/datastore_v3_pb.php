@@ -4255,6 +4255,9 @@ namespace google\appengine_datastore_v3\Error {
     const TRY_ALTERNATE_BACKEND = 10;
     const SAFE_TIME_TOO_OLD = 11;
     const RESOURCE_EXHAUSTED = 12;
+    const NOT_FOUND = 13;
+    const ALREADY_EXISTS = 14;
+    const FAILED_PRECONDITION = 15;
   }
 }
 namespace google\appengine_datastore_v3 {
@@ -8405,6 +8408,13 @@ namespace google\appengine_datastore_v3 {
     }
   }
 }
+namespace google\appengine_datastore_v3\BeginTransactionRequest {
+  class TransactionMode {
+    const UNKNOWN = 0;
+    const READ_ONLY = 1;
+    const READ_WRITE = 2;
+  }
+}
 namespace google\appengine_datastore_v3 {
   class BeginTransactionRequest extends \google\net\ProtocolMessage {
     public function getApp() {
@@ -8458,10 +8468,51 @@ namespace google\appengine_datastore_v3 {
     public function hasDatabaseId() {
       return isset($this->database_id);
     }
+    public function getMode() {
+      if (!isset($this->mode)) {
+        return 0;
+      }
+      return $this->mode;
+    }
+    public function setMode($val) {
+      $this->mode = $val;
+      return $this;
+    }
+    public function clearMode() {
+      unset($this->mode);
+      return $this;
+    }
+    public function hasMode() {
+      return isset($this->mode);
+    }
+    public function getPreviousTransaction() {
+      if (!isset($this->previous_transaction)) {
+        return new \google\appengine_datastore_v3\Transaction();
+      }
+      return $this->previous_transaction;
+    }
+    public function mutablePreviousTransaction() {
+      if (!isset($this->previous_transaction)) {
+        $res = new \google\appengine_datastore_v3\Transaction();
+        $this->previous_transaction = $res;
+        return $res;
+      }
+      return $this->previous_transaction;
+    }
+    public function clearPreviousTransaction() {
+      if (isset($this->previous_transaction)) {
+        unset($this->previous_transaction);
+      }
+    }
+    public function hasPreviousTransaction() {
+      return isset($this->previous_transaction);
+    }
     public function clear() {
       $this->clearApp();
       $this->clearAllowMultipleEg();
       $this->clearDatabaseId();
+      $this->clearMode();
+      $this->clearPreviousTransaction();
     }
     public function byteSizePartial() {
       $res = 0;
@@ -8475,6 +8526,14 @@ namespace google\appengine_datastore_v3 {
       if (isset($this->database_id)) {
         $res += 1;
         $res += $this->lengthString(strlen($this->database_id));
+      }
+      if (isset($this->mode)) {
+        $res += 1;
+        $res += $this->lengthVarInt64($this->mode);
+      }
+      if (isset($this->previous_transaction)) {
+        $res += 1;
+        $res += $this->lengthString($this->previous_transaction->byteSizePartial());
       }
       return $res;
     }
@@ -8490,6 +8549,15 @@ namespace google\appengine_datastore_v3 {
       if (isset($this->database_id)) {
         $out->putVarInt32(34);
         $out->putPrefixedString($this->database_id);
+      }
+      if (isset($this->mode)) {
+        $out->putVarInt32(40);
+        $out->putVarInt32($this->mode);
+      }
+      if (isset($this->previous_transaction)) {
+        $out->putVarInt32(58);
+        $out->putVarInt32($this->previous_transaction->byteSizePartial());
+        $this->previous_transaction->outputPartial($out);
       }
     }
     public function tryMerge($d) {
@@ -8509,6 +8577,15 @@ namespace google\appengine_datastore_v3 {
             $this->setDatabaseId(substr($d->buffer(), $d->pos(), $length));
             $d->skip($length);
             break;
+          case 40:
+            $this->setMode($d->getVarInt32());
+            break;
+          case 58:
+            $length = $d->getVarInt32();
+            $tmp = new \google\net\Decoder($d->buffer(), $d->pos(), $d->pos() + $length);
+            $d->skip($length);
+            $this->mutablePreviousTransaction()->tryMerge($tmp);
+            break;
           case 0:
             throw new \google\net\ProtocolBufferDecodeError();
             break;
@@ -8519,6 +8596,7 @@ namespace google\appengine_datastore_v3 {
     }
     public function checkInitialized() {
       if (!isset($this->app)) return 'app';
+      if (isset($this->previous_transaction) && (!$this->previous_transaction->isInitialized())) return 'previous_transaction';
       return null;
     }
     public function mergeFrom($x) {
@@ -8532,6 +8610,12 @@ namespace google\appengine_datastore_v3 {
       if ($x->hasDatabaseId()) {
         $this->setDatabaseId($x->getDatabaseId());
       }
+      if ($x->hasMode()) {
+        $this->setMode($x->getMode());
+      }
+      if ($x->hasPreviousTransaction()) {
+        $this->mutablePreviousTransaction()->mergeFrom($x->getPreviousTransaction());
+      }
     }
     public function equals($x) {
       if ($x === $this) { return true; }
@@ -8541,6 +8625,10 @@ namespace google\appengine_datastore_v3 {
       if (isset($this->allow_multiple_eg) && $this->allow_multiple_eg !== $x->allow_multiple_eg) return false;
       if (isset($this->database_id) !== isset($x->database_id)) return false;
       if (isset($this->database_id) && $this->database_id !== $x->database_id) return false;
+      if (isset($this->mode) !== isset($x->mode)) return false;
+      if (isset($this->mode) && $this->mode !== $x->mode) return false;
+      if (isset($this->previous_transaction) !== isset($x->previous_transaction)) return false;
+      if (isset($this->previous_transaction) && !$this->previous_transaction->equals($x->previous_transaction)) return false;
       return true;
     }
     public function shortDebugString($prefix = "") {
@@ -8553,6 +8641,12 @@ namespace google\appengine_datastore_v3 {
       }
       if (isset($this->database_id)) {
         $res .= $prefix . "database_id: " . $this->debugFormatString($this->database_id) . "\n";
+      }
+      if (isset($this->mode)) {
+        $res .= $prefix . "mode: " . ($this->mode) . "\n";
+      }
+      if (isset($this->previous_transaction)) {
+        $res .= $prefix . "previous_transaction <\n" . $this->previous_transaction->shortDebugString($prefix . "  ") . $prefix . ">\n";
       }
       return $res;
     }

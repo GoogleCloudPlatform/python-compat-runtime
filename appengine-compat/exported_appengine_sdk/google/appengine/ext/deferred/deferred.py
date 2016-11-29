@@ -97,10 +97,18 @@ import os
 import pickle
 import types
 
-from google.appengine.api import taskqueue
-from google.appengine.ext import db
-from google.appengine.ext import webapp
-from google.appengine.ext.webapp.util import run_wsgi_app
+
+if os.environ.get("APPENGINE_RUNTIME") == "python27":
+  from google.appengine.api import taskqueue
+  from google.appengine.ext import db
+  from google.appengine.ext import webapp
+  from google.appengine.ext.webapp.util import run_wsgi_app
+else:
+  from google.appengine.api import taskqueue
+  from google.appengine.ext import db
+  from google.appengine.ext import webapp
+  from google.appengine.ext.webapp.util import run_wsgi_app
+
 
 
 _DEFAULT_LOG_LEVEL = logging.INFO

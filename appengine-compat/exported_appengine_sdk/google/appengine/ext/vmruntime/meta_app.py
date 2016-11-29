@@ -92,7 +92,6 @@ def FullyWrappedApp(appinfo_external, appengine_config):
   app = middlewares.WsgiEnvSettingMiddleware(app, appinfo_external)
   app = middlewares.FixServerEnvVarsMiddleware(app)
   app = middlewares.OsEnvSetupMiddleware(app, appengine_config)
-  app = middlewares.RequestIdMiddleware(app)
 
 
   app = middlewares.PatchLoggingMethods(app)

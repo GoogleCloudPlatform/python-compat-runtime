@@ -51,6 +51,7 @@ from google.appengine.tools.devappserver2 import endpoints
 from google.appengine.tools.devappserver2 import errors
 from google.appengine.tools.devappserver2 import file_watcher
 from google.appengine.tools.devappserver2 import gcs_server
+from google.appengine.tools.devappserver2 import grpc_port
 from google.appengine.tools.devappserver2 import http_proxy
 from google.appengine.tools.devappserver2 import http_runtime
 from google.appengine.tools.devappserver2 import http_runtime_constants
@@ -265,10 +266,21 @@ class Module(object):
     handlers.append(
         wsgi_handler.WSGIHandler(gcs_server.Application(), url_pattern))
 
-    url_pattern = '/%s' % endpoints.API_SERVING_PATTERN
-    handlers.append(
-        wsgi_handler.WSGIHandler(
-            endpoints.EndpointsDispatcher(self._dispatcher), url_pattern))
+    # Add a handler for Endpoints, only if version == 1.0
+    runtime_config = self._get_runtime_config()
+    for library in runtime_config.libraries:
+      if library.name == 'endpoints' and library.version == '1.0':
+        url_pattern = '/%s' % endpoints.API_SERVING_PATTERN
+        handlers.append(
+            wsgi_handler.WSGIHandler(
+                endpoints.EndpointsDispatcher(self._dispatcher), url_pattern))
+
+    # Add a handler for getting the port running gRPC, only if there are APIs
+    # speaking gRPC.
+    if runtime_config.grpc_apis:
+      url_pattern = '/%s' % grpc_port.GRPC_PORT_URL_PATTERN
+      handlers.append(
+          wsgi_handler.WSGIHandler(grpc_port.Application(), url_pattern))
 
     found_start_handler = False
     found_warmup_handler = False
@@ -328,6 +340,7 @@ class Module(object):
           self._module_configuration.handlers)
     runtime_config.api_host = self._api_host
     runtime_config.api_port = self._api_port
+    runtime_config.grpc_apis.extend(self._grpc_apis)
     runtime_config.server_port = self._balanced_port
     runtime_config.stderr_log_level = self._runtime_stderr_loglevel
     runtime_config.datacenter = 'us1'
@@ -439,7 +452,8 @@ class Module(object):
                use_mtime_file_watcher,
                automatic_restarts,
                allow_skipped_files,
-               threadsafe_override):
+               threadsafe_override,
+               grpc_apis=None):
     """Initializer for Module.
     Args:
       module_configuration: An application_configuration.ModuleConfiguration
@@ -489,6 +503,7 @@ class Module(object):
           directive.
       threadsafe_override: If not None, ignore the YAML file value of threadsafe
           and use this value instead.
+      grpc_apis: a list of apis that use grpc.
 
     Raises:
       errors.InvalidAppConfigError: For runtime: custom, either mistakenly set
@@ -501,6 +516,7 @@ class Module(object):
     self._host = host
     self._api_host = api_host
     self._api_port = api_port
+    self._grpc_apis = grpc_apis or []
     self._auth_domain = auth_domain
     self._runtime_stderr_loglevel = runtime_stderr_loglevel
     self._balanced_port = balanced_port
@@ -541,6 +557,8 @@ class Module(object):
           [self._module_configuration.application_root] +
           self._instance_factory.get_restart_directories(),
           self._use_mtime_file_watcher)
+      if hasattr(self._watcher, 'set_skip_files_re'):
+        self._watcher.set_skip_files_re(self._module_configuration.skip_files)
     else:
       self._watcher = None
     self._handler_lock = threading.Lock()
@@ -706,7 +724,7 @@ class Module(object):
     else:
       environ['SERVER_PORT'] = str(self.balanced_port)
     if 'HTTP_HOST' in environ:
-      environ['SERVER_NAME'] = environ['HTTP_HOST'].split(':', 1)[0]
+      environ['SERVER_NAME'] = environ['HTTP_HOST'].rsplit(':', 1)[0]
     environ['DEFAULT_VERSION_HOSTNAME'] = '%s:%s' % (
         environ['SERVER_NAME'], self._default_version_port)
 
@@ -1071,7 +1089,10 @@ class Module(object):
 
     url = urlparse.urlsplit(relative_url)
     if port != 80:
-      host = '%s:%s' % (self.host, port)
+      if ':' in self.host:
+        host = '[%s]:%s' % (self.host, port)
+      else:
+        host = '%s:%s' % (self.host, port)
     else:
       host = self.host
     environ = {constants.FAKE_IS_ADMIN_HEADER: '1',

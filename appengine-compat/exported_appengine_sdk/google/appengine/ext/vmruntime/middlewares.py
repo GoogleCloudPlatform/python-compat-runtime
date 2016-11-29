@@ -27,7 +27,6 @@ import traceback
 
 from google.appengine.api import logservice
 from google.appengine.ext.vmruntime import callback
-from google.appengine.ext.vmruntime import utils
 from google.appengine.ext.vmruntime import vmstub
 from google.appengine.runtime import request_environment
 
@@ -40,13 +39,6 @@ MAX_CONCURRENT_REQUESTS = 501
 REQUEST_LOG_FILE = '/var/log/app_engine/request.log'
 REQUEST_LOG_BYTES = 128 * 1024 * 1024
 REQUEST_LOG_BACKUPS = 3
-
-
-
-
-
-
-REQ_ID_KEY = 'HTTP_X_CLOUD_TRACE_CONTEXT'
 
 
 def PatchLoggingMethods(app):
@@ -364,30 +356,6 @@ def OsEnvSetupMiddleware(app, appengine_config):
     return app(wsgi_env, start_response)
 
   return PatchEnv
-
-
-def RequestIdMiddleware(app):
-  """Prepares a Request ID independent of os.environ for the app to use.
-
-  This middleware must be a layer above the OsEnvSetupMiddleware.
-
-  Args:
-    app: The WSGI app to wrap.
-
-  Returns:
-    The wrapped app, also a WSGI app.
-  """
-  def HandleRequestId(wsgi_env, start_response):
-    """The middleware WSGI app."""
-
-    assert REQ_ID_KEY in wsgi_env
-    utils.SetRequestId(wsgi_env[REQ_ID_KEY])
-    try:
-      return app(wsgi_env, start_response)
-    finally:
-      utils.DeleteRequestId(threading.current_thread().ident)
-
-  return HandleRequestId
 
 
 def FixServerEnvVarsMiddleware(app):

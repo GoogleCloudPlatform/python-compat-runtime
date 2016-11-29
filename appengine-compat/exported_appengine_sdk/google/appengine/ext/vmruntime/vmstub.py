@@ -226,7 +226,7 @@ class VMEngineRPC(apiproxy_rpc.RPC):
 
     body_data = request.SerializeToString()
     headers = {
-        SERVICE_DEADLINE_HEADER: deadline,
+        SERVICE_DEADLINE_HEADER: str(deadline),
         SERVICE_ENDPOINT_HEADER: SERVICE_ENDPOINT_NAME,
         SERVICE_METHOD_HEADER: APIHOST_METHOD,
         'Content-type': RPC_CONTENT_TYPE,

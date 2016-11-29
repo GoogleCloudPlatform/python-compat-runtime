@@ -4305,6 +4305,9 @@ class Error(ProtocolBuffer.ProtocolMessage):
   TRY_ALTERNATE_BACKEND =   10
   SAFE_TIME_TOO_OLD =   11
   RESOURCE_EXHAUSTED =   12
+  NOT_FOUND    =   13
+  ALREADY_EXISTS =   14
+  FAILED_PRECONDITION =   15
 
   _ErrorCode_NAMES = {
     1: "BAD_REQUEST",
@@ -4319,6 +4322,9 @@ class Error(ProtocolBuffer.ProtocolMessage):
     10: "TRY_ALTERNATE_BACKEND",
     11: "SAFE_TIME_TOO_OLD",
     12: "RESOURCE_EXHAUSTED",
+    13: "NOT_FOUND",
+    14: "ALREADY_EXISTS",
+    15: "FAILED_PRECONDITION",
   }
 
   def ErrorCode_Name(cls, x): return cls._ErrorCode_NAMES.get(x, "")
@@ -8603,14 +8609,34 @@ class AddActionsResponse(ProtocolBuffer.ProtocolMessage):
   _STYLE_CONTENT_TYPE = """"""
   _PROTO_DESCRIPTOR_NAME = 'apphosting_datastore_v3.AddActionsResponse'
 class BeginTransactionRequest(ProtocolBuffer.ProtocolMessage):
+
+
+  UNKNOWN      =    0
+  READ_ONLY    =    1
+  READ_WRITE   =    2
+
+  _TransactionMode_NAMES = {
+    0: "UNKNOWN",
+    1: "READ_ONLY",
+    2: "READ_WRITE",
+  }
+
+  def TransactionMode_Name(cls, x): return cls._TransactionMode_NAMES.get(x, "")
+  TransactionMode_Name = classmethod(TransactionMode_Name)
+
   has_app_ = 0
   app_ = ""
   has_allow_multiple_eg_ = 0
   allow_multiple_eg_ = 0
   has_database_id_ = 0
   database_id_ = ""
+  has_mode_ = 0
+  mode_ = 0
+  has_previous_transaction_ = 0
+  previous_transaction_ = None
 
   def __init__(self, contents=None):
+    self.lazy_init_lock_ = thread.allocate_lock()
     if contents is not None: self.MergeFromString(contents)
 
   def app(self): return self.app_
@@ -8652,12 +8678,46 @@ class BeginTransactionRequest(ProtocolBuffer.ProtocolMessage):
 
   def has_database_id(self): return self.has_database_id_
 
+  def mode(self): return self.mode_
+
+  def set_mode(self, x):
+    self.has_mode_ = 1
+    self.mode_ = x
+
+  def clear_mode(self):
+    if self.has_mode_:
+      self.has_mode_ = 0
+      self.mode_ = 0
+
+  def has_mode(self): return self.has_mode_
+
+  def previous_transaction(self):
+    if self.previous_transaction_ is None:
+      self.lazy_init_lock_.acquire()
+      try:
+        if self.previous_transaction_ is None: self.previous_transaction_ = Transaction()
+      finally:
+        self.lazy_init_lock_.release()
+    return self.previous_transaction_
+
+  def mutable_previous_transaction(self): self.has_previous_transaction_ = 1; return self.previous_transaction()
+
+  def clear_previous_transaction(self):
+
+    if self.has_previous_transaction_:
+      self.has_previous_transaction_ = 0;
+      if self.previous_transaction_ is not None: self.previous_transaction_.Clear()
+
+  def has_previous_transaction(self): return self.has_previous_transaction_
+
 
   def MergeFrom(self, x):
     assert x is not self
     if (x.has_app()): self.set_app(x.app())
     if (x.has_allow_multiple_eg()): self.set_allow_multiple_eg(x.allow_multiple_eg())
     if (x.has_database_id()): self.set_database_id(x.database_id())
+    if (x.has_mode()): self.set_mode(x.mode())
+    if (x.has_previous_transaction()): self.mutable_previous_transaction().MergeFrom(x.previous_transaction())
 
   def Equals(self, x):
     if x is self: return 1
@@ -8667,6 +8727,10 @@ class BeginTransactionRequest(ProtocolBuffer.ProtocolMessage):
     if self.has_allow_multiple_eg_ and self.allow_multiple_eg_ != x.allow_multiple_eg_: return 0
     if self.has_database_id_ != x.has_database_id_: return 0
     if self.has_database_id_ and self.database_id_ != x.database_id_: return 0
+    if self.has_mode_ != x.has_mode_: return 0
+    if self.has_mode_ and self.mode_ != x.mode_: return 0
+    if self.has_previous_transaction_ != x.has_previous_transaction_: return 0
+    if self.has_previous_transaction_ and self.previous_transaction_ != x.previous_transaction_: return 0
     return 1
 
   def IsInitialized(self, debug_strs=None):
@@ -8675,6 +8739,7 @@ class BeginTransactionRequest(ProtocolBuffer.ProtocolMessage):
       initialized = 0
       if debug_strs is not None:
         debug_strs.append('Required field: app not set.')
+    if (self.has_previous_transaction_ and not self.previous_transaction_.IsInitialized(debug_strs)): initialized = 0
     return initialized
 
   def ByteSize(self):
@@ -8682,6 +8747,8 @@ class BeginTransactionRequest(ProtocolBuffer.ProtocolMessage):
     n += self.lengthString(len(self.app_))
     if (self.has_allow_multiple_eg_): n += 2
     if (self.has_database_id_): n += 1 + self.lengthString(len(self.database_id_))
+    if (self.has_mode_): n += 1 + self.lengthVarInt64(self.mode_)
+    if (self.has_previous_transaction_): n += 1 + self.lengthString(self.previous_transaction_.ByteSize())
     return n + 1
 
   def ByteSizePartial(self):
@@ -8691,12 +8758,16 @@ class BeginTransactionRequest(ProtocolBuffer.ProtocolMessage):
       n += self.lengthString(len(self.app_))
     if (self.has_allow_multiple_eg_): n += 2
     if (self.has_database_id_): n += 1 + self.lengthString(len(self.database_id_))
+    if (self.has_mode_): n += 1 + self.lengthVarInt64(self.mode_)
+    if (self.has_previous_transaction_): n += 1 + self.lengthString(self.previous_transaction_.ByteSizePartial())
     return n
 
   def Clear(self):
     self.clear_app()
     self.clear_allow_multiple_eg()
     self.clear_database_id()
+    self.clear_mode()
+    self.clear_previous_transaction()
 
   def OutputUnchecked(self, out):
     out.putVarInt32(10)
@@ -8707,6 +8778,13 @@ class BeginTransactionRequest(ProtocolBuffer.ProtocolMessage):
     if (self.has_database_id_):
       out.putVarInt32(34)
       out.putPrefixedString(self.database_id_)
+    if (self.has_mode_):
+      out.putVarInt32(40)
+      out.putVarInt32(self.mode_)
+    if (self.has_previous_transaction_):
+      out.putVarInt32(58)
+      out.putVarInt32(self.previous_transaction_.ByteSize())
+      self.previous_transaction_.OutputUnchecked(out)
 
   def OutputPartial(self, out):
     if (self.has_app_):
@@ -8718,6 +8796,13 @@ class BeginTransactionRequest(ProtocolBuffer.ProtocolMessage):
     if (self.has_database_id_):
       out.putVarInt32(34)
       out.putPrefixedString(self.database_id_)
+    if (self.has_mode_):
+      out.putVarInt32(40)
+      out.putVarInt32(self.mode_)
+    if (self.has_previous_transaction_):
+      out.putVarInt32(58)
+      out.putVarInt32(self.previous_transaction_.ByteSizePartial())
+      self.previous_transaction_.OutputPartial(out)
 
   def TryMerge(self, d):
     while d.avail() > 0:
@@ -8731,6 +8816,15 @@ class BeginTransactionRequest(ProtocolBuffer.ProtocolMessage):
       if tt == 34:
         self.set_database_id(d.getPrefixedString())
         continue
+      if tt == 40:
+        self.set_mode(d.getVarInt32())
+        continue
+      if tt == 58:
+        length = d.getVarInt32()
+        tmp = ProtocolBuffer.Decoder(d.buffer(), d.pos(), d.pos() + length)
+        d.skip(length)
+        self.mutable_previous_transaction().TryMerge(tmp)
+        continue
 
 
       if (tt == 0): raise ProtocolBuffer.ProtocolBufferDecodeError
@@ -8742,6 +8836,11 @@ class BeginTransactionRequest(ProtocolBuffer.ProtocolMessage):
     if self.has_app_: res+=prefix+("app: %s\n" % self.DebugFormatString(self.app_))
     if self.has_allow_multiple_eg_: res+=prefix+("allow_multiple_eg: %s\n" % self.DebugFormatBool(self.allow_multiple_eg_))
     if self.has_database_id_: res+=prefix+("database_id: %s\n" % self.DebugFormatString(self.database_id_))
+    if self.has_mode_: res+=prefix+("mode: %s\n" % self.DebugFormatInt32(self.mode_))
+    if self.has_previous_transaction_:
+      res+=prefix+"previous_transaction <\n"
+      res+=self.previous_transaction_.__str__(prefix + "  ", printElemNumber)
+      res+=prefix+">\n"
     return res
 
 
@@ -8751,20 +8850,26 @@ class BeginTransactionRequest(ProtocolBuffer.ProtocolMessage):
   kapp = 1
   kallow_multiple_eg = 2
   kdatabase_id = 4
+  kmode = 5
+  kprevious_transaction = 7
 
   _TEXT = _BuildTagLookupTable({
     0: "ErrorCode",
     1: "app",
     2: "allow_multiple_eg",
     4: "database_id",
-  }, 4)
+    5: "mode",
+    7: "previous_transaction",
+  }, 7)
 
   _TYPES = _BuildTagLookupTable({
     0: ProtocolBuffer.Encoder.NUMERIC,
     1: ProtocolBuffer.Encoder.STRING,
     2: ProtocolBuffer.Encoder.NUMERIC,
     4: ProtocolBuffer.Encoder.STRING,
-  }, 4, ProtocolBuffer.Encoder.MAX_TYPE)
+    5: ProtocolBuffer.Encoder.NUMERIC,
+    7: ProtocolBuffer.Encoder.STRING,
+  }, 7, ProtocolBuffer.Encoder.MAX_TYPE)
 
 
   _STYLE = """"""

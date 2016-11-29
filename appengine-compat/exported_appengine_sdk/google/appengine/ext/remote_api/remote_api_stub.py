@@ -94,8 +94,8 @@ else:
 
 from google.appengine.tools import appengine_rpc
 
-
 _REQUEST_ID_HEADER = 'HTTP_X_APPENGINE_REQUEST_ID'
+_TIMEOUT_SECONDS = 10
 
 
 class Error(Exception):
@@ -170,19 +170,22 @@ class RemoteStub(object):
 
   _local = threading.local()
 
-  def __init__(self, server, path, _test_stub_map=None):
+  def __init__(self, server, path, _test_stub_map=None, grpc_apis=None):
     """Constructs a new RemoteStub that communicates with the specified server.
 
     Args:
       server: An instance of a subclass of
         google.appengine.tools.appengine_rpc.AbstractRpcServer.
       path: The path to the handler this stub should send requests to.
+      _test_stub_map: If supplied, send RPC calls to stubs in this map instead
+        of over the wire.
+       grpc_apis: a list of apis that use grpc.
     """
-
-
+    self._grpc_port = int(os.environ['GRPC_PORT']) if grpc_apis else None
     self._server = server
     self._path = path
     self._test_stub_map = _test_stub_map
+    self._grpc_apis = grpc_apis or []
 
   def _PreHookHandler(self, service, call, request, response):
     pass
@@ -213,13 +216,42 @@ class RemoteStub(object):
     cls._local.request_id = request_id
 
   def _MakeRealSyncCall(self, service, call, request, response):
+    if service in self._grpc_apis or 'all' in self._grpc_apis:
+      grpc_impl_module = __import__('grpc.beta.implementations', globals(),
+                                    locals(), ['implementations'])
+      grpc_service_pb2 = __import__('google.appengine.tools.devappserver2'
+                                    '.grpc_service_pb2', globals(), locals(),
+                                    ['grpc_service_pb2'])
+      channel = grpc_impl_module.insecure_channel('localhost',
+                                                  self._grpc_port)
+      stub = grpc_service_pb2.beta_create_CallHandler_stub(channel)
+      request_pb = grpc_service_pb2.Request(service_name=service, method=call,
+                                            request=request.Encode())
+      if hasattr(self._local, 'request_id'):
+        request_pb.request_id = self._local.request_id
+      response_pb = stub.HandleCall(request_pb, _TIMEOUT_SECONDS)
+
+
+
+      if response_pb.HasField('application_error'):
+        error_pb = response_pb.application_error
+        raise apiproxy_errors.ApplicationError(error_pb.code,
+                                               error_pb.detail)
+
+      elif response_pb.exception:
+        raise pickle.loads(response_pb.exception)
+      elif response_pb.java_exception:
+        raise UnknownJavaServerError('An unknown error has occured in the '
+                                     'Java remote_api handler for this call.')
+      else:
+        response.ParseFromString(response_pb.response)
+      return
+
     request_pb = remote_api_pb.Request()
     request_pb.set_service_name(service)
     request_pb.set_method(call)
     request_pb.set_request(request.Encode())
     if hasattr(self._local, 'request_id'):
-
-
       request_pb.set_request_id(self._local.request_id)
 
     response_pb = remote_api_pb.Response()
@@ -582,7 +614,7 @@ def GetRemoteAppIdFromServer(server, path, remote_token=None):
 
 def ConfigureRemoteApiFromServer(server, path, app_id, services=None,
                                  default_auth_domain=None,
-                                 use_remote_datastore=True):
+                                 use_remote_datastore=True, grpc_apis=None):
   """Does necessary setup to allow easy remote access to App Engine APIs.
 
   Args:
@@ -597,7 +629,7 @@ def ConfigureRemoteApiFromServer(server, path, app_id, services=None,
       through datastore requests. RemoteDatastoreStub batches transactional
       datastore requests since, in production, datastore requires are scoped to
       a single request.
-
+    grpc_apis: a list of apis that use grpc.
   Raises:
     urllib2.HTTPError: if app_id is not provided and there is an error while
       retrieving it.
@@ -619,7 +651,7 @@ def ConfigureRemoteApiFromServer(server, path, app_id, services=None,
     services.remove('datastore_v3')
     datastore_stub = RemoteDatastoreStub(server, path)
     apiproxy_stub_map.apiproxy.RegisterStub('datastore_v3', datastore_stub)
-  stub = RemoteStub(server, path)
+  stub = RemoteStub(server, path, grpc_apis=grpc_apis)
   for service in services:
     apiproxy_stub_map.apiproxy.RegisterStub(service, stub)
 
@@ -780,7 +812,8 @@ def ConfigureRemoteApi(app_id,
                        default_auth_domain=None,
                        save_cookies=False,
                        auth_tries=3,
-                       use_remote_datastore=True):
+                       use_remote_datastore=True,
+                       grpc_apis=None):
   """Does necessary setup to allow easy remote access to App Engine APIs.
 
   Either servername must be provided or app_id must not be None.  If app_id
@@ -817,7 +850,7 @@ def ConfigureRemoteApi(app_id,
       through datastore requests. RemoteDatastoreStub batches transactional
       datastore requests since, in production, datastore requires are scoped to
       a single request.
-
+    grpc_apis: a list of apis that use grpc.
   Returns:
     server, the server created by rpc_server_factory, which may be useful for
       calling the application directly.
@@ -839,7 +872,8 @@ def ConfigureRemoteApi(app_id,
     app_id = GetRemoteAppIdFromServer(server, path, rtok)
 
   ConfigureRemoteApiFromServer(server, path, app_id, services,
-                               default_auth_domain, use_remote_datastore)
+                               default_auth_domain, use_remote_datastore,
+                               grpc_apis)
   return server
 
 

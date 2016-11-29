@@ -21,6 +21,7 @@
 import logging
 import os
 import os.path
+import re
 import shutil
 import sys
 import tempfile
@@ -78,6 +79,19 @@ class TestInotifyFileWatcher(unittest.TestCase):
         set([path]),
         self._watcher.changes())
 
+  def test_skip_file_re(self):
+    self._watcher.set_skip_files_re(re.compile('skipped_.*'))
+    self._watcher.start()
+    self._create_file('skipped_file')
+    self.assertEqual(self._watcher.changes(), set())
+    path = self._create_directory('subdir/')
+    self.assertEqual(self._watcher.changes(), {path})
+    path = self._create_file('subdir/skipped_file')
+    # skip_files should only apply to the application root.
+    self.assertEqual(self._watcher.changes(), {path})
+    # Avoid polluting other tests.
+    self._watcher.set_skip_files_re(None)
+
   def test_file_modified(self):
     path = self._create_file('test')
     self._watcher.start()
@@ -122,6 +136,23 @@ class TestInotifyFileWatcher(unittest.TestCase):
     self.assertEqual(
         set([directory]),
         self._watcher.changes())
+
+  def test_skip_file_re_directory(self):
+    self._watcher.set_skip_files_re(re.compile('skipped.*'))
+    self._watcher.start()
+    self._create_directory('skipped_dir/')
+    self.assertEqual(self._watcher.changes(), set())
+    # subdirectory of a skipped directory should also be skipped
+    self._create_directory('skipped_dir/subdir/')
+    self.assertEqual(self._watcher.changes(), set())
+
+    path = self._create_directory('subdir/')
+    self.assertEqual(self._watcher.changes(), {path})
+    # skip_files should only apply to the application root.
+    path = self._create_directory('subdir/skipped_dir/')
+    self.assertEqual(self._watcher.changes(), {path})
+    # Avoid polluting other tests.
+    self._watcher.set_skip_files_re(None)
 
   def test_file_created_in_directory(self):
     directory = self._create_directory('test')

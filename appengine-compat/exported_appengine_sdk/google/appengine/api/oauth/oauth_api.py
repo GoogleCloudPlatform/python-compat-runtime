@@ -46,10 +46,18 @@ Classes defined here:
 import cPickle
 import os
 
-from google.appengine.api import apiproxy_stub_map
-from google.appengine.api import user_service_pb
-from google.appengine.api import users
-from google.appengine.runtime import apiproxy_errors
+
+if os.environ.get('APPENGINE_RUNTIME') == 'python27':
+  from google.appengine.api import apiproxy_stub_map
+  from google.appengine.api import user_service_pb
+  from google.appengine.api import users
+  from google.appengine.runtime import apiproxy_errors
+else:
+  from google.appengine.api import apiproxy_stub_map
+  from google.appengine.api import user_service_pb
+  from google.appengine.api import users
+  from google.appengine.runtime import apiproxy_errors
+
 
 
 class Error(Exception):

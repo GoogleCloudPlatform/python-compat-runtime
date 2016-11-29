@@ -20,8 +20,11 @@
 
 
 
-from google.appengine.ext.vmruntime import utils
+import os
 
+
+
+REQUEST_ID_KEY = 'HTTP_X_CLOUD_TRACE_CONTEXT'
 _callback_storage = {}
 
 
@@ -33,7 +36,7 @@ def SetRequestEndCallback(callback):
   Args:
     callback: A zero-argument callable whose return value is unused.
   """
-  req_id = utils.GetRequestId()
+  req_id = GetRequestId()
 
 
 
@@ -44,8 +47,19 @@ def SetRequestEndCallback(callback):
 
 def InvokeCallbacks():
   """Invokes the callbacks associated with the current request ID."""
-  req_id = utils.GetRequestId()
+
+  req_id = GetRequestId()
   if req_id in _callback_storage:
     for callback in _callback_storage[req_id]:
       callback(req_id)
+
     del _callback_storage[req_id]
+
+
+def GetRequestId():
+  """Returns a unique ID using the cloud trace ID."""
+  if REQUEST_ID_KEY in os.environ:
+    return os.environ[REQUEST_ID_KEY]
+  else:
+    return None
+

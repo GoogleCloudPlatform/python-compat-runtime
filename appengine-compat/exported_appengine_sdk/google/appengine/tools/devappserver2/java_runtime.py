@@ -122,8 +122,11 @@ class JavaRuntimeInstanceFactory(instance.InstanceFactory):
           java_bin,
           '-cp', class_path,
           '-Dappengine.sdk.root=' + java_dir,
+          '-Dappengine.runtime=' + self._module_configuration.runtime,
           '-Xbootclasspath/p:' + jdk_overrides_jar,
       ]
+      if self._module_configuration.runtime.startswith('java8'):
+        args.append('-Duse_jetty9_runtime=true')
       if sys.platform == 'darwin':
         args.append('-XstartOnFirstThread')
       args.extend(self._runtime_config_getter().java_config.jvm_args)

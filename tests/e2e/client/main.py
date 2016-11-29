@@ -5,12 +5,19 @@ import requests
 
 
 def main(url):
-    requests.get(url + 'refresh')
+    response = requests.get(url + 'refresh')
+    if response.status_code != 200:
+        print(response.status_code)
+        print(response.headers)
+        print(response.text)
+        sys.exit(1)
+
     response = requests.get(url + 'test')
 
     print(response.text)
 
     if response.status_code != 200:
+        print(response)
         sys.exit(1)
 
 
