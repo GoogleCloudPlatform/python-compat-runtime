@@ -20,7 +20,6 @@ COPY resources/requirements.txt /opt/requirements.txt
 RUN pip install --upgrade -r /opt/requirements.txt
 
 # Setup the application directory
-RUN ln -s /home/vmagent/app /app
 WORKDIR /app
 
 # Add the default gunicorn configuration file to the app directory. This
