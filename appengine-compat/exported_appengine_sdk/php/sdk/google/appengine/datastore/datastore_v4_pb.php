@@ -40,6 +40,7 @@ namespace google\appengine\datastore\v4\Error {
     const NOT_FOUND = 13;
     const ALREADY_EXISTS = 14;
     const FAILED_PRECONDITION = 15;
+    const UNAUTHENTICATED = 16;
   }
 }
 namespace google\appengine\datastore\v4 {

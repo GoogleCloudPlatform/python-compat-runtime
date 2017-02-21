@@ -236,7 +236,6 @@ class AppYamlTranslator(object):
       return []
 
     settings = self.app_engine_web_xml.vm_settings or {}
-    settings['has_docker_image'] = 'True'
     statements = ['vm_settings:']
     for name in sorted(settings):
       statements.append(
@@ -279,7 +278,7 @@ class AppYamlTranslator(object):
       return []
 
     statements = ['network:']
-    for attr in ('instance_tag', 'name'):
+    for attr in ('instance_tag', 'name', 'subnetwork_name'):
       value = getattr(network, attr, None)
       if value is not None:
         statements.append('  %s: %s' % (attr, value))

@@ -20,6 +20,8 @@
 
 """XMPP API.
 
+...Deprecated.
+
 An App Engine application can send and receive chat messages to and from any
 XMPP-compatible chat messaging service. An app can send and receive chat
 messages, send chat invites, request a user's chat presence and status, and

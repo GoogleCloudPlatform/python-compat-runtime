@@ -953,8 +953,17 @@ class Task(object):
       module = target_components[-1]
       version = len(target_components) > 1 and target_components[-2] or None
       instance = len(target_components) > 2 and target_components[-3] or None
-      return modules.get_hostname(module=module, version=version,
-                                  instance=instance)
+      try:
+        return modules.get_hostname(module=module, version=version,
+                                    instance=instance)
+      except modules.InvalidModuleError, e:
+
+
+        if not version:
+          return modules.get_hostname(module='default', version=module,
+                                      instance=instance)
+        else:
+          raise e
     else:
       return '%s.%s' % (target, default_hostname)
 

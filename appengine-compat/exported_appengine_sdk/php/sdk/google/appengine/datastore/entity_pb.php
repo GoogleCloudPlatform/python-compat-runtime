@@ -3131,10 +3131,28 @@ namespace storage_onestore_v3 {
     public function hasAncestor() {
       return isset($this->ancestor);
     }
+    public function getParent() {
+      if (!isset($this->parent)) {
+        return false;
+      }
+      return $this->parent;
+    }
+    public function setParent($val) {
+      $this->parent = $val;
+      return $this;
+    }
+    public function clearParent() {
+      unset($this->parent);
+      return $this;
+    }
+    public function hasParent() {
+      return isset($this->parent);
+    }
     public function clear() {
       $this->clearEntityType();
       $this->clearProperty();
       $this->clearAncestor();
+      $this->clearParent();
     }
     public function byteSizePartial() {
       $res = 0;
@@ -3148,6 +3166,9 @@ namespace storage_onestore_v3 {
         $res += $value->byteSizePartial();
       }
       if (isset($this->ancestor)) {
+        $res += 2;
+      }
+      if (isset($this->parent)) {
         $res += 2;
       }
       return $res;
@@ -3167,6 +3188,10 @@ namespace storage_onestore_v3 {
         $out->putVarInt32(40);
         $out->putBoolean($this->ancestor);
       }
+      if (isset($this->parent)) {
+        $out->putVarInt32(56);
+        $out->putBoolean($this->parent);
+      }
     }
     public function tryMerge($d) {
       while($d->avail() > 0) {
@@ -3182,6 +3207,9 @@ namespace storage_onestore_v3 {
             break;
           case 40:
             $this->setAncestor($d->getBoolean());
+            break;
+          case 56:
+            $this->setParent($d->getBoolean());
             break;
           case 0:
             throw new \google\net\ProtocolBufferDecodeError();
@@ -3210,6 +3238,9 @@ namespace storage_onestore_v3 {
       if ($x->hasAncestor()) {
         $this->setAncestor($x->getAncestor());
       }
+      if ($x->hasParent()) {
+        $this->setParent($x->getParent());
+      }
     }
     public function equals($x) {
       if ($x === $this) { return true; }
@@ -3221,6 +3252,8 @@ namespace storage_onestore_v3 {
       }
       if (isset($this->ancestor) !== isset($x->ancestor)) return false;
       if (isset($this->ancestor) && $this->ancestor !== $x->ancestor) return false;
+      if (isset($this->parent) !== isset($x->parent)) return false;
+      if (isset($this->parent) && $this->parent !== $x->parent) return false;
       return true;
     }
     public function shortDebugString($prefix = "") {
@@ -3233,6 +3266,9 @@ namespace storage_onestore_v3 {
       }
       if (isset($this->ancestor)) {
         $res .= $prefix . "ancestor: " . $this->debugFormatBool($this->ancestor) . "\n";
+      }
+      if (isset($this->parent)) {
+        $res .= $prefix . "parent: " . $this->debugFormatBool($this->parent) . "\n";
       }
       return $res;
     }

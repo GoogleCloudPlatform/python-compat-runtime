@@ -176,7 +176,7 @@ class InotifyFileWatcher(object):
         [(os.path.dirname(path), [os.path.basename(path)], None)],
         os.walk(path, topdown=True, followlinks=True)):
       skip_files_re = dirpath in self._directories and self._skip_files_re
-      watcher_common.skip_ignored_dirs(directories, skip_files_re)
+      watcher_common.skip_ignored_dirs(dirpath, directories, skip_files_re)
 
       # TODO: this is not an ideal solution as there are other ways for
       # symlinks to confuse our algorithm but a general solution is going to
@@ -299,11 +299,8 @@ class InotifyFileWatcher(object):
               self._add_watch_for_path(path)
             elif mask & IN_MOVED_TO:
               self._add_watch_for_path(path)
-          if path not in paths:
-            # skip_files_re should only apply to the application root.
-            skip_files_re = (directory in self._directories
-                             and self._skip_files_re)
-            if not watcher_common.ignore_file(path, skip_files_re):
-              paths.add(path)
+          if path not in paths and (
+              not watcher_common.ignore_file(path, self._skip_files_re)):
+            paths.add(path)
 
     return paths

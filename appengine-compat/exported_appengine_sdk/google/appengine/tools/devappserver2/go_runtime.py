@@ -112,7 +112,8 @@ class GoRuntimeInstanceFactory(instance.InstanceFactory):
     else:
       self._start_process_flavor = http_runtime.START_PROCESS
       self._go_application = go_application.GoApplication(
-          self._module_configuration)
+          self._module_configuration,
+          runtime_config_getter().go_config.work_dir)
     self._modified_since_last_build = False
     self._last_build_error = None
 

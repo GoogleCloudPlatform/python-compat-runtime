@@ -34,7 +34,6 @@ from google.appengine.tools import cron_xml_parser
 from google.appengine.tools import dispatch_xml_parser
 from google.appengine.tools import dos_xml_parser
 from google.appengine.tools import jarfile
-from google.appengine.tools import java_quickstart
 from google.appengine.tools import java_utils
 from google.appengine.tools import queue_xml_parser
 from google.appengine.tools import web_xml_parser
@@ -158,11 +157,7 @@ class JavaAppUpdate(object):
     quickstart = xml_parser_utils.BooleanValue(
         self.app_engine_web_xml.beta_settings.get('java_quickstart', 'false'))
     if quickstart:
-      web_xml_str, _ = java_quickstart.quickstart_generator(self.basepath)
-      webdefault_xml_str = java_quickstart.get_webdefault_xml()
-      web_xml_str = java_quickstart.remove_mappings(
-          web_xml_str, webdefault_xml_str)
-      self.web_xml = web_xml_parser.WebXmlParser().ProcessXml(web_xml_str)
+      raise ConfigurationError('Quickstart generation is not supported.')
     else:
       self.web_xml = self._ReadWebXml()
 

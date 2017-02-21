@@ -1855,6 +1855,12 @@ namespace storage_onestore_v3 {
   }
 }
 namespace storage_onestore_v3\Document {
+  class OrderIdSource {
+    const DEFAULTED = 0;
+    const SUPPLIED = 1;
+  }
+}
+namespace storage_onestore_v3\Document {
   class Storage {
     const DISK = 0;
   }
@@ -1962,6 +1968,23 @@ namespace storage_onestore_v3 {
     public function hasStorage() {
       return isset($this->storage);
     }
+    public function getOrderIdSource() {
+      if (!isset($this->order_id_source)) {
+        return 1;
+      }
+      return $this->order_id_source;
+    }
+    public function setOrderIdSource($val) {
+      $this->order_id_source = $val;
+      return $this;
+    }
+    public function clearOrderIdSource() {
+      unset($this->order_id_source);
+      return $this;
+    }
+    public function hasOrderIdSource() {
+      return isset($this->order_id_source);
+    }
     public function getFacetSize() {
       return sizeof($this->facet);
     }
@@ -1999,6 +2022,7 @@ namespace storage_onestore_v3 {
       $this->clearField();
       $this->clearOrderId();
       $this->clearStorage();
+      $this->clearOrderIdSource();
       $this->clearFacet();
     }
     public function byteSizePartial() {
@@ -2023,6 +2047,10 @@ namespace storage_onestore_v3 {
       if (isset($this->storage)) {
         $res += 1;
         $res += $this->lengthVarInt64($this->storage);
+      }
+      if (isset($this->order_id_source)) {
+        $res += 1;
+        $res += $this->lengthVarInt64($this->order_id_source);
       }
       $this->checkProtoArray($this->facet);
       $res += 1 * sizeof($this->facet);
@@ -2053,6 +2081,10 @@ namespace storage_onestore_v3 {
       if (isset($this->storage)) {
         $out->putVarInt32(40);
         $out->putVarInt32($this->storage);
+      }
+      if (isset($this->order_id_source)) {
+        $out->putVarInt32(48);
+        $out->putVarInt32($this->order_id_source);
       }
       $this->checkProtoArray($this->facet);
       foreach ($this->facet as $value) {
@@ -2086,6 +2118,9 @@ namespace storage_onestore_v3 {
             break;
           case 40:
             $this->setStorage($d->getVarInt32());
+            break;
+          case 48:
+            $this->setOrderIdSource($d->getVarInt32());
             break;
           case 66:
             $length = $d->getVarInt32();
@@ -2127,6 +2162,9 @@ namespace storage_onestore_v3 {
       if ($x->hasStorage()) {
         $this->setStorage($x->getStorage());
       }
+      if ($x->hasOrderIdSource()) {
+        $this->setOrderIdSource($x->getOrderIdSource());
+      }
       foreach ($x->getFacetList() as $v) {
         $this->addFacet()->copyFrom($v);
       }
@@ -2145,6 +2183,8 @@ namespace storage_onestore_v3 {
       if (isset($this->order_id) && !$this->integerEquals($this->order_id, $x->order_id)) return false;
       if (isset($this->storage) !== isset($x->storage)) return false;
       if (isset($this->storage) && $this->storage !== $x->storage) return false;
+      if (isset($this->order_id_source) !== isset($x->order_id_source)) return false;
+      if (isset($this->order_id_source) && $this->order_id_source !== $x->order_id_source) return false;
       if (sizeof($this->facet) !== sizeof($x->facet)) return false;
       foreach (array_map(null, $this->facet, $x->facet) as $v) {
         if (!$v[0]->equals($v[1])) return false;
@@ -2167,6 +2207,9 @@ namespace storage_onestore_v3 {
       }
       if (isset($this->storage)) {
         $res .= $prefix . "storage: " . ($this->storage) . "\n";
+      }
+      if (isset($this->order_id_source)) {
+        $res .= $prefix . "order_id_source: " . ($this->order_id_source) . "\n";
       }
       foreach ($this->facet as $value) {
         $res .= $prefix . "facet <\n" . $value->shortDebugString($prefix . "  ") . $prefix . ">\n";

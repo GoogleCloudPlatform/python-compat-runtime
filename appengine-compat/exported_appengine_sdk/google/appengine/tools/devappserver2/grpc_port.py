@@ -22,7 +22,7 @@ Currently used for titanium runtimes.
 import httplib
 import os
 
-GRPC_PORT_URL_PATTERN = '/_ah/grpc_port'
+GRPC_PORT_URL_PATTERN = '_ah/grpc_port'
 
 
 class Application(object):

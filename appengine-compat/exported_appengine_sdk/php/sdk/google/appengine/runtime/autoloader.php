@@ -191,6 +191,7 @@ if (!defined('GOOGLE_APPENGINE_CLASSLOADER')) {
         'storage_onestore_v3\facetvalue' => 'google/appengine/datastore/document_pb.php',
         'storage_onestore_v3\facet' => 'google/appengine/datastore/document_pb.php',
         'storage_onestore_v3\documentmetadata' => 'google/appengine/datastore/document_pb.php',
+        'storage_onestore_v3\document\orderidsource' => 'google/appengine/datastore/document_pb.php',
         'storage_onestore_v3\document\storage' => 'google/appengine/datastore/document_pb.php',
         'storage_onestore_v3\document' => 'google/appengine/datastore/document_pb.php',
         'google\appengine\datastore\v4\error\errorcode' => 'google/appengine/datastore/datastore_v4_pb.php',

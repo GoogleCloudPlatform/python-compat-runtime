@@ -67,7 +67,6 @@ from google.appengine.api import datastore_types
 from google.appengine.api.app_identity import app_identity
 from google.appengine.datastore import datastore_pb
 from google.appengine.datastore import datastore_pbs
-from google.appengine.datastore import datastore_v4_pb
 from google.appengine.runtime import apiproxy_errors
 
 _CLOUD_DATASTORE_ENABLED = datastore_pbs._CLOUD_DATASTORE_ENABLED
@@ -82,7 +81,6 @@ _MAX_ID_BATCH_SIZE = 1000 * 1000 * 1000
 
 
 _DATASTORE_V3 = 'datastore_v3'
-_DATASTORE_V4 = 'datastore_v4'
 _CLOUD_DATASTORE_V1 = 'cloud_datastore_v1beta3'
 
 
@@ -2163,7 +2161,7 @@ class Connection(BaseConnection):
   def _reserve_keys(self, keys):
     """Synchronous AllocateIds operation to reserve the given keys.
 
-    Sends one or more v4 AllocateIds rpcs with keys to reserve.
+    Sends one or more v3 AllocateIds rpcs with keys to reserve.
     Reserved keys must be complete and must have valid ids.
 
     Args:
@@ -2174,7 +2172,7 @@ class Connection(BaseConnection):
   def _async_reserve_keys(self, config, keys, extra_hook=None):
     """Asynchronous AllocateIds operation to reserve the given keys.
 
-    Sends one or more v4 AllocateIds rpcs with keys to reserve.
+    Sends one or more v3 AllocateIds rpcs with keys to reserve.
     Reserved keys must be complete and must have valid ids.
 
     Args:
@@ -2199,15 +2197,13 @@ class Connection(BaseConnection):
     rpcs = []
     pbsgen = self._generate_pb_lists(keys_by_idkey, 0, max_count, None, config)
     for pbs, _ in pbsgen:
-      req = datastore_v4_pb.AllocateIdsRequest()
-      for key in pbs:
-        datastore_pbs.get_entity_converter().v3_to_v4_key(key,
-                                                          req.add_reserve())
-      resp = datastore_v4_pb.AllocateIdsResponse()
+      req = datastore_pb.AllocateIdsRequest()
+      req.reserve_list().extend(pbs)
+      resp = datastore_pb.AllocateIdsResponse()
       rpcs.append(self._make_rpc_call(config, 'AllocateIds', req, resp,
                                       get_result_hook=self.__reserve_keys_hook,
                                       user_data=extra_hook,
-                                      service_name=_DATASTORE_V4))
+                                      service_name=_DATASTORE_V3))
     return MultiRpc(rpcs)
 
   def __reserve_keys_hook(self, rpc):

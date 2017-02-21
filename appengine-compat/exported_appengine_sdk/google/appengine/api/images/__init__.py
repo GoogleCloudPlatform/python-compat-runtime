@@ -1795,7 +1795,7 @@ def histogram_async(image_data, rpc=None):
   return image.histogram_async(rpc)
 
 
-IMG_SERVING_SIZES_LIMIT = 1600
+IMG_SERVING_SIZES_LIMIT = 3200
 
 
 IMG_SERVING_SIZES = [
