@@ -98,4 +98,6 @@ def _run_file(file_path, globals_):
 
 
 if __name__ == '__main__':
+
+  assert sys.version_info[0] == 2
   _run_file(__file__, globals())

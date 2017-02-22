@@ -66,6 +66,7 @@ A few caveats:
 
 
 
+import Cookie
 import google
 import os
 import pickle
@@ -96,6 +97,7 @@ from google.appengine.tools import appengine_rpc
 
 _REQUEST_ID_HEADER = 'HTTP_X_APPENGINE_REQUEST_ID'
 _TIMEOUT_SECONDS = 10
+_DEVAPPSERVER_LOGIN_COOKIE = 'test@example.com:True:'
 
 
 class Error(Exception):
@@ -777,7 +779,8 @@ def ConfigureRemoteApiForOAuth(
             _OAUTH_SCOPES)
     else:
       credentials = client.GoogleCredentials.get_application_default()
-      credentials = credentials.create_scoped(_OAUTH_SCOPES)
+      if credentials and credentials.create_scoped_required():
+        credentials = credentials.create_scoped(_OAUTH_SCOPES)
 
 
     oauth2_parameters = (
@@ -864,10 +867,20 @@ def ConfigureRemoteApi(app_id,
     raise ConfigurationError('app_id or servername required')
   if not servername:
     servername = '%s.appspot.com' % (app_id,)
+  extra_headers = {}
+  if servername.startswith('localhost'):
+
+
+
+
+
+    cookie = Cookie.SimpleCookie()
+    cookie['dev_appserver_login'] = _DEVAPPSERVER_LOGIN_COOKIE
+    extra_headers['COOKIE'] = cookie['dev_appserver_login'].OutputString()
   server = rpc_server_factory(
       servername, auth_func, GetUserAgent(), GetSourceName(),
-      save_cookies=save_cookies, auth_tries=auth_tries, debug_data=False,
-      secure=secure)
+      extra_headers=extra_headers, save_cookies=save_cookies,
+      auth_tries=auth_tries, debug_data=False, secure=secure)
   if not app_id:
     app_id = GetRemoteAppIdFromServer(server, path, rtok)
 

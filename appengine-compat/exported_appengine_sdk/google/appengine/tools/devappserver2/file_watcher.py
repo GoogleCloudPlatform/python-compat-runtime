@@ -51,7 +51,9 @@ class _MultipleFileWatcher(object):
           defined in app.yaml.
     """
     for watcher in self._file_watchers:
-      watcher.set_skip_files_re(skip_files_re)
+      # TODO: b/33178251 - Add skip_files_re support for windows.
+      if hasattr(watcher, 'set_skip_files_re'):
+        watcher.set_skip_files_re(skip_files_re)
 
   def start(self):
     for watcher in self._file_watchers:

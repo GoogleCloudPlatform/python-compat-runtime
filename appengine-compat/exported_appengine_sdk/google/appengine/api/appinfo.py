@@ -76,6 +76,8 @@ _DELTA_REGEX = r'([0-9]+)([DdHhMm]|[sS]?)'
 _EXPIRATION_REGEX = r'\s*(%s)(\s+%s)*\s*' % (_DELTA_REGEX, _DELTA_REGEX)
 _START_PATH = '/_ah/start'
 
+_NON_WHITE_SPACE_REGEX = r'^\S+$'
+
 
 
 
@@ -152,7 +154,6 @@ MODULE_VERSION_ID_RE_STRING = (r'^(?!-)[a-z\d\-]{0,%d}[a-z\d]$' %
 _IDLE_INSTANCES_REGEX = r'^([\d]+|automatic)$'
 
 _INSTANCES_REGEX = r'^[1-9][\d]*$'
-_INSTANCE_CLASS_REGEX = r'^([fF](1|2|4|4_1G)|[bB](1|2|4|8|4_1G))$'
 
 _CONCURRENT_REQUESTS_REGEX = r'^([1-9]\d*)$'
 
@@ -245,12 +246,15 @@ BETA_SETTINGS = 'beta_settings'
 VM_HEALTH_CHECK = 'vm_health_check'
 HEALTH_CHECK = 'health_check'
 RESOURCES = 'resources'
+LIVENESS_CHECK = 'liveness_check'
+READINESS_CHECK = 'readiness_check'
 NETWORK = 'network'
 VERSION = 'version'
 MAJOR_VERSION = 'major_version'
 MINOR_VERSION = 'minor_version'
 RUNTIME = 'runtime'
 API_VERSION = 'api_version'
+ENDPOINTS_API_SERVICE = 'endpoints_api_service'
 ENV = 'env'
 ENTRYPOINT = 'entrypoint'
 RUNTIME_CONFIG = 'runtime_config'
@@ -329,6 +333,10 @@ PAGES = 'pages'
 NAME = 'name'
 
 
+ENDPOINTS_NAME = 'name'
+CONFIG_ID = 'config_id'
+
+
 ERROR_CODE = 'error_code'
 FILE = 'file'
 _ERROR_CODE_REGEX = r'(default|over_quota|dos_api_denial|timeout)'
@@ -348,7 +356,9 @@ TIMEOUT_SEC = 'timeout_sec'
 UNHEALTHY_THRESHOLD = 'unhealthy_threshold'
 HEALTHY_THRESHOLD = 'healthy_threshold'
 RESTART_THRESHOLD = 'restart_threshold'
+INITIAL_DELAY_SEC = 'initial_delay_sec'
 HOST = 'host'
+PATH = 'path'
 
 
 CPU = 'cpu'
@@ -365,6 +375,7 @@ SIZE_GB = 'size_gb'
 FORWARDED_PORTS = 'forwarded_ports'
 INSTANCE_TAG = 'instance_tag'
 NETWORK_NAME = 'name'
+SUBNETWORK_NAME = 'subnetwork_name'
 
 
 class _VersionedLibrary(object):
@@ -1496,6 +1507,14 @@ class CpuUtilization(validation.Validated):
   }
 
 
+class EndpointsApiService(validation.Validated):
+  """Class representing EndpointsApiService in AppInfoExternal."""
+  ATTRIBUTES = {
+      ENDPOINTS_NAME: validation.Regex(_NON_WHITE_SPACE_REGEX),
+      CONFIG_ID: validation.Regex(_NON_WHITE_SPACE_REGEX),
+  }
+
+
 class AutomaticScaling(validation.Validated):
   """Class representing automatic scaling settings in AppInfoExternal."""
   ATTRIBUTES = {
@@ -1704,6 +1723,29 @@ class HealthCheck(validation.Validated):
       HOST: validation.Optional(validation.TYPE_STR)}
 
 
+class LivenessCheck(validation.Validated):
+  """Class representing the liveness check configuration."""
+  ATTRIBUTES = {
+      CHECK_INTERVAL_SEC: validation.Optional(validation.Range(0, sys.maxint)),
+      TIMEOUT_SEC: validation.Optional(validation.Range(0, sys.maxint)),
+      UNHEALTHY_THRESHOLD: validation.Optional(validation.Range(0, sys.maxint)),
+      HEALTHY_THRESHOLD: validation.Optional(validation.Range(0, sys.maxint)),
+      INITIAL_DELAY_SEC: validation.Optional(validation.Range(0, sys.maxint)),
+      PATH: validation.Optional(validation.TYPE_STR),
+      HOST: validation.Optional(validation.TYPE_STR)}
+
+
+class ReadinessCheck(validation.Validated):
+  """Class representing the readiness check configuration."""
+  ATTRIBUTES = {
+      CHECK_INTERVAL_SEC: validation.Optional(validation.Range(0, sys.maxint)),
+      TIMEOUT_SEC: validation.Optional(validation.Range(0, sys.maxint)),
+      UNHEALTHY_THRESHOLD: validation.Optional(validation.Range(0, sys.maxint)),
+      HEALTHY_THRESHOLD: validation.Optional(validation.Range(0, sys.maxint)),
+      PATH: validation.Optional(validation.TYPE_STR),
+      HOST: validation.Optional(validation.TYPE_STR)}
+
+
 class VmHealthCheck(HealthCheck):
   """Class representing the configuration of the VM health check.
 
@@ -1747,6 +1789,9 @@ class Network(validation.Validated):
           GCE_RESOURCE_NAME_REGEX)),
 
       NETWORK_NAME: validation.Optional(validation.Regex(
+          GCE_RESOURCE_NAME_REGEX)),
+
+      SUBNETWORK_NAME: validation.Optional(validation.Regex(
           GCE_RESOURCE_NAME_REGEX)),
   }
 
@@ -2000,10 +2045,14 @@ class AppInfoExternal(validation.Validated):
       API_VERSION: validation.Optional(API_VERSION_RE_STRING),
 
       ENV: validation.Optional(ENV_RE_STRING),
+      ENDPOINTS_API_SERVICE: validation.Optional(EndpointsApiService),
 
-      ENTRYPOINT: validation.Optional(validation.Type(str)),
+
+      ENTRYPOINT: validation.Optional(
+          validation.Exec() if hasattr(
+              validation, 'Exec') else validation.Type(str)),
       RUNTIME_CONFIG: validation.Optional(RuntimeConfig),
-      INSTANCE_CLASS: validation.Optional(_INSTANCE_CLASS_REGEX),
+      INSTANCE_CLASS: validation.Optional(validation.Type(str)),
       SOURCE_LANGUAGE: validation.Optional(
           validation.Regex(SOURCE_LANGUAGE_RE_STRING)),
       AUTOMATIC_SCALING: validation.Optional(AutomaticScaling),
@@ -2015,6 +2064,8 @@ class AppInfoExternal(validation.Validated):
       VM_HEALTH_CHECK: validation.Optional(VmHealthCheck),
       HEALTH_CHECK: validation.Optional(HealthCheck),
       RESOURCES: validation.Optional(Resources),
+      LIVENESS_CHECK: validation.Optional(LivenessCheck),
+      READINESS_CHECK: validation.Optional(ReadinessCheck),
       NETWORK: validation.Optional(Network),
       BUILTINS: validation.Optional(validation.Repeated(BuiltinHandler)),
       INCLUDES: validation.Optional(validation.Type(list)),
@@ -2089,9 +2140,6 @@ class AppInfoExternal(validation.Validated):
       raise appinfo_errors.TooManyURLMappings(
           'Found more than %d URLMap entries in application configuration' %
           MAX_URL_MAPS)
-    if self.service and self.module:
-      raise appinfo_errors.ModuleAndServiceDefined(
-          'Cannot define both "module" and "service" in configuration')
 
     vm_runtime_python27 = (
         self.runtime == 'vm' and
@@ -2389,6 +2437,15 @@ def LoadSingleAppInfo(app_info):
   elif appyaml.project:
     appyaml.application = appyaml.project
     appyaml.project = None
+
+
+
+  if appyaml.service and appyaml.module:
+    raise appinfo_errors.ModuleAndServiceDefined(
+        'Cannot define both "module" and "service" in configuration')
+  elif appyaml.service:
+    appyaml.module = appyaml.service
+    appyaml.service = None
 
   appyaml.NormalizeVmSettings()
   return appyaml

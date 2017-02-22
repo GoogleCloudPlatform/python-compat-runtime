@@ -289,9 +289,9 @@ class TaskHandler(webapp.RequestHandler):
   def run_from_request(self):
     """Default behavior for POST requests to deferred handler."""
 
-    if 'X-AppEngine-TaskName' not in self.request.headers:
-      logging.critical('Detected an attempted XSRF attack. The header '
-                       '"X-AppEngine-Taskname" was not set.')
+    if "X-AppEngine-TaskName" not in self.request.headers:
+      logging.error("Detected an attempted XSRF attack. The header "
+                    '"X-AppEngine-Taskname" was not set.')
       self.response.set_status(403)
       return
 
@@ -300,8 +300,8 @@ class TaskHandler(webapp.RequestHandler):
     in_prod = (
         not self.request.environ.get("SERVER_SOFTWARE").startswith("Devel"))
     if in_prod and self.request.environ.get("REMOTE_ADDR") != "0.1.0.2":
-      logging.critical('Detected an attempted XSRF attack. This request did '
-                       'not originate from Task Queue.')
+      logging.error("Detected an attempted XSRF attack. This request did "
+                    "not originate from Task Queue.")
       self.response.set_status(403)
       return
 

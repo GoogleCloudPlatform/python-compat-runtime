@@ -490,8 +490,8 @@ def CheckReference(request_trusted,
 
   Check(key.path().element_size() > 0, 'key\'s path cannot be empty')
 
-  if require_id_or_name and not datastore_pbs.is_complete_v3_key(key):
-    raise datastore_errors.BadRequestError('missing key id/name')
+  if require_id_or_name:
+    Check(datastore_pbs.is_complete_v3_key(key), 'missing key id/name')
 
   for elem in key.path().element_list():
     Check(not elem.has_id() or not elem.has_name(),
@@ -1715,7 +1715,6 @@ class LiveTxn(object):
       self._txn_manager._AcquireWriteLocks(meta_data_list)
     except:
 
-      self.Rollback()
       raise
 
     try:
@@ -2119,12 +2118,13 @@ class BaseTransactionManager(object):
 
     self._txn_map = {}
 
-  def BeginTransaction(self, app, allow_multiple_eg):
+  def BeginTransaction(self, app, allow_multiple_eg, previous_transaction=None):
     """Start a transaction on the given app.
 
     Args:
       app: A string representing the app for which to start the transaction.
       allow_multiple_eg: True if transactions can span multiple entity groups.
+      previous_transaction: The transaction to reset.
 
     Returns:
       A datastore_pb.Transaction for the created transaction
@@ -2133,6 +2133,18 @@ class BaseTransactionManager(object):
         self._consistency_policy, MasterSlaveConsistencyPolicy)),
           'transactions on multiple entity groups only allowed with the '
           'High Replication datastore')
+
+    if previous_transaction is not None:
+      previous_live_txn = self._txn_map.get(previous_transaction.handle())
+
+      if previous_live_txn is not None:
+
+
+        if previous_live_txn._app == app:
+          Check(previous_live_txn._allow_multiple_eg == allow_multiple_eg,
+                'Transaction should have same options as previous_transaction')
+          previous_live_txn.Rollback()
+
     txn = self._BeginTransaction(app, allow_multiple_eg)
     self._txn_map[id(txn)] = txn
     transaction = datastore_pb.Transaction()
@@ -2815,13 +2827,20 @@ class BaseDatastore(BaseTransactionManager, BaseIndexManager):
     retries = 0
     backoff = _INITIAL_RETRY_DELAY_MS / 1000.0
     while True:
+      txn = self._BeginTransaction(app, False)
+
       try:
-        txn = self._BeginTransaction(app, False)
         for value in values:
           op(txn, value)
         txn.Commit()
         return txn
       except apiproxy_errors.ApplicationError, e:
+        try:
+          txn.Rollback()
+        except Exception:
+
+          logging.debug('Exception in rollback.', exc_info=True)
+
         if e.application_error == datastore_pb.Error.CONCURRENT_TRANSACTION:
 
           retries += 1
@@ -3342,7 +3361,7 @@ class DatastoreStub(object):
   def _Dynamic_BeginTransaction(self, req, transaction):
     CheckAppId(self._trusted, self._app_id, req.app())
     transaction.CopyFrom(self._datastore.BeginTransaction(
-        req.app(), req.allow_multiple_eg()))
+        req.app(), req.allow_multiple_eg(), req.previous_transaction()))
 
   def _Dynamic_Commit(self, transaction, res):
     CheckAppId(self._trusted, self._app_id, transaction.app())
@@ -3397,7 +3416,7 @@ class DatastoreStub(object):
       allocate_ids_response.set_end(end)
     else:
       for reference in allocate_ids_request.reserve_list():
-        CheckAppId(reference.app(), self._trusted, self._app_id)
+        CheckReference(self._trusted, self._app_id, reference)
       self._datastore._AllocateIds(allocate_ids_request.reserve_list())
       allocate_ids_response.set_start(0)
       allocate_ids_response.set_end(0)

@@ -109,6 +109,7 @@ class ModuleFacade(module.Module):
                php_config=None,
                python_config=None,
                java_config=None,
+               go_config=None,
                vm_config=None):
     super(ModuleFacade, self).__init__(
         module_configuration,
@@ -121,6 +122,7 @@ class ModuleFacade(module.Module):
         php_config=None,
         python_config=None,
         java_config=None,
+        go_config=None,
         custom_config=custom_config,
         cloud_sql_config=None,
         vm_config=vm_config,
@@ -165,6 +167,7 @@ class AutoScalingModuleFacade(module.AutoScalingModule):
         php_config=None,
         python_config=None,
         java_config=None,
+        go_config=None,
         custom_config=None,
         cloud_sql_config=None,
         vm_config=None,
@@ -211,6 +214,7 @@ class ManualScalingModuleFacade(module.ManualScalingModule):
         php_config=None,
         python_config=None,
         java_config=None,
+        go_config=None,
         custom_config=None,
         cloud_sql_config=None,
         vm_config=vm_config,
@@ -255,6 +259,7 @@ class BasicScalingModuleFacade(module.BasicScalingModule):
         php_config=None,
         python_config=None,
         java_config=None,
+        go_config=None,
         custom_config=None,
         cloud_sql_config=None,
         vm_config=None,
@@ -299,6 +304,7 @@ class ExternalModuleFacade(module.ExternalModule):
         php_config=None,
         python_config=None,
         java_config=None,
+        go_config=None,
         custom_config=None,
         cloud_sql_config=None,
         vm_config=None,
@@ -2522,6 +2528,7 @@ class TestInteractiveCommandModule(googletest.TestCase):
         php_config=None,
         python_config=None,
         java_config=None,
+        go_config=None,
         custom_config=None,
         cloud_sql_config=None,
         vm_config=None,
@@ -2748,7 +2755,7 @@ class InstanceFactoryTest(googletest.TestCase):
 
   def test_non_vm_go(self):
     self.mox.StubOutWithMock(go_application, 'GoApplication')
-    go_application.GoApplication(mox.IgnoreArg())
+    go_application.GoApplication(mox.IgnoreArg(), mox.IgnoreArg())
     self._run_test('go', go_runtime.GoRuntimeInstanceFactory)
 
   def test_non_vm_java(self):

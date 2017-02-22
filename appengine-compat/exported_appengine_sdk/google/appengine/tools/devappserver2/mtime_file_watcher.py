@@ -89,9 +89,37 @@ class MtimeFileWatcher(object):
       self._refresh()
       diff_items = set(self._filename_to_mtime.items()).symmetric_difference(
           old_filename_to_mtime.items())
+      # os.path.getmtime() updates parent directory timestamps. E.g: There's a
+      # directory structure 'root/foo/bar.txt', if you only touched 'bar.txt',
+      # getmtime() would return a new timestamp for both 'bar.txt' and 'foo/'.
+      #
+      # Due to enabling 'skip_files_re', we have the following corner case:
+      # Suppose in the above example 'foo/' is not-skippable, while 'foo/bar' is
+      # skippable. Then diff_items would be like:
+      # set([('foo/', timestamp1), ('foo/', timestamp2)])
+      # 'where timestamp1 is the nearest mtime before the last time
+      # _generate_filename_to_mtime() was run; while timestamp2 is the mtime
+      # after the most recent change.'
+      #
+      # But we actually want to return an empty set.
+      # 'effective_diff_items' excludes such unwanted items from 'diff_items'.
+      dir_items = {}
+      for k, _ in diff_items:
+        if os.path.isdir(k):
+          dir_items[k] = dir_items.setdefault(k, 0) + 1
+
+      # If k is not in dir_items, then it is a file that has been changed.
+      # If it appears in dir_items[k] once, it is a directory that has been
+      # created or deleted. If it appears more than once, it is a directory
+      # whose files or directories have changed underneath it. In the latter
+      # case, the directory is not reloaded in entirety, rather the individual
+      # files are reloaded.
+      effective_diff_items = {k for k, _ in diff_items if (k not in dir_items
+                                                           or dir_items[k] == 1)
+                             }
       # returns immediately if we found a difference.
-      if diff_items or timeout_ms == 0:
-        return {k for k, _ in diff_items}
+      if effective_diff_items or timeout_ms == 0:
+        return effective_diff_items
 
       self._timeout.wait(timeout_s)
     except ShutdownError:
@@ -111,16 +139,15 @@ class MtimeFileWatcher(object):
     """
     filename_to_mtime = {}
     num_files = 0
-    for dirname, dirnames, filenames in os.walk(self._directory,
+    for dirpath, dirnames, filenames in os.walk(self._directory,
                                                 followlinks=True):
       if self._quit_event.is_set():
         raise ShutdownError()
 
-      # skip_files_re should only apply to the application root.
-      skip_files_re = dirname == self._directory and self._skip_files_re
-      watcher_common.skip_ignored_dirs(dirnames, skip_files_re)
+      watcher_common.skip_ignored_dirs(dirpath, dirnames, self._skip_files_re)
       filenames = [f for f in filenames if not
-                   watcher_common.ignore_file(f, skip_files_re)]
+                   watcher_common.ignore_file(os.path.join(dirpath, f),
+                                              self._skip_files_re)]
       for filename in filenames + dirnames:
         if self._quit_event.is_set():
           raise ShutdownError()
@@ -132,7 +159,7 @@ class MtimeFileWatcher(object):
               'files.')
           return filename_to_mtime
         num_files += 1
-        path = os.path.join(dirname, filename)
+        path = os.path.join(dirpath, filename)
         try:
           filename_to_mtime[path] = os.path.getmtime(path)
         except (IOError, OSError):

@@ -19,6 +19,7 @@
 import collections
 import logging
 import socket
+import sys
 import threading
 import urlparse
 import wsgiref.headers
@@ -27,6 +28,7 @@ from google.appengine.api import appinfo
 from google.appengine.api import request_info
 from google.appengine.tools.devappserver2 import instance
 from google.appengine.tools.devappserver2 import module
+from google.appengine.tools.devappserver2 import runtime_factories
 from google.appengine.tools.devappserver2 import scheduled_executor
 from google.appengine.tools.devappserver2 import start_response_utils
 from google.appengine.tools.devappserver2 import thread_executor
@@ -76,6 +78,7 @@ class Dispatcher(request_info.Dispatcher):
                php_config,
                python_config,
                java_config,
+               go_config,
                custom_config,
                cloud_sql_config,
                vm_config,
@@ -104,6 +107,8 @@ class Dispatcher(request_info.Dispatcher):
           Python runtime-specific configuration. If None then defaults are
           used.
       java_config: A runtime_config_pb2.JavaConfig instance containing Java
+          runtime-specific configuration. If None then defaults are used.
+      go_config: A runtime_config_pb2.GoConfig instance containing Go
           runtime-specific configuration. If None then defaults are used.
       custom_config: A runtime_config_pb2.CustomConfig instance. If None, or
           'custom_entrypoint' is not set, then attempting to instantiate a
@@ -137,6 +142,7 @@ class Dispatcher(request_info.Dispatcher):
     self._php_config = php_config
     self._python_config = python_config
     self._java_config = java_config
+    self._go_config = go_config
     self._custom_config = custom_config
     self._cloud_sql_config = cloud_sql_config
     self._vm_config = vm_config
@@ -236,7 +242,20 @@ class Dispatcher(request_info.Dispatcher):
     for _module in self._module_name_to_module.values():
       _module.quit()
 
+  def check_python_version(self, runtime):
+    """Check the python version and give proper warnings if necessary."""
+    if runtime == 'python27':
+      if sys.version_info[1] < 7:
+        logging.warning('You are creating a python27 module, but your python '
+                        'minor version is below 2.7.')
+      elif sys.version_info[2] < runtime_factories.PYTHON27_PROD_VERSION[2]:
+        logging.warning('Your python27 micro version is below %s, our '
+                        'current production version.',
+                        '.'.join(map(str,
+                                     runtime_factories.PYTHON27_PROD_VERSION)))
+
   def _create_module(self, module_configuration, port):
+    self.check_python_version(module_configuration.runtime)
     max_instances = self._module_to_max_instances.get(
         module_configuration.module_name)
     threadsafe_override = self._module_to_threadsafe_override.get(
@@ -267,6 +286,7 @@ class Dispatcher(request_info.Dispatcher):
         python_config=self._python_config,
         custom_config=self._custom_config,
         java_config=self._java_config,
+        go_config=self._go_config,
         cloud_sql_config=self._cloud_sql_config,
         vm_config=self._vm_config,
         default_version_port=self._port,

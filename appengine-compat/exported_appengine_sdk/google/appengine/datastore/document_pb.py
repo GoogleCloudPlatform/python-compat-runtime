@@ -2043,6 +2043,19 @@ class DocumentMetadata(ProtocolBuffer.ProtocolMessage):
 class Document(ProtocolBuffer.ProtocolMessage):
 
 
+  DEFAULTED    =    0
+  SUPPLIED     =    1
+
+  _OrderIdSource_NAMES = {
+    0: "DEFAULTED",
+    1: "SUPPLIED",
+  }
+
+  def OrderIdSource_Name(cls, x): return cls._OrderIdSource_NAMES.get(x, "")
+  OrderIdSource_Name = classmethod(OrderIdSource_Name)
+
+
+
   DISK         =    0
 
   _Storage_NAMES = {
@@ -2058,6 +2071,8 @@ class Document(ProtocolBuffer.ProtocolMessage):
   language_ = "en"
   has_order_id_ = 0
   order_id_ = 0
+  has_order_id_source_ = 0
+  order_id_source_ = 1
   has_storage_ = 0
   storage_ = 0
 
@@ -2121,6 +2136,19 @@ class Document(ProtocolBuffer.ProtocolMessage):
 
   def has_order_id(self): return self.has_order_id_
 
+  def order_id_source(self): return self.order_id_source_
+
+  def set_order_id_source(self, x):
+    self.has_order_id_source_ = 1
+    self.order_id_source_ = x
+
+  def clear_order_id_source(self):
+    if self.has_order_id_source_:
+      self.has_order_id_source_ = 0
+      self.order_id_source_ = 1
+
+  def has_order_id_source(self): return self.has_order_id_source_
+
   def storage(self): return self.storage_
 
   def set_storage(self, x):
@@ -2157,6 +2185,7 @@ class Document(ProtocolBuffer.ProtocolMessage):
     if (x.has_language()): self.set_language(x.language())
     for i in xrange(x.field_size()): self.add_field().CopyFrom(x.field(i))
     if (x.has_order_id()): self.set_order_id(x.order_id())
+    if (x.has_order_id_source()): self.set_order_id_source(x.order_id_source())
     if (x.has_storage()): self.set_storage(x.storage())
     for i in xrange(x.facet_size()): self.add_facet().CopyFrom(x.facet(i))
 
@@ -2171,6 +2200,8 @@ class Document(ProtocolBuffer.ProtocolMessage):
       if e1 != e2: return 0
     if self.has_order_id_ != x.has_order_id_: return 0
     if self.has_order_id_ and self.order_id_ != x.order_id_: return 0
+    if self.has_order_id_source_ != x.has_order_id_source_: return 0
+    if self.has_order_id_source_ and self.order_id_source_ != x.order_id_source_: return 0
     if self.has_storage_ != x.has_storage_: return 0
     if self.has_storage_ and self.storage_ != x.storage_: return 0
     if len(self.facet_) != len(x.facet_): return 0
@@ -2193,6 +2224,7 @@ class Document(ProtocolBuffer.ProtocolMessage):
     n += 1 * len(self.field_)
     for i in xrange(len(self.field_)): n += self.lengthString(self.field_[i].ByteSize())
     if (self.has_order_id_): n += 1 + self.lengthVarInt64(self.order_id_)
+    if (self.has_order_id_source_): n += 1 + self.lengthVarInt64(self.order_id_source_)
     if (self.has_storage_): n += 1 + self.lengthVarInt64(self.storage_)
     n += 1 * len(self.facet_)
     for i in xrange(len(self.facet_)): n += self.lengthString(self.facet_[i].ByteSize())
@@ -2205,6 +2237,7 @@ class Document(ProtocolBuffer.ProtocolMessage):
     n += 1 * len(self.field_)
     for i in xrange(len(self.field_)): n += self.lengthString(self.field_[i].ByteSizePartial())
     if (self.has_order_id_): n += 1 + self.lengthVarInt64(self.order_id_)
+    if (self.has_order_id_source_): n += 1 + self.lengthVarInt64(self.order_id_source_)
     if (self.has_storage_): n += 1 + self.lengthVarInt64(self.storage_)
     n += 1 * len(self.facet_)
     for i in xrange(len(self.facet_)): n += self.lengthString(self.facet_[i].ByteSizePartial())
@@ -2215,6 +2248,7 @@ class Document(ProtocolBuffer.ProtocolMessage):
     self.clear_language()
     self.clear_field()
     self.clear_order_id()
+    self.clear_order_id_source()
     self.clear_storage()
     self.clear_facet()
 
@@ -2235,6 +2269,9 @@ class Document(ProtocolBuffer.ProtocolMessage):
     if (self.has_storage_):
       out.putVarInt32(40)
       out.putVarInt32(self.storage_)
+    if (self.has_order_id_source_):
+      out.putVarInt32(48)
+      out.putVarInt32(self.order_id_source_)
     for i in xrange(len(self.facet_)):
       out.putVarInt32(66)
       out.putVarInt32(self.facet_[i].ByteSize())
@@ -2257,6 +2294,9 @@ class Document(ProtocolBuffer.ProtocolMessage):
     if (self.has_storage_):
       out.putVarInt32(40)
       out.putVarInt32(self.storage_)
+    if (self.has_order_id_source_):
+      out.putVarInt32(48)
+      out.putVarInt32(self.order_id_source_)
     for i in xrange(len(self.facet_)):
       out.putVarInt32(66)
       out.putVarInt32(self.facet_[i].ByteSizePartial())
@@ -2283,6 +2323,9 @@ class Document(ProtocolBuffer.ProtocolMessage):
       if tt == 40:
         self.set_storage(d.getVarInt32())
         continue
+      if tt == 48:
+        self.set_order_id_source(d.getVarInt32())
+        continue
       if tt == 66:
         length = d.getVarInt32()
         tmp = ProtocolBuffer.Decoder(d.buffer(), d.pos(), d.pos() + length)
@@ -2308,6 +2351,7 @@ class Document(ProtocolBuffer.ProtocolMessage):
       res+=prefix+">\n"
       cnt+=1
     if self.has_order_id_: res+=prefix+("order_id: %s\n" % self.DebugFormatInt32(self.order_id_))
+    if self.has_order_id_source_: res+=prefix+("order_id_source: %s\n" % self.DebugFormatInt32(self.order_id_source_))
     if self.has_storage_: res+=prefix+("storage: %s\n" % self.DebugFormatInt32(self.storage_))
     cnt=0
     for e in self.facet_:
@@ -2327,6 +2371,7 @@ class Document(ProtocolBuffer.ProtocolMessage):
   klanguage = 2
   kfield = 3
   korder_id = 4
+  korder_id_source = 6
   kstorage = 5
   kfacet = 8
 
@@ -2337,6 +2382,7 @@ class Document(ProtocolBuffer.ProtocolMessage):
     3: "field",
     4: "order_id",
     5: "storage",
+    6: "order_id_source",
     8: "facet",
   }, 8)
 
@@ -2347,6 +2393,7 @@ class Document(ProtocolBuffer.ProtocolMessage):
     3: ProtocolBuffer.Encoder.STRING,
     4: ProtocolBuffer.Encoder.NUMERIC,
     5: ProtocolBuffer.Encoder.NUMERIC,
+    6: ProtocolBuffer.Encoder.NUMERIC,
     8: ProtocolBuffer.Encoder.STRING,
   }, 8, ProtocolBuffer.Encoder.MAX_TYPE)
 

@@ -62,16 +62,18 @@ class TestMtimeFileWatcher(unittest.TestCase):
     self.assertEqual(self._watcher.changes(), {path})
 
   def test_skip_file_re(self):
-    self._watcher.set_skip_files_re(re.compile('skipped_.*'))
+    self._watcher.set_skip_files_re(re.compile('^.*skipped_file'))
     self._watcher.start()
     self._watcher._startup_thread.join()
     self._create_file('skipped_file')
     self.assertEqual(self._watcher.changes(), set())
+
     path = self._create_directory('subdir/')
     self.assertEqual(self._watcher.changes(), {path})
     path = self._create_file('subdir/skipped_file')
-    # skip_files should only apply to the application root.
-    self.assertEqual(self._watcher.changes(), {path})
+    # skip_files_re should also match subdirectories of watched directory.
+    self.assertEqual(self._watcher.changes(), set())
+
     # Avoid polluting other tests.
     self._watcher.set_skip_files_re(None)
 
@@ -117,32 +119,34 @@ class TestMtimeFileWatcher(unittest.TestCase):
     self.assertEqual(self._watcher.changes(), {path})
 
   def test_skip_file_re_directory(self):
-    self._watcher.set_skip_files_re(re.compile('skipped.*'))
+    self._watcher.set_skip_files_re(re.compile('.*skipped_dir'))
     self._watcher.start()
     self._watcher._startup_thread.join()
     self._create_directory('skipped_dir/')
     self.assertEqual(self._watcher.changes(), set())
-    # subdirectory of a skipped directory should also be skipped
+    # If a directory is skipped, the files and directories in that directory
+    # would also be skipped
     self._create_directory('skipped_dir/subdir/')
     self.assertEqual(self._watcher.changes(), set())
 
     path = self._create_directory('subdir/')
     self.assertEqual(self._watcher.changes(), {path})
-    # skip_files should only apply to the application root.
+    # skip_files_re should also match subdirectories of watched directory.
     path = self._create_directory('subdir/skipped_dir/')
-    self.assertEqual(self._watcher.changes(), {path})
+    self.assertEqual(self._watcher.changes(), set())
+
     # Avoid polluting other tests.
     self._watcher.set_skip_files_re(None)
 
   def test_file_created_in_directory(self):
-    dir_path = self._create_directory('test')
+    self._create_directory('test')
     _sync()
     self._watcher.start()
     self._watcher._startup_thread.join()
     path = self._create_file('test/file')
-    # Note : creating an entry in an inode changes its timestamp so the is
-    # normal
-    self.assertEqual(self._watcher.changes(), {dir_path, path})
+    # Keep behavior consistency with inofiy_file_watcher,
+    # parent directory of path should not be considered as changed.
+    self.assertEqual(self._watcher.changes(), {path})
 
   def test_move_directory(self):
     source = self._create_directory('test')
@@ -176,8 +180,9 @@ class TestMtimeFileWatcher(unittest.TestCase):
     file_path = os.path.join(target, 'file')
     with open(file_path, 'w+'):
       pass
-    # file has been created so target changed
-    self.assertEqual(self._watcher.changes(), {target, file_path})
+    # Keep behavior consistency with inofiy_file_watcher,
+    # target should not be considered as changed.
+    self.assertEqual(self._watcher.changes(), {file_path})
 
   def test_directory_deleted(self):
     path = self._create_directory('test')
@@ -207,9 +212,10 @@ class TestMtimeFileWatcher(unittest.TestCase):
     with open(os.path.join(self._junk_directory, 'file1'), 'w'):
       pass
     sym_file_path = os.path.join(sym_target, 'file1')
-    # file1 has been created so sym_target changed
+    # Keep behavior consistency with inofiy_file_watcher,
+    # sym_target should not be considered as changed.
     self.assertEqual(
-        self._watcher.changes(), {sym_target, sym_file_path})
+        self._watcher.changes(), {sym_file_path})
 
     # Check that a removed symlinked directory is reported.
     os.remove(sym_target)

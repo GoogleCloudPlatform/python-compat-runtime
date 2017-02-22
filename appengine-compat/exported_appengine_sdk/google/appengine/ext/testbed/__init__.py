@@ -655,7 +655,7 @@ class Testbed(object):
     stub = taskqueue_stub.TaskQueueServiceStub(**stub_kw_args)
     self._register_stub(TASKQUEUE_SERVICE_NAME, stub)
 
-  def init_urlfetch_stub(self, enable=True):
+  def init_urlfetch_stub(self, enable=True, urlmatchers=None):
     """Enables the urlfetch stub.
 
     The urlfetch service stub uses the urllib module to make requests. On
@@ -665,11 +665,16 @@ class Testbed(object):
     Args:
       enable: `True` if the fake service should be enabled, or `False` if the
           real service should be disabled.
+      urlmatchers: optional initial sequence of (matcher, fetcher) pairs to
+          populate urlmatchers_to_fetch_functions; matchers passed here, if
+          any, take precedence over default matchers dispatching GCS access.
     """
     if not enable:
       self._disable_stub(URLFETCH_SERVICE_NAME)
       return
     urlmatchers_to_fetch_functions = []
+    if urlmatchers:
+      urlmatchers_to_fetch_functions.extend(urlmatchers)
     urlmatchers_to_fetch_functions.extend(
         GCS_URLMATCHERS_TO_FETCH_FUNCTIONS)
     stub = urlfetch_stub.URLFetchServiceStub(

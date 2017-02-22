@@ -35,10 +35,8 @@ from google.appengine.api import backendinfo
 from google.appengine.api import dispatchinfo
 from google.appengine.client.services import port_manager
 from google.appengine.tools import app_engine_web_xml_parser
-from google.appengine.tools import java_quickstart
 from google.appengine.tools import queue_xml_parser
 from google.appengine.tools import web_xml_parser
-from google.appengine.tools import xml_parser_utils
 from google.appengine.tools import yaml_translator
 from google.appengine.tools.devappserver2 import errors
 
@@ -470,20 +468,10 @@ class ModuleConfiguration(object):
         app_engine_web_xml_parser.AppEngineWebXmlParser().ProcessXml(
             app_engine_web_xml_str))
 
-    quickstart = xml_parser_utils.BooleanValue(
-        app_engine_web_xml.beta_settings.get('java_quickstart', 'false'))
-
     web_inf_dir = os.path.dirname(app_engine_web_xml_path)
-    if quickstart:
-      app_dir = os.path.dirname(web_inf_dir)
-      web_xml_str, web_xml_path = java_quickstart.quickstart_generator(app_dir)
-      webdefault_xml_str = java_quickstart.get_webdefault_xml()
-      web_xml_str = java_quickstart.remove_mappings(
-          web_xml_str, webdefault_xml_str)
-    else:
-      web_xml_path = os.path.join(web_inf_dir, 'web.xml')
-      with open(web_xml_path) as f:
-        web_xml_str = f.read()
+    web_xml_path = os.path.join(web_inf_dir, 'web.xml')
+    with open(web_xml_path) as f:
+      web_xml_str = f.read()
 
     has_jsps = False
     for _, _, filenames in os.walk(self.application_root):

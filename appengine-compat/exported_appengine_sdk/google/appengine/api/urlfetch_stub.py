@@ -360,15 +360,15 @@ class URLFetchServiceStub(apiproxy_stub.APIProxyStub):
 
 
 
-        header_key = header.key().title()
-        if header_key == 'User-Agent':
-          adjusted_headers[header_key] = [(
+        header_key = header.key()
+        if header_key.lower() == 'user-agent':
+          adjusted_headers[header_key.title()] = [(
               '%s %s' % (header.value(), adjusted_headers['User-Agent'][0]))]
-        elif header_key == 'Accept-Encoding':
+        elif header_key.lower() == 'accept-encoding':
           passthrough_content_encoding = True
-          adjusted_headers[header_key] = [header.value()]
-        elif header_key == 'Content-Type':
-          adjusted_headers[header_key] = [header.value()]
+          adjusted_headers[header_key.title()] = [header.value()]
+        elif header_key.lower() == 'content-type':
+          adjusted_headers[header_key.title()] = [header.value()]
         else:
           adjusted_headers.setdefault(header_key, []).append(header.value())
 

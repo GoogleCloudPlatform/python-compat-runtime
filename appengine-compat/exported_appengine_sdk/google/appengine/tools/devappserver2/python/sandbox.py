@@ -298,8 +298,8 @@ def _find_shared_object_c_module():
 
 def _should_keep_module(name):
   """Returns True if the module should be retained after sandboxing."""
-  return (name in ('__builtin__', 'sys', 'codecs', 'encodings', 'site',
-                   'google') or
+  return (name in ('__builtin__', '__main__', 'sys', 'codecs', 'encodings',
+                   'site', 'google') or
           name.startswith('google.') or name.startswith('encodings.') or
 
 

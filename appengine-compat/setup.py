@@ -50,9 +50,9 @@ patch_namespace_package(os.path.join(
 
 setup(
     name='appengine-compat',
-    version='0.69',
+    version='0.70',
     description='Google App Engine-compatible Python libraries for Managed VMs',
-    url='https://github.com/GoogleCloudPlatform/appengine-python-vm-runtime',
+    url='https://github.com/GoogleCloudPlatform/python-compat-runtime',
     author='Google',
     license='Apache License 2.0',
     classifiers=[

@@ -367,6 +367,9 @@ class Module(object):
         (self._module_configuration.runtime.startswith('java') or
          self._module_configuration.effective_runtime.startswith('java'))):
       runtime_config.java_config.CopyFrom(self._java_config)
+    if (self._go_config and
+        self._module_configuration.runtime.startswith('go')):
+      runtime_config.go_config.CopyFrom(self._go_config)
 
     if self._vm_config:
       runtime_config.vm_config.CopyFrom(self._vm_config)
@@ -441,6 +444,7 @@ class Module(object):
                php_config,
                python_config,
                java_config,
+               go_config,
                custom_config,
                cloud_sql_config,
                vm_config,
@@ -475,6 +479,8 @@ class Module(object):
           Python runtime-specific configuration. If None then defaults are used.
       java_config: A runtime_config_pb2.JavaConfig instance containing
           Java runtime-specific configuration. If None then defaults are used.
+      go_config: A runtime_config_pb2.GoConfig instances containing Go
+          runtime-specific configuration. If None then defaults are used.
       custom_config: A runtime_config_pb2.CustomConfig instance. If 'runtime'
           is set then we switch to another runtime.  Otherwise, we use the
           custom_entrypoint to start the app.  If neither or both are set,
@@ -523,6 +529,7 @@ class Module(object):
     self._php_config = php_config
     self._python_config = python_config
     self._java_config = java_config
+    self._go_config = go_config
     self._custom_config = custom_config
     self._cloud_sql_config = cloud_sql_config
     self._vm_config = vm_config
@@ -1069,6 +1076,7 @@ class Module(object):
                                       self._php_config,
                                       self._python_config,
                                       self._java_config,
+                                      self._go_config,
                                       self._custom_config,
                                       self._cloud_sql_config,
                                       self._vm_config,
@@ -2688,6 +2696,7 @@ class InteractiveCommandModule(Module):
                php_config,
                python_config,
                java_config,
+               go_config,
                custom_config,
                cloud_sql_config,
                vm_config,
@@ -2722,6 +2731,8 @@ class InteractiveCommandModule(Module):
           Python runtime-specific configuration. If None then defaults are used.
       java_config: A runtime_config_pb2.JavaConfig instance containing
           Java runtime-specific configuration. If None then defaults are used.
+      go_config: A runtime_config_pb2.GoConfig instances containing Go
+          runtime-specific configuration. If None then defaults are used.
       custom_config: A runtime_config_pb2.CustomConfig instance. If None, or
           'custom_entrypoint' is not set, then attempting to instantiate a
           custom runtime module will result in an error.
@@ -2757,6 +2768,7 @@ class InteractiveCommandModule(Module):
         php_config,
         python_config,
         java_config,
+        go_config,
         custom_config,
         cloud_sql_config,
         vm_config,

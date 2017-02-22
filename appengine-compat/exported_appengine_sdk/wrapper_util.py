@@ -190,7 +190,7 @@ class Paths(object):
         os.path.join(dir_path, 'lib', 'pyasn1'),
         os.path.join(dir_path, 'lib', 'pyasn1_modules'),
         os.path.join(dir_path, 'lib', 'httplib2'),
-        os.path.join(dir_path, 'lib', 'oauth2client'),
+        os.path.join(dir_path, 'lib', 'oauth2client_devserver'),
         os.path.join(dir_path, 'lib', 'six'),
     ]
 

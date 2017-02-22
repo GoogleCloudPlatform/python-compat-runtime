@@ -4258,6 +4258,7 @@ namespace google\appengine_datastore_v3\Error {
     const NOT_FOUND = 13;
     const ALREADY_EXISTS = 14;
     const FAILED_PRECONDITION = 15;
+    const UNAUTHENTICATED = 16;
   }
 }
 namespace google\appengine_datastore_v3 {
