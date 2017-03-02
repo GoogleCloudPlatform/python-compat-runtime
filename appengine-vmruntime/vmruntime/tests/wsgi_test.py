@@ -16,7 +16,6 @@ import datetime
 import httplib
 import json
 import logging
-from multiprocessing.pool import ThreadPool
 import os
 import threading
 import unittest
@@ -60,6 +59,8 @@ FAKE_HANDLERS = [
                    script=script_path('nonexistent_function')),
     appinfo.URLMap(url='/env',
                    script=script_path('dump_os_environ')),
+    appinfo.URLMap(url='/thread_env',
+                   script=script_path('dump_thread_os_environ')),
     appinfo.URLMap(url='/sortenv',
                    script=script_path('sort_os_environ_keys')),
     appinfo.URLMap(url='/setenv',
@@ -115,6 +116,8 @@ FAKE_APPENGINE_CONFIG = MagicMock(server_software='server',
 # Global event flags used for concurrency tests.
 concurrent_request_is_started = threading.Event()
 concurrent_request_should_proceed = threading.Event()
+unmodified_os_env = {}
+thread_env = {}
 
 # Global flags used for callback tests.
 callback_called = False
@@ -134,6 +137,21 @@ def dump_os_environ(request):  # pylint: disable=unused-argument
 
 
 @wrappers.Request.application
+def dump_thread_os_environ(request):  # pylint: disable=unused-argument
+    def func():
+        global thread_env
+        thread_env = dict(os.environ)
+
+    t = threading.Thread(target=func)
+    t.start()
+    t.join()
+    if thread_env == os.environ:
+        return wrappers.Response('pass!')
+    else:
+        return wrappers.Response('fail!')
+
+
+@wrappers.Request.application
 def add_to_os_environ(request):  # pylint: disable=unused-argument
     os.environ['ENVIRONMENT_MODIFIED'] = 'TRUE'
     return wrappers.Response(json.dumps(dict(os.environ)))
@@ -143,6 +161,8 @@ def add_to_os_environ(request):  # pylint: disable=unused-argument
 def wait_on_global_event(request):  # pylint: disable=unused-argument
     concurrent_request_is_started.set()
     concurrent_request_should_proceed.wait()
+    global unmodified_os_env
+    unmodified_os_env = dict(os.environ)
     return wrappers.Response(json.dumps(dict(os.environ)))
 
 
@@ -365,8 +385,8 @@ class MetaAppTestCase(unittest.TestCase):
     # concurrent requests. This validates that os.environ is thread-local.
     def test_concurrent_requests_have_independent_env(self):
         # First, start a separate thread that starts a request but then hangs.
-        pool = ThreadPool(processes=1)
-        future = pool.apply_async(self.client.get, ('/wait', ))
+        t = threading.Thread(target=self.client.get, args=('/wait',))
+        t.start()
 
         # Block until the second thread is in the request phase to be sure it's
         # finished initializing its environment in middleware.
@@ -381,8 +401,13 @@ class MetaAppTestCase(unittest.TestCase):
         concurrent_request_should_proceed.set()
 
         # Wait for the thread to finish and examine the results.
-        response = future.get(5)  # This will raise an exception on timeout.
-        self.assertNotIn('ENVIRONMENT_MODIFIED', json.loads(response.data))
+        t.join(5) # This will raise an exception on timeout.
+        self.assertNotIn('ENVIRONMENT_MODIFIED', unmodified_os_env)
+
+    # Regression test for issue where threads that lose their os environ.
+    def test_inherit_os_env(self):
+      response = self.client.get('/thread_env')
+      self.assertEquals('pass!', response.data)
 
     # Regression test for an issue where a threadlocal dict subclass could not
     # be cast to a list or sorted.

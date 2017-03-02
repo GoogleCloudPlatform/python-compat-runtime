@@ -25,6 +25,8 @@ import os
 
 from google.appengine.ext.vmruntime import vmconfig
 from google.appengine.ext.vmruntime import vmstub
+from google.appengine.runtime import runtime
+from google.appengine.runtime import request_environment
 from vmruntime import cloud_logging
 from vmruntime import dispatcher
 from vmruntime import middleware
@@ -125,7 +127,9 @@ frozen_environment = tuple(os.environ.iteritems())
 # Note: gunicorn "gevent" or "eventlet" workers, if selected, will
 # automatically monkey-patch the threading module to make this work with green
 # threads.
-os.environ = wsgi_config.ThreadLocalDict()
+
+runtime.PatchStartNewThread()
+request_environment.PatchOsEnviron()
 
 # Create a "meta app" that dispatches requests based on handlers.
 meta_app = dispatcher.dispatcher(preloaded_handlers)
