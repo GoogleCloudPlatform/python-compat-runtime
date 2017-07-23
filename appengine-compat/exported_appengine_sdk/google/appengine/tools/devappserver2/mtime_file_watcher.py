@@ -38,6 +38,7 @@ class MtimeFileWatcher(object):
   def __init__(self, directory):
     self._directory = directory
     self._quit_event = threading.Event()
+    self._watcher_ignore_re = None
     self._skip_files_re = None
     self._filename_to_mtime = None
     self._timeout = threading.Event()
@@ -45,6 +46,15 @@ class MtimeFileWatcher(object):
 
   def _refresh(self):
     self._filename_to_mtime = self._generate_filename_to_mtime()
+
+  def set_watcher_ignore_re(self, watcher_ignore_re):
+    """Allows the file watcher to ignore a custom pattern set by the user.
+
+    Args:
+      watcher_ignore_re: A RegexObject that optionally defines a pattern for the
+          file watcher to ignore.
+    """
+    self._watcher_ignore_re = watcher_ignore_re
 
   def set_skip_files_re(self, skip_files_re):
     """Allows the file watcher to respect skip_files in app.yaml.
@@ -126,6 +136,19 @@ class MtimeFileWatcher(object):
       pass
     return set()
 
+  def _path_ignored(self, file_path):
+    """Determines if a path is ignored or not.
+
+    Args:
+      file_path: The full (string) filepath.
+
+    Returns:
+      Boolean, True if ignored else False.
+    """
+
+    return watcher_common.ignore_file(
+        file_path, self._skip_files_re, self._watcher_ignore_re)
+
   def _generate_filename_to_mtime(self):
     """Records the state of a directory.
 
@@ -139,15 +162,18 @@ class MtimeFileWatcher(object):
     """
     filename_to_mtime = {}
     num_files = 0
-    for dirpath, dirnames, filenames in os.walk(self._directory,
-                                                followlinks=True):
+    for dirpath, dirnames, filenames in os.walk(
+        self._directory, followlinks=True):
       if self._quit_event.is_set():
         raise ShutdownError()
 
       watcher_common.skip_ignored_dirs(dirpath, dirnames, self._skip_files_re)
-      filenames = [f for f in filenames if not
-                   watcher_common.ignore_file(os.path.join(dirpath, f),
-                                              self._skip_files_re)]
+      watcher_common.skip_ignored_dirs(dirpath, dirnames,
+                                       self._watcher_ignore_re)
+      filenames = [
+          f for f in filenames
+          if not self._path_ignored(os.path.join(dirpath, f))
+      ]
       for filename in filenames + dirnames:
         if self._quit_event.is_set():
           raise ShutdownError()

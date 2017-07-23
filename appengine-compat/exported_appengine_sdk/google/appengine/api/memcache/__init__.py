@@ -158,8 +158,8 @@ def _key_string(key, key_prefix='', server_to_user_dict=None):
   if not isinstance(key, basestring):
     raise TypeError('Key must be a string instance, received %r' % key)
   if not isinstance(key_prefix, basestring):
-    raise TypeError('key_prefix must be a string instance, received %r' %
-                    key_prefix)
+    raise TypeError(
+        'key_prefix must be a string instance, received %r' % key_prefix)
 
 
 
@@ -626,8 +626,8 @@ class Client(object):
     user_key = rpc.user_data
     return_value = {}
     for returned_item in response.item_list():
-      value = _decode_value(returned_item.value(), returned_item.flags(),
-                            self._do_unpickle)
+      value = _decode_value(returned_item.value(),
+                            returned_item.flags(), self._do_unpickle)
       raw_key = returned_item.key()
       if for_cas:
         ns = namespace if namespace else ''
@@ -737,7 +737,10 @@ class Client(object):
       elif status == MemcacheDeleteResponse.NOT_FOUND:
         result.append(DELETE_ITEM_MISSING)
       else:
-        result.append(DELETE_NETWORK_FAILURE)
+
+
+
+        return None
     return result
 
 
@@ -770,11 +773,8 @@ class Client(object):
     Returns:
       True if set.  False on error.
     """
-    return self._set_with_policy(MemcacheSetRequest.SET,
-                                 key,
-                                 value,
-                                 time=time,
-                                 namespace=namespace)
+    return self._set_with_policy(
+        MemcacheSetRequest.SET, key, value, time=time, namespace=namespace)
 
   def add(self, key, value, time=0, min_compress_len=0, namespace=None):
     """Sets a key's value, iff item is not already in memcache.
@@ -794,11 +794,8 @@ class Client(object):
     Returns:
       True if added.  False on error.
     """
-    return self._set_with_policy(MemcacheSetRequest.ADD,
-                                 key,
-                                 value,
-                                 time=time,
-                                 namespace=namespace)
+    return self._set_with_policy(
+        MemcacheSetRequest.ADD, key, value, time=time, namespace=namespace)
 
   def replace(self, key, value, time=0, min_compress_len=0, namespace=None):
     """Replaces a key's value, failing if item isn't already in memcache.
@@ -818,11 +815,8 @@ class Client(object):
     Returns:
       True if replaced.  False on RPC error or cache miss.
     """
-    return self._set_with_policy(MemcacheSetRequest.REPLACE,
-                                 key,
-                                 value,
-                                 time=time,
-                                 namespace=namespace)
+    return self._set_with_policy(
+        MemcacheSetRequest.REPLACE, key, value, time=time, namespace=namespace)
 
   def cas(self, key, value, time=0, min_compress_len=0, namespace=None):
     """Compare-And-Set update.
@@ -984,7 +978,7 @@ class Client(object):
       item.set_expiration_time(int(math.ceil(time)))
       if set_cas_id:
 
-        ns = namespace if namespace else ''
+        ns = request.name_space() or ''
         cas_id = self._cas_ids.get((ns, server_key))
 
         if cas_id is not None:
@@ -997,8 +991,8 @@ class Client(object):
 
 
     return self._make_async_call(rpc, 'Set', request, response,
-                                 self.__set_with_policy_hook,
-                                 (server_keys, user_key))
+                                 self.__set_with_policy_hook, (server_keys,
+                                                               user_key))
 
   def __set_with_policy_hook(self, rpc):
     try:
@@ -1011,6 +1005,12 @@ class Client(object):
     assert response.set_status_size() == len(server_keys)
     status_dict = {}
     for server_key, status in zip(server_keys, response.set_status_list()):
+
+
+      if status in (MemcacheSetResponse.DEADLINE_EXCEEDED,
+                    MemcacheSetResponse.UNREACHABLE,
+                    MemcacheSetResponse.OTHER_ERROR):
+        status = MemcacheSetResponse.ERROR
       status_dict[user_key[server_key]] = status
     return status_dict
 
@@ -1038,11 +1038,12 @@ class Client(object):
       A list of keys whose values were NOT set.  On total success,
       this list should be empty.
     """
-    return self._set_multi_with_policy(MemcacheSetRequest.SET,
-                                       mapping,
-                                       time=time,
-                                       key_prefix=key_prefix,
-                                       namespace=namespace)
+    return self._set_multi_with_policy(
+        MemcacheSetRequest.SET,
+        mapping,
+        time=time,
+        key_prefix=key_prefix,
+        namespace=namespace)
 
   def set_multi_async(self,
                       mapping,
@@ -1056,12 +1057,13 @@ class Client(object):
     Returns:
       See _set_multi_async_with_policy().
     """
-    return self._set_multi_async_with_policy(MemcacheSetRequest.SET,
-                                             mapping,
-                                             time=time,
-                                             key_prefix=key_prefix,
-                                             namespace=namespace,
-                                             rpc=rpc)
+    return self._set_multi_async_with_policy(
+        MemcacheSetRequest.SET,
+        mapping,
+        time=time,
+        key_prefix=key_prefix,
+        namespace=namespace,
+        rpc=rpc)
 
   def add_multi(self,
                 mapping,
@@ -1084,14 +1086,15 @@ class Client(object):
         the request.
 
     Returns:
-      A list of keys whose values were NOT set because they did not already
+      A list of keys whose values were NOT set because they already
       exist in memcache.  On total success, this list should be empty.
     """
-    return self._set_multi_with_policy(MemcacheSetRequest.ADD,
-                                       mapping,
-                                       time=time,
-                                       key_prefix=key_prefix,
-                                       namespace=namespace)
+    return self._set_multi_with_policy(
+        MemcacheSetRequest.ADD,
+        mapping,
+        time=time,
+        key_prefix=key_prefix,
+        namespace=namespace)
 
   def add_multi_async(self,
                       mapping,
@@ -1105,12 +1108,13 @@ class Client(object):
     Returns:
       See _set_multi_async_with_policy().
     """
-    return self._set_multi_async_with_policy(MemcacheSetRequest.ADD,
-                                             mapping,
-                                             time=time,
-                                             key_prefix=key_prefix,
-                                             namespace=namespace,
-                                             rpc=rpc)
+    return self._set_multi_async_with_policy(
+        MemcacheSetRequest.ADD,
+        mapping,
+        time=time,
+        key_prefix=key_prefix,
+        namespace=namespace,
+        rpc=rpc)
 
   def replace_multi(self,
                     mapping,
@@ -1136,11 +1140,12 @@ class Client(object):
       A list of keys whose values were NOT set because they already existed
       in memcache.  On total success, this list should be empty.
     """
-    return self._set_multi_with_policy(MemcacheSetRequest.REPLACE,
-                                       mapping,
-                                       time=time,
-                                       key_prefix=key_prefix,
-                                       namespace=namespace)
+    return self._set_multi_with_policy(
+        MemcacheSetRequest.REPLACE,
+        mapping,
+        time=time,
+        key_prefix=key_prefix,
+        namespace=namespace)
 
   def replace_multi_async(self,
                           mapping,
@@ -1154,12 +1159,13 @@ class Client(object):
     Returns:
       See _set_multi_async_with_policy().
     """
-    return self._set_multi_async_with_policy(MemcacheSetRequest.REPLACE,
-                                             mapping,
-                                             time=time,
-                                             key_prefix=key_prefix,
-                                             namespace=namespace,
-                                             rpc=rpc)
+    return self._set_multi_async_with_policy(
+        MemcacheSetRequest.REPLACE,
+        mapping,
+        time=time,
+        key_prefix=key_prefix,
+        namespace=namespace,
+        rpc=rpc)
 
   def cas_multi(self,
                 mapping,
@@ -1187,11 +1193,12 @@ class Client(object):
       A list of keys whose values were NOT set because the compare
       failed.  On total success, this list should be empty.
     """
-    return self._set_multi_with_policy(MemcacheSetRequest.CAS,
-                                       mapping,
-                                       time=time,
-                                       key_prefix=key_prefix,
-                                       namespace=namespace)
+    return self._set_multi_with_policy(
+        MemcacheSetRequest.CAS,
+        mapping,
+        time=time,
+        key_prefix=key_prefix,
+        namespace=namespace)
 
   def cas_multi_async(self,
                       mapping,
@@ -1205,12 +1212,13 @@ class Client(object):
     Returns:
       See _set_multi_async_with_policy().
     """
-    return self._set_multi_async_with_policy(MemcacheSetRequest.CAS,
-                                             mapping,
-                                             time=time,
-                                             key_prefix=key_prefix,
-                                             namespace=namespace,
-                                             rpc=rpc)
+    return self._set_multi_async_with_policy(
+        MemcacheSetRequest.CAS,
+        mapping,
+        time=time,
+        key_prefix=key_prefix,
+        namespace=namespace,
+        rpc=rpc)
 
   def incr(self, key, delta=1, namespace=None, initial_value=None):
     """Atomically increments a key's value.
@@ -1249,11 +1257,8 @@ class Client(object):
       ValueError: If number is negative.
       TypeError: If delta isn't an int or long.
     """
-    return self._incrdecr(key,
-                          False,
-                          delta,
-                          namespace=namespace,
-                          initial_value=initial_value)
+    return self._incrdecr(
+        key, False, delta, namespace=namespace, initial_value=initial_value)
 
   def incr_async(self,
                  key,
@@ -1267,12 +1272,13 @@ class Client(object):
       A UserRPC instance whose get_result() method returns the same
       kind of value as incr() returns.
     """
-    return self._incrdecr_async(key,
-                                False,
-                                delta,
-                                namespace=namespace,
-                                initial_value=initial_value,
-                                rpc=rpc)
+    return self._incrdecr_async(
+        key,
+        False,
+        delta,
+        namespace=namespace,
+        initial_value=initial_value,
+        rpc=rpc)
 
   def decr(self, key, delta=1, namespace=None, initial_value=None):
     """Atomically decrements a key's value.
@@ -1307,11 +1313,8 @@ class Client(object):
       ValueError: If number is negative.
       TypeError: If delta isn't an int or long.
     """
-    return self._incrdecr(key,
-                          True,
-                          delta,
-                          namespace=namespace,
-                          initial_value=initial_value)
+    return self._incrdecr(
+        key, True, delta, namespace=namespace, initial_value=initial_value)
 
   def decr_async(self,
                  key,
@@ -1325,12 +1328,13 @@ class Client(object):
       A UserRPC instance whose get_result() method returns the same
       kind of value as decr() returns.
     """
-    return self._incrdecr_async(key,
-                                True,
-                                delta,
-                                namespace=namespace,
-                                initial_value=initial_value,
-                                rpc=rpc)
+    return self._incrdecr_async(
+        key,
+        True,
+        delta,
+        namespace=namespace,
+        initial_value=initial_value,
+        rpc=rpc)
 
   def _incrdecr(self,
                 key,
@@ -1530,6 +1534,7 @@ class Client(object):
         result_dict[key] = None
 
     return result_dict
+
 
 
 

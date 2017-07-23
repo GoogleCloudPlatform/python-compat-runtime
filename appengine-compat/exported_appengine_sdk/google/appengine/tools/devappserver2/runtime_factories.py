@@ -20,6 +20,10 @@
 
 from google.appengine.tools.devappserver2 import custom_runtime
 from google.appengine.tools.devappserver2 import go_runtime
+
+
+
+
 from google.appengine.tools.devappserver2 import php_runtime
 from google.appengine.tools.devappserver2 import python_runtime
 
@@ -31,10 +35,14 @@ except ImportError:
 # pylint: enable=g-import-not-at-top
 
 # TODO - b/34669624, automatically get Version of python runtime in prod.
-PYTHON27_PROD_VERSION = (2, 7, 5)
+PYTHON27_PROD_VERSION = (2, 7, 12)
 
 FACTORIES = {
     'go': go_runtime.GoRuntimeInstanceFactory,
+
+
+
+
     'php55': php_runtime.PHPRuntimeInstanceFactory,
     'python': python_runtime.PythonRuntimeInstanceFactory,
     'python27': python_runtime.PythonRuntimeInstanceFactory,

@@ -395,6 +395,8 @@ class FieldDescriptor(DescriptorBase):
 
     containing_oneof: (OneofDescriptor) If the field is a member of a oneof
       union, contains its descriptor. Otherwise, None.
+
+    file: (FileDescriptor) Reference to file descriptor.
   """
 
 
@@ -479,7 +481,8 @@ class FieldDescriptor(DescriptorBase):
     def __new__(cls, name, full_name, index, number, type, cpp_type, label,
                 default_value, message_type, enum_type, containing_type,
                 is_extension, extension_scope, options=None,
-                has_default_value=True, containing_oneof=None):
+                has_default_value=True, containing_oneof=None,
+                file=None):
       _message.Message._CheckCalledFromGeneratedFile()
       if is_extension:
         return _message.default_pool.FindExtensionByName(full_name)
@@ -489,7 +492,8 @@ class FieldDescriptor(DescriptorBase):
   def __init__(self, name, full_name, index, number, type, cpp_type, label,
                default_value, message_type, enum_type, containing_type,
                is_extension, extension_scope, options=None,
-               has_default_value=True, containing_oneof=None):
+               has_default_value=True, containing_oneof=None,
+               file=None):
     """The arguments are as described in the description of FieldDescriptor
     attributes above.
 
@@ -500,6 +504,7 @@ class FieldDescriptor(DescriptorBase):
     super(FieldDescriptor, self).__init__(options, 'FieldOptions')
     self.name = name
     self.full_name = full_name
+    self.file = file
     self.index = index
     self.number = number
     self.type = type
@@ -762,6 +767,7 @@ class FileDescriptor(DescriptorBase):
   message_types_by_name: Dict of message names of their descriptors.
   enum_types_by_name: Dict of enum names and their descriptors.
   extensions_by_name: Dict of extension names and their descriptors.
+  services_by_name: Dict of services names and their descriptors.
   """
 
   if _USE_C_DESCRIPTORS:
@@ -789,6 +795,7 @@ class FileDescriptor(DescriptorBase):
 
     self.enum_types_by_name = {}
     self.extensions_by_name = {}
+    self.services_by_name = {}
     self.dependencies = (dependencies or [])
     self.public_dependencies = (public_dependencies or [])
 

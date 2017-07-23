@@ -21,9 +21,6 @@ from google.net.proto import ProtocolBuffer
 import array
 import dummy_thread as thread
 
-__pychecker__ = """maxreturns=0 maxbranches=0 no-callinit
-                   unusednames=printElemNumber,debug_strs no-special"""
-
 if hasattr(ProtocolBuffer, 'ExtendableProtocolMessage'):
   _extension_runtime = True
   _ExtendableProtocolMessage = ProtocolBuffer.ExtendableProtocolMessage
@@ -33,8 +30,10 @@ else:
 
 from google.appengine.api.api_base_pb import *
 import google.appengine.api.api_base_pb
+google_dot_apphosting_dot_api_dot_api__base__pb = __import__('google.appengine.api.api_base_pb', {}, {}, [''])
 from google.appengine.api.channel.channel_service_pb import *
 import google.appengine.api.channel.channel_service_pb
+google_dot_apphosting_dot_api_dot_channel_dot_channel__service__pb = __import__('google.appengine.api.channel.channel_service_pb', {}, {}, [''])
 class XmppServiceError(ProtocolBuffer.ProtocolMessage):
 
 

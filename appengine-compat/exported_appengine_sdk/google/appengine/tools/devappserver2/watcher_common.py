@@ -37,19 +37,21 @@ _IGNORED_FILE_SUFFIXES = (
 )
 
 
-def ignore_file(filename, skip_files_re=None):
+def ignore_file(filename, *args):
   """Report whether a file should not be watched.
 
   Args:
     filename: the absolute path to a file.
-    skip_files_re: a regular_expression, absolute paths matching it are
-      skippable.
+    *args: N number of RegexObject instances to attempt to match with,
+        absolute paths matching any are skippable.
 
   Returns:
     Boolean value, True if the filename can be ignored.
   """
-  if skip_files_re and skip_files_re.match(filename):
-    return True
+  for re in args:
+    if re and re.match(filename):
+      return True
+
   filename = os.path.basename(filename)
   return (
       filename.startswith(_IGNORED_PREFIX) or

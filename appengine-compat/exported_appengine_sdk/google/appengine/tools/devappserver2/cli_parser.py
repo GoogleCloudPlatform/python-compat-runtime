@@ -14,12 +14,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-"""The main entry point for the new development server."""
+"""Provides a command line parser for the dev_appserver and related tools.
 
+The standard argparse library is subclassed within to provide configurability to
+the parser and argument group __init__ and add_argument methods. This is a
+convenient way to share flags between tools, eg dev_appserver.py and
+api_server.py binaries, and to toggle flags on and off for certain tools.
 
+The create_command_line_parser accepts a configuration argument:
+  create_command_line_parser(DEV_APPSERVER_CONFIGURATION): returns a parser with
+      all flags for the dev_appserver.py binary.
+  create_command_line_parser(API_SERVER_CONFIGURATION): returns a parser with
+      all flags for the api_server.py binary.
+"""
 
 import argparse
 import os
+import re
 
 from google.appengine.api import appinfo
 from google.appengine.datastore import datastore_stub_util
@@ -27,6 +38,12 @@ from google.appengine.tools import boolean_action
 from google.appengine.tools.devappserver2 import application_configuration
 from google.appengine.tools.devappserver2 import constants
 from google.appengine.tools.devappserver2 import runtime_factories
+
+
+# Configuration tokens used to determine which arguments are added to the
+# parser.
+DEV_APPSERVER_CONFIGURATION = 'dev_appserver_configuration'
+API_SERVER_CONFIGURATION = 'api_server_configuration'
 
 
 class PortParser(object):
@@ -186,20 +203,147 @@ def parse_path(value):
   return os.path.expanduser(os.path.expandvars(value))
 
 
-def create_command_line_parser():
-  """Returns an argparse.ArgumentParser to parse command line arguments."""
+class ConfigurableArgumentParser(argparse.ArgumentParser):
+  """Provides configurations option to the argument parser.
+
+  This provides a convenient way to share flags between tools, and to toggle
+  flags on and off for tools, eg for dev_appserver.py vs api_server.py.
+
+  Example usage (with a helper create_parser function):
+
+    def create_parser(config):
+      parser = ConfigurableArgumentParser(config)
+      parser.add_argument('flag-for-all-configs')
+      parser.add_argument('foo-flag',
+                          restrict_configurations=['my-configuration'])
+      parser.add_argument('bar-flag',
+                          restrict_configurations=['another-configuration'])
+      parser.add_argument('foobar-flag',
+                          restrict_configurations=[
+                              'my-configuration', 'another-configuration'])
+      return parser
+
+    create_parser('my-configuration')  ->  contains [
+        'flag-for-all-configs', 'foo-flag', 'foobar-flag']
+    create_parser('another-configuration')  ->  contains [
+        'flag-for-all-configs', 'bar-flag', 'foobar-flag']
+    create_parser('yet-another-configuration')  ->  contains [
+        'flag-for-all-configs']
+  """
+
+  def __init__(self, *args, **kwargs):
+    """Initializes the argument parser.
+
+    Args:
+      *args: Arguments passed on to the parent init method.
+      **kwargs: Keyword arguments passed on to the parent init method, can
+          optionally contain a 'configuration' kwarg that will be popped and
+          stored on the instance. This should be the string configuration
+          accepted by the parser.
+    """
+    self._configuration = kwargs.pop('configuration', None)
+    super(ConfigurableArgumentParser, self).__init__(*args, **kwargs)
+
+  def add_argument(self, *args, **kwargs):
+    """Adds an argument to the parser.
+
+    Args:
+      *args: Arguments passed on to the argument group.
+      **kwargs: Keyword arguments passed on to the argument group, can
+          optionally contain a 'restrict_configuration' kwarg that will be
+          popped. This should be the list of configurations the the argument is
+          applicable for. Omitting this kwarg, or providing an empty list,
+          signifies that the added argument is valid for all configurations.
+    """
+    restrict_configuration = kwargs.pop('restrict_configuration', [])
+    if (not restrict_configuration or
+        self._configuration in restrict_configuration):
+      super(ConfigurableArgumentParser, self).add_argument(*args, **kwargs)
+
+  def add_argument_group(self, *args, **kwargs):
+    """Adds an argument group to the parser.
+
+    The parsers's configuration is set on the argument group.
+
+    Args:
+      *args: Arguments passed on to the argument group.
+      **kwargs: Keyword arguments passed on to the argument group.
+
+    Returns:
+      An instance of ConfigurableArgumentGroup.
+    """
+    group = ConfigurableArgumentGroup(
+        self, configuration=self._configuration, *args, **kwargs)
+    self._action_groups.append(group)
+    return group
+
+
+class ConfigurableArgumentGroup(argparse._ArgumentGroup):  # pylint: disable=protected-access
+  """Provides configuration options to the argument group.
+
+  This provides a convenient way to share flags between tools, and to toggle
+  flags on and off for tools, eg for dev_appserver.py vs api_server.py.
+  """
+
+  def __init__(self, *args, **kwargs):
+    """Initializes the argument group.
+
+    Args:
+      *args: Arguments passed on to the parent init method.
+      **kwargs: Keyword arguments passed on to the parent init method, can
+          optionally contain a 'configuration' kwarg that will be popped and
+          stored on the instance. This should be the string configuration
+          accepted by the parser.
+    """
+    self._configuration = kwargs.pop('configuration', None)
+    super(ConfigurableArgumentGroup, self).__init__(*args, **kwargs)
+
+  def add_argument(self, *args, **kwargs):
+    """Adds an argument to the group.
+
+    Args:
+      *args: Arguments passed on to the argument group.
+      **kwargs: Keyword arguments passed on to the argument group, can
+          optionally contain a 'restrict_configuration' kwarg that will be
+          popped. This should be the list of configurations the the argument is
+          applicable for. Omitting this kwarg, or providing an empty list,
+          signifies that the added argument is valid for all configurations.
+    """
+    restrict_configuration = kwargs.pop('restrict_configuration', [])
+    if (not restrict_configuration or
+        self._configuration in restrict_configuration):
+      super(ConfigurableArgumentGroup, self).add_argument(*args, **kwargs)
+
+
+def create_command_line_parser(configuration=None):
+  """Returns an argparse.ArgumentParser to parse command line arguments.
+
+  Args:
+    configuration: A string token containing the configuration to generate a
+      command line parser for.
+
+  Returns:
+    An instance of ConfigurableArgumentParser.
+  """
   # TODO: Add more robust argument validation. Consider what flags
   # are actually needed.
 
-  parser = argparse.ArgumentParser(
+  parser = ConfigurableArgumentParser(
+      configuration=configuration,
       formatter_class=argparse.ArgumentDefaultsHelpFormatter)
   arg_name = 'yaml_path'
   arg_help = 'Path to one or more app.yaml files'
   if application_configuration.java_supported():
     arg_name = 'yaml_or_war_path'
     arg_help += ', or a directory containing WEB-INF/web.xml'
+
+  # dev_appserver.py requires config_paths, api_server.py does not.
   parser.add_argument(
-      'config_paths', metavar=arg_name, nargs='+', help=arg_help)
+      'config_paths', restrict_configuration=[DEV_APPSERVER_CONFIGURATION],
+      metavar=arg_name, nargs='+', help=arg_help)
+  parser.add_argument(
+      'config_paths', restrict_configuration=[API_SERVER_CONFIGURATION],
+      metavar=arg_name, nargs='*', help=arg_help)
 
   if constants.DEVSHELL_ENV in os.environ:
     default_server_host = '0.0.0.0'
@@ -245,6 +389,7 @@ def create_command_line_parser():
   common_group.add_argument(
       '--max_module_instances',
       type=parse_max_module_instances,
+      restrict_configuration=[DEV_APPSERVER_CONFIGURATION],
       help='the maximum number of runtime instances that can be started for a '
       'particular module - the value can be an integer, in what case all '
       'modules are limited to that number of instances or a comma-seperated '
@@ -254,11 +399,13 @@ def create_command_line_parser():
       action=boolean_action.BooleanAction,
       const=True,
       default=False,
+      restrict_configuration=[DEV_APPSERVER_CONFIGURATION],
       help='use mtime polling for detecting source code changes - useful if '
       'modifying code from a remote machine using a distributed file system')
   common_group.add_argument(
       '--threadsafe_override',
       type=parse_threadsafe_override,
+      restrict_configuration=[DEV_APPSERVER_CONFIGURATION],
       help='override the application\'s threadsafe configuration - the value '
       'can be a boolean, in which case all modules threadsafe setting will '
       'be overridden or a comma-separated list of module:threadsafe_override '
@@ -273,18 +420,33 @@ def create_command_line_parser():
   php_group = parser.add_argument_group('PHP')
   php_group.add_argument('--php_executable_path', metavar='PATH',
                          type=parse_path,
+                         restrict_configuration=[DEV_APPSERVER_CONFIGURATION],
                          help='path to the PHP executable')
   php_group.add_argument('--php_remote_debugging',
                          action=boolean_action.BooleanAction,
                          const=True,
                          default=False,
+                         restrict_configuration=[DEV_APPSERVER_CONFIGURATION],
                          help='enable XDebug remote debugging')
   php_group.add_argument('--php_gae_extension_path', metavar='PATH',
                          type=parse_path,
+                         restrict_configuration=[DEV_APPSERVER_CONFIGURATION],
                          help='path to the GAE PHP extension')
   php_group.add_argument('--php_xdebug_extension_path', metavar='PATH',
                          type=parse_path,
+                         restrict_configuration=[DEV_APPSERVER_CONFIGURATION],
                          help='path to the xdebug extension')
+
+
+
+
+
+
+
+
+
+
+
 
   # App Identity
   appidentity_group = parser.add_argument_group('Application Identity')
@@ -309,10 +471,12 @@ def create_command_line_parser():
   python_group = parser.add_argument_group('Python')
   python_group.add_argument(
       '--python_startup_script',
+      restrict_configuration=[DEV_APPSERVER_CONFIGURATION],
       help='the script to run at the startup of new Python runtime instances '
       '(useful for tools such as debuggers.')
   python_group.add_argument(
       '--python_startup_args',
+      restrict_configuration=[DEV_APPSERVER_CONFIGURATION],
       help='the arguments made available to the script specified in '
       '--python_startup_script.')
 
@@ -320,6 +484,7 @@ def create_command_line_parser():
   java_group = parser.add_argument_group('Java')
   java_group.add_argument(
       '--jvm_flag', action='append',
+      restrict_configuration=[DEV_APPSERVER_CONFIGURATION],
       help='additional arguments to pass to the java command when launching '
       'an instance of the app. May be specified more than once. Example: '
       '--jvm_flag=-Xmx1024m --jvm_flag=-Xms256m')
@@ -328,14 +493,25 @@ def create_command_line_parser():
   go_group = parser.add_argument_group('Go')
   go_group.add_argument(
       '--go_work_dir',
+      restrict_configuration=[DEV_APPSERVER_CONFIGURATION],
       help='working directory of compiled Go packages. Defaults to temporary '
       'directory. Contents of the working directory are persistent and need to '
       'be cleaned up manually.')
+  go_group.add_argument(
+      '--enable_watching_go_path',
+      action=boolean_action.BooleanAction,
+      const=True,
+      default=True,
+      restrict_configuration=[DEV_APPSERVER_CONFIGURATION],
+      help='Enable watching $GOPATH for go app dependency changes. If file '
+      'watcher complains about too many files to watch, you can set it to '
+      'False.')
 
   # Custom
   custom_group = parser.add_argument_group('Custom VM Runtime')
   custom_group.add_argument(
       '--custom_entrypoint',
+      restrict_configuration=[DEV_APPSERVER_CONFIGURATION],
       help='specify an entrypoint for custom runtime modules. This is '
       'required when such modules are present. Include "{port}" in the '
       'string (without quotes) to pass the port number in as an argument. For '
@@ -344,6 +520,7 @@ def create_command_line_parser():
       default='')
   custom_group.add_argument(
       '--runtime',
+      restrict_configuration=[DEV_APPSERVER_CONFIGURATION],
       help='specify the default runtimes you would like to use.  Valid '
       'runtimes are %s.' % runtime_factories.valid_runtimes(),
       default='')
@@ -512,8 +689,14 @@ def create_command_line_parser():
       action=boolean_action.BooleanAction,
       const=True,
       default=False,
+      restrict_configuration=[DEV_APPSERVER_CONFIGURATION],
       help='make files specified in the app.yaml "skip_files" or "static" '
       'handles readable by the application.')
+  misc_group.add_argument(
+      '--watcher_ignore_re',
+      type=re.compile,
+      help='Regex string to specify files to be ignored by the filewatcher.',
+      default=None)
   # No help to avoid lengthening help message for rarely used feature:
   # host name to which the server for API calls should bind.
   misc_group.add_argument(
@@ -524,17 +707,20 @@ def create_command_line_parser():
       help='port to which the server for API calls should bind')
   misc_group.add_argument(
       '--grpc_api', action='append', dest='grpc_apis',
+      restrict_configuration=[DEV_APPSERVER_CONFIGURATION],
       help='apis that talk grpc to api_server. For example: '
       '--grpc_api memcache --grpc_api datastore. Setting --grpc_api all '
       'lets every api talk grpc.')
   misc_group.add_argument(
       '--grpc_api_port', type=PortParser(), default=0,
+      restrict_configuration=[DEV_APPSERVER_CONFIGURATION],
       help='port to which the server for grpc API calls should bind')
   misc_group.add_argument(
       '--automatic_restart',
       action=boolean_action.BooleanAction,
       const=True,
       default=True,
+      restrict_configuration=[DEV_APPSERVER_CONFIGURATION],
       help=('restart instances automatically when files relevant to their '
             'module are changed'))
   misc_group.add_argument(
@@ -549,6 +735,7 @@ def create_command_line_parser():
       action=boolean_action.BooleanAction,
       const=True,
       default=False,
+      restrict_configuration=[DEV_APPSERVER_CONFIGURATION],
       help='skip checking for SDK updates (if false, use .appcfg_nag to '
       'decide)')
   misc_group.add_argument(
@@ -556,6 +743,7 @@ def create_command_line_parser():
       help='default Google Cloud Storage bucket name')
   misc_group.add_argument(
       '--env_var', action='append',
+      restrict_configuration=[DEV_APPSERVER_CONFIGURATION],
       type=lambda kv: kv.split('=', 1), dest='env_variables',
       help='user defined environment variable for the runtime. each env_var is '
       'in the format of key=value, and you can define multiple envrionment '
@@ -563,10 +751,12 @@ def create_command_line_parser():
       'You can also define environment variables in app.yaml.')
   misc_group.add_argument(
       '--google_analytics_client_id', default=None,
+      restrict_configuration=[DEV_APPSERVER_CONFIGURATION],
       help='the client id user for Google Analytics usage reporting. If this '
       'is set, usage metrics will be sent to Google Analytics.')
   misc_group.add_argument(
       '--google_analytics_user_agent', default=None,
+      restrict_configuration=[DEV_APPSERVER_CONFIGURATION],
       help='the user agent to use for Google Analytics usage reporting.')
 
 

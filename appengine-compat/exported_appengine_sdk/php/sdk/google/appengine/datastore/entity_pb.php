@@ -2897,6 +2897,13 @@ namespace storage_onestore_v3 {
     }
   }
 }
+namespace storage_onestore_v3\Index {
+  class Version {
+    const VERSION_UNSPECIFIED = 0;
+    const V1 = 1;
+    const V2 = 2;
+  }
+}
 namespace storage_onestore_v3\Index\Property {
   class Direction {
     const DIRECTION_UNSPECIFIED = 0;
@@ -3148,11 +3155,29 @@ namespace storage_onestore_v3 {
     public function hasParent() {
       return isset($this->parent);
     }
+    public function getVersion() {
+      if (!isset($this->version)) {
+        return 0;
+      }
+      return $this->version;
+    }
+    public function setVersion($val) {
+      $this->version = $val;
+      return $this;
+    }
+    public function clearVersion() {
+      unset($this->version);
+      return $this;
+    }
+    public function hasVersion() {
+      return isset($this->version);
+    }
     public function clear() {
       $this->clearEntityType();
       $this->clearProperty();
       $this->clearAncestor();
       $this->clearParent();
+      $this->clearVersion();
     }
     public function byteSizePartial() {
       $res = 0;
@@ -3170,6 +3195,10 @@ namespace storage_onestore_v3 {
       }
       if (isset($this->parent)) {
         $res += 2;
+      }
+      if (isset($this->version)) {
+        $res += 1;
+        $res += $this->lengthVarInt64($this->version);
       }
       return $res;
     }
@@ -3192,6 +3221,10 @@ namespace storage_onestore_v3 {
         $out->putVarInt32(56);
         $out->putBoolean($this->parent);
       }
+      if (isset($this->version)) {
+        $out->putVarInt32(64);
+        $out->putVarInt32($this->version);
+      }
     }
     public function tryMerge($d) {
       while($d->avail() > 0) {
@@ -3210,6 +3243,9 @@ namespace storage_onestore_v3 {
             break;
           case 56:
             $this->setParent($d->getBoolean());
+            break;
+          case 64:
+            $this->setVersion($d->getVarInt32());
             break;
           case 0:
             throw new \google\net\ProtocolBufferDecodeError();
@@ -3241,6 +3277,9 @@ namespace storage_onestore_v3 {
       if ($x->hasParent()) {
         $this->setParent($x->getParent());
       }
+      if ($x->hasVersion()) {
+        $this->setVersion($x->getVersion());
+      }
     }
     public function equals($x) {
       if ($x === $this) { return true; }
@@ -3254,6 +3293,8 @@ namespace storage_onestore_v3 {
       if (isset($this->ancestor) && $this->ancestor !== $x->ancestor) return false;
       if (isset($this->parent) !== isset($x->parent)) return false;
       if (isset($this->parent) && $this->parent !== $x->parent) return false;
+      if (isset($this->version) !== isset($x->version)) return false;
+      if (isset($this->version) && $this->version !== $x->version) return false;
       return true;
     }
     public function shortDebugString($prefix = "") {
@@ -3269,6 +3310,9 @@ namespace storage_onestore_v3 {
       }
       if (isset($this->parent)) {
         $res .= $prefix . "parent: " . $this->debugFormatBool($this->parent) . "\n";
+      }
+      if (isset($this->version)) {
+        $res .= $prefix . "version: " . ($this->version) . "\n";
       }
       return $res;
     }

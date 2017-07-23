@@ -43,6 +43,18 @@ class _MultipleFileWatcher(object):
     """
     self._file_watchers = watchers
 
+  def set_watcher_ignore_re(self, watcher_ignore_re):
+    """Allows the file watcher to ignore a custom pattern set by the user.
+
+    Args:
+      watcher_ignore_re: A RegexObject that optionally defines a pattern for the
+          file watcher to ignore.
+    """
+    for watcher in self._file_watchers:
+      # TODO: b/33178251 - Add watcher_ignore_re  support for windows.
+      if hasattr(watcher, 'set_watcher_ignore_re'):
+        watcher.set_watcher_ignore_re(watcher_ignore_re)
+
   def set_skip_files_re(self, skip_files_re):
     """Allows the file watcher to respect skip_files in app.yaml.
 

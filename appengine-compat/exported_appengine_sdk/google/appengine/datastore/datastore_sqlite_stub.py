@@ -549,6 +549,9 @@ class DatastoreSqliteStub(datastore_stub_util.BaseDatastore,
   READ_ERROR_MSG = ('Data in %s is corrupt or a different version. '
                     'Try running with the --clear_datastore flag.\n%r')
 
+
+  THREADSAFE = False
+
   def __init__(self,
                app_id,
                datastore_file,

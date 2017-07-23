@@ -92,6 +92,19 @@ class TestInotifyFileWatcher(unittest.TestCase):
     # Avoid polluting other tests.
     self._watcher.set_skip_files_re(None)
 
+  def test_watcher_ignore_re(self):
+    self._watcher.set_watcher_ignore_re(re.compile('^.*watch_ignored'))
+    self._watcher.start()
+    self._create_file('watch_ignored')
+    self.assertEqual(self._watcher.changes(), set())
+    path = self._create_directory('subdir/')
+    self.assertEqual(self._watcher.changes(), {path})
+    path = self._create_file('subdir/watch_ignored')
+    # watcher_ignore_re should also match subdirectories of watched directory.
+    self.assertEqual(self._watcher.changes(), set())
+    # Avoid polluting other tests.
+    self._watcher.set_watcher_ignore_re(None)
+
   def test_file_modified(self):
     path = self._create_file('test')
     self._watcher.start()

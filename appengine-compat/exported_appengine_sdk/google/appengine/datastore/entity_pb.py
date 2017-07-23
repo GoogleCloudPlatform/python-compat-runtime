@@ -21,9 +21,6 @@ from google.net.proto import ProtocolBuffer
 import array
 import dummy_thread as thread
 
-__pychecker__ = """maxreturns=0 maxbranches=0 no-callinit
-                   unusednames=printElemNumber,debug_strs no-special"""
-
 if hasattr(ProtocolBuffer, 'ExtendableProtocolMessage'):
   _extension_runtime = True
   _ExtendableProtocolMessage = ProtocolBuffer.ExtendableProtocolMessage
@@ -3123,12 +3120,29 @@ class Index_Property(ProtocolBuffer.ProtocolMessage):
     return res
 
 class Index(ProtocolBuffer.ProtocolMessage):
+
+
+  VERSION_UNSPECIFIED =    0
+  V1           =    1
+  V2           =    2
+
+  _Version_NAMES = {
+    0: "VERSION_UNSPECIFIED",
+    1: "V1",
+    2: "V2",
+  }
+
+  def Version_Name(cls, x): return cls._Version_NAMES.get(x, "")
+  Version_Name = classmethod(Version_Name)
+
   has_entity_type_ = 0
   entity_type_ = ""
   has_ancestor_ = 0
   ancestor_ = 0
   has_parent_ = 0
   parent_ = 0
+  has_version_ = 0
+  version_ = 0
 
   def __init__(self, contents=None):
     self.property_ = []
@@ -3173,6 +3187,19 @@ class Index(ProtocolBuffer.ProtocolMessage):
 
   def has_parent(self): return self.has_parent_
 
+  def version(self): return self.version_
+
+  def set_version(self, x):
+    self.has_version_ = 1
+    self.version_ = x
+
+  def clear_version(self):
+    if self.has_version_:
+      self.has_version_ = 0
+      self.version_ = 0
+
+  def has_version(self): return self.has_version_
+
   def property_size(self): return len(self.property_)
   def property_list(self): return self.property_
 
@@ -3195,6 +3222,7 @@ class Index(ProtocolBuffer.ProtocolMessage):
     if (x.has_entity_type()): self.set_entity_type(x.entity_type())
     if (x.has_ancestor()): self.set_ancestor(x.ancestor())
     if (x.has_parent()): self.set_parent(x.parent())
+    if (x.has_version()): self.set_version(x.version())
     for i in xrange(x.property_size()): self.add_property().CopyFrom(x.property(i))
 
   def Equals(self, x):
@@ -3205,6 +3233,8 @@ class Index(ProtocolBuffer.ProtocolMessage):
     if self.has_ancestor_ and self.ancestor_ != x.ancestor_: return 0
     if self.has_parent_ != x.has_parent_: return 0
     if self.has_parent_ and self.parent_ != x.parent_: return 0
+    if self.has_version_ != x.has_version_: return 0
+    if self.has_version_ and self.version_ != x.version_: return 0
     if len(self.property_) != len(x.property_): return 0
     for e1, e2 in zip(self.property_, x.property_):
       if e1 != e2: return 0
@@ -3228,6 +3258,7 @@ class Index(ProtocolBuffer.ProtocolMessage):
     n = 0
     n += self.lengthString(len(self.entity_type_))
     if (self.has_parent_): n += 2
+    if (self.has_version_): n += 1 + self.lengthVarInt64(self.version_)
     n += 2 * len(self.property_)
     for i in xrange(len(self.property_)): n += self.property_[i].ByteSize()
     return n + 3
@@ -3240,6 +3271,7 @@ class Index(ProtocolBuffer.ProtocolMessage):
     if (self.has_ancestor_):
       n += 2
     if (self.has_parent_): n += 2
+    if (self.has_version_): n += 1 + self.lengthVarInt64(self.version_)
     n += 2 * len(self.property_)
     for i in xrange(len(self.property_)): n += self.property_[i].ByteSizePartial()
     return n
@@ -3248,6 +3280,7 @@ class Index(ProtocolBuffer.ProtocolMessage):
     self.clear_entity_type()
     self.clear_ancestor()
     self.clear_parent()
+    self.clear_version()
     self.clear_property()
 
   def OutputUnchecked(self, out):
@@ -3262,6 +3295,9 @@ class Index(ProtocolBuffer.ProtocolMessage):
     if (self.has_parent_):
       out.putVarInt32(56)
       out.putBoolean(self.parent_)
+    if (self.has_version_):
+      out.putVarInt32(64)
+      out.putVarInt32(self.version_)
 
   def OutputPartial(self, out):
     if (self.has_entity_type_):
@@ -3277,6 +3313,9 @@ class Index(ProtocolBuffer.ProtocolMessage):
     if (self.has_parent_):
       out.putVarInt32(56)
       out.putBoolean(self.parent_)
+    if (self.has_version_):
+      out.putVarInt32(64)
+      out.putVarInt32(self.version_)
 
   def TryMerge(self, d):
     while d.avail() > 0:
@@ -3293,6 +3332,9 @@ class Index(ProtocolBuffer.ProtocolMessage):
       if tt == 56:
         self.set_parent(d.getBoolean())
         continue
+      if tt == 64:
+        self.set_version(d.getVarInt32())
+        continue
 
 
       if (tt == 0): raise ProtocolBuffer.ProtocolBufferDecodeError
@@ -3304,6 +3346,7 @@ class Index(ProtocolBuffer.ProtocolMessage):
     if self.has_entity_type_: res+=prefix+("entity_type: %s\n" % self.DebugFormatString(self.entity_type_))
     if self.has_ancestor_: res+=prefix+("ancestor: %s\n" % self.DebugFormatBool(self.ancestor_))
     if self.has_parent_: res+=prefix+("parent: %s\n" % self.DebugFormatBool(self.parent_))
+    if self.has_version_: res+=prefix+("version: %s\n" % self.DebugFormatInt32(self.version_))
     cnt=0
     for e in self.property_:
       elm=""
@@ -3321,6 +3364,7 @@ class Index(ProtocolBuffer.ProtocolMessage):
   kentity_type = 1
   kancestor = 5
   kparent = 7
+  kversion = 8
   kPropertyGroup = 2
   kPropertyname = 3
   kPropertydirection = 4
@@ -3335,7 +3379,8 @@ class Index(ProtocolBuffer.ProtocolMessage):
     5: "ancestor",
     6: "mode",
     7: "parent",
-  }, 7)
+    8: "version",
+  }, 8)
 
   _TYPES = _BuildTagLookupTable({
     0: ProtocolBuffer.Encoder.NUMERIC,
@@ -3346,7 +3391,8 @@ class Index(ProtocolBuffer.ProtocolMessage):
     5: ProtocolBuffer.Encoder.NUMERIC,
     6: ProtocolBuffer.Encoder.NUMERIC,
     7: ProtocolBuffer.Encoder.NUMERIC,
-  }, 7, ProtocolBuffer.Encoder.MAX_TYPE)
+    8: ProtocolBuffer.Encoder.NUMERIC,
+  }, 8, ProtocolBuffer.Encoder.MAX_TYPE)
 
 
   _STYLE = """"""

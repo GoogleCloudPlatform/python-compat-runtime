@@ -14,13 +14,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-"""Serves content for "script" handlers using the Go runtime."""
+"""Provides a GoRuntimeInstanceFactory for Go runtime instances.
+
+The instances serve content for "script" handlers. In the case that an errant
+application is provided, a _GoBuildFailureRuntimeProxy is provided which serves
+500s with the application stack trace as the response body.
+"""
 
 
 
 import logging
 import os
-import os.path
 import sys
 import threading
 
@@ -39,7 +43,12 @@ _REBUILD_CONFIG_CHANGES = frozenset(
 
 
 class _GoBuildFailureRuntimeProxy(instance.RuntimeProxy):
-  """Serves an error page for a Go application build failure."""
+  """Serves an error page for a Go application build failure.
+
+  When there is an error in the user's application code, a 500 is served with
+  the error stack trace in the response body. This is similar to how webapp2
+  behaves with the debug=True flag for Python applictions.
+  """
 
   def __init__(self, failure_exception):
     self._failure_exception = failure_exception
@@ -125,6 +134,8 @@ class GoRuntimeInstanceFactory(instance.InstanceFactory):
       deleted or modified) in these directories will trigger a restart of all
       instances created with this factory.
     """
+    if not self._runtime_config_getter().go_config.enable_watching_go_path:
+      return []
     try:
       go_path = os.environ['GOPATH']
     except KeyError:
@@ -174,7 +185,8 @@ class GoRuntimeInstanceFactory(instance.InstanceFactory):
 
     with self._application_lock:
       try:
-        if self._go_application.maybe_build(self._modified_since_last_build):
+        if (not self._modified_since_last_build and
+            self._go_application.maybe_build()):
           if self._last_build_error:
             logging.info('Go application successfully built.')
           self._last_build_error = None
