@@ -77,10 +77,10 @@ Example usage:
     entity.put()
 
   # Use default URL and queue name, no task name, execute ASAP.
-  deferred.defer(do_something_later, 20)
+  deferred.defer(do_something_later, my_key, 20)
 
   # Providing non-default task queue arguments
-  deferred.defer(do_something_later, 20, _queue="foo", countdown=60)
+  deferred.defer(do_something_later, my_key, 20, _queue="foo", _countdown=60)
 """
 
 

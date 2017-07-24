@@ -41,7 +41,8 @@ class SetupStubsTest(unittest.TestCase):
     remote_api_stub.ConfigureRemoteApi('app', '/', mox.IgnoreArg(),
                                        'somehost:12345',
                                        use_remote_datastore=False,
-                                       grpc_apis=[])
+                                       grpc_apis=[],
+                                       grpc_proxy_port=0)
     config = runtime_config_pb2.Config()
     config.app_id = 'app'
     config.api_host = 'somehost'

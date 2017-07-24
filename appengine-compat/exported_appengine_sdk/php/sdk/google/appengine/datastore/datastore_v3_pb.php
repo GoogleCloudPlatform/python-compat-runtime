@@ -4259,6 +4259,7 @@ namespace google\appengine_datastore_v3\Error {
     const ALREADY_EXISTS = 14;
     const FAILED_PRECONDITION = 15;
     const UNAUTHENTICATED = 16;
+    const ABORTED = 17;
   }
 }
 namespace google\appengine_datastore_v3 {

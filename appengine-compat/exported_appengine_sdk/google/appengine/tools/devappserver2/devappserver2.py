@@ -22,6 +22,7 @@ import logging
 import os
 import sys
 import time
+import portpicker
 
 from google.appengine.api import request_info
 from google.appengine.tools.devappserver2 import api_server
@@ -38,13 +39,14 @@ from google.appengine.tools.devappserver2.admin import admin_server
 
 # Initialize logging early -- otherwise some library packages may
 # pre-empt our log formatting.  NOTE: the level is provisional; it may
-# be changed in main() based on the --debug flag.
+# be changed in main() based on the --dev_appserver_log_level flag.
 logging.basicConfig(
     level=logging.INFO,
     format='%(levelname)-8s %(asctime)s %(filename)s:%(lineno)s] %(message)s')
 
 
-PARSER = cli_parser.create_command_line_parser()
+PARSER = cli_parser.create_command_line_parser(
+    cli_parser.DEV_APPSERVER_CONFIGURATION)
 
 
 def _setup_environ(app_id):
@@ -95,13 +97,11 @@ class DevelopmentServer(object):
     logging.getLogger().setLevel(
         constants.LOG_LEVEL_TO_PYTHON_CONSTANT[options.dev_appserver_log_level])
 
-    runtime = 'vm' if options.runtime == 'python-compat' else options.runtime
     parsed_env_variables = dict(options.env_variables or [])
-
     configuration = application_configuration.ApplicationConfiguration(
         config_paths=options.config_paths,
         app_id=options.app_id,
-        runtime=runtime,
+        runtime=options.runtime,
         env_variables=parsed_env_variables)
 
     if options.google_analytics_client_id:
@@ -109,7 +109,8 @@ class DevelopmentServer(object):
       metrics_logger.Start(
           options.google_analytics_client_id,
           options.google_analytics_user_agent,
-          {module.runtime for module in configuration.modules})
+          {module.runtime for module in configuration.modules},
+          {module.env or 'standard' for module in configuration.modules})
 
     if options.skip_sdk_update_check:
       logging.info('Skipping SDK update check.')
@@ -133,14 +134,20 @@ class DevelopmentServer(object):
 
     _setup_environ(configuration.app_id)
 
+    # grpc_proxy is only needed for python2 because remote_api_stub.py is
+    # imported in local python runtime sandbox. For more details, see
+    # grpc_proxy_util.py.
+    grpc_proxy_port = portpicker.PickUnusedPort()
     self._dispatcher = dispatcher.Dispatcher(
-        configuration,
-        options.host,
-        options.port,
-        options.auth_domain,
+        configuration, options.host, options.port, options.auth_domain,
         constants.LOG_LEVEL_TO_RUNTIME_CONSTANT[options.log_level],
+
+
+
+
+
         self._create_php_config(options),
-        self._create_python_config(options),
+        self._create_python_config(options, grpc_proxy_port),
         self._create_java_config(options),
         self._create_go_config(options),
         self._create_custom_config(options),
@@ -148,24 +155,25 @@ class DevelopmentServer(object):
         self._create_vm_config(options),
         self._create_module_to_setting(options.max_module_instances,
                                        configuration, '--max_module_instances'),
-        options.use_mtime_file_watcher,
-        options.automatic_restart,
-        options.allow_skipped_files,
-        self._create_module_to_setting(options.threadsafe_override,
-                                       configuration, '--threadsafe_override'),
+        options.use_mtime_file_watcher, options.watcher_ignore_re,
+        options.automatic_restart, options.allow_skipped_files,
+        self._create_module_to_setting(
+            options.threadsafe_override,
+            configuration,
+            '--threadsafe_override'),
         options.external_port)
 
     wsgi_request_info_ = wsgi_request_info.WSGIRequestInfo(self._dispatcher)
     storage_path = api_server.get_storage_path(
         options.storage_path, configuration.app_id)
 
-    # TODO: Remove after the Files API is really gone.
-    api_server.set_filesapi_enabled(options.blobstore_enable_files_api)
-    if options.blobstore_warn_on_files_api_use:
-      api_server.enable_filesapi_tracking(wsgi_request_info_)
+    datastore_emulator_host = (
+        parsed_env_variables['DATASTORE_EMULATOR_HOST']
+        if 'DATASTORE_EMULATOR_HOST' in parsed_env_variables else None)
 
     apiserver = api_server.create_api_server(
-        wsgi_request_info_, storage_path, options, configuration)
+        wsgi_request_info_, storage_path, options, configuration.app_id,
+        configuration.modules[0].application_root, datastore_emulator_host)
     apiserver.start()
     self._running_modules.append(apiserver)
 
@@ -173,6 +181,16 @@ class DevelopmentServer(object):
       grpc_apiserver = api_server.GRPCAPIServer(options.grpc_api_port)
       grpc_apiserver.start()
       self._running_modules.append(grpc_apiserver)
+
+      # We declare grpc_proxy_util as global, otherwise it cannot be accessed
+      # from outside of this function.
+      global grpc_proxy_util
+      # pylint: disable=g-import-not-at-top
+      # We lazy import here because grpc binaries are not always present.
+      from google.appengine.tools.devappserver2 import grpc_proxy_util
+      grpc_proxy = grpc_proxy_util.GrpcProxyServer(grpc_proxy_port)
+      grpc_proxy.start()
+      self._running_modules.append(grpc_proxy)
 
     self._dispatcher.start(
         options.api_host, apiserver.port, wsgi_request_info_, options.grpc_apis)
@@ -189,13 +207,38 @@ class DevelopmentServer(object):
       logging.warning('No default module found. Ignoring.')
 
   def stop(self):
-    """Stops all running devappserver2 modules."""
+    """Stops all running devappserver2 modules and report metrics."""
     while self._running_modules:
       self._running_modules.pop().quit()
     if self._dispatcher:
       self._dispatcher.quit()
     if self._options.google_analytics_client_id:
-      metrics.GetMetricsLogger().Stop()
+      kwargs = {}
+      watcher_results = (self._dispatcher.get_watcher_results()
+                         if self._dispatcher else None)
+      # get_watcher_results() only returns results for modules that have at
+      # least one record of file change. Hence avoiding divide by zero error
+      # when computing avg_time.
+      if watcher_results:
+        zipped = zip(*watcher_results)
+        total_time = sum(zipped[0])
+        total_changes = sum(zipped[1])
+
+        # Google Analytics Event value cannot be float numbers, so we round the
+        # value into integers, and measure in microseconds to ensure accuracy.
+        avg_time = int(1000000*total_time/total_changes)
+
+        # watcher_class is same on all modules.
+        watcher_class = zipped[2][0]
+        kwargs = {
+            metrics.GOOGLE_ANALYTICS_DIMENSIONS['FileWatcherType']:
+            watcher_class,
+            metrics.GOOGLE_ANALYTICS_METRICS['FileChangeDetectionAverageTime']:
+            avg_time,
+            metrics.GOOGLE_ANALYTICS_METRICS['FileChangeEventCount']:
+            total_changes
+        }
+      metrics.GetMetricsLogger().Stop(**kwargs)
 
   @staticmethod
   def _create_php_config(options):
@@ -213,14 +256,28 @@ class DevelopmentServer(object):
 
     return php_config
 
+
+
+
+
+
+
+
+
+
+
+
+
   @staticmethod
-  def _create_python_config(options):
+  def _create_python_config(options, grpc_proxy_port=None):
     python_config = runtime_config_pb2.PythonConfig()
     if options.python_startup_script:
       python_config.startup_script = os.path.abspath(
           options.python_startup_script)
       if options.python_startup_args:
         python_config.startup_args = options.python_startup_args
+    if grpc_proxy_port:
+      python_config.grpc_proxy_port = grpc_proxy_port
     return python_config
 
   @staticmethod
@@ -235,6 +292,8 @@ class DevelopmentServer(object):
     go_config = runtime_config_pb2.GoConfig()
     if options.go_work_dir:
       go_config.work_dir = options.go_work_dir
+    if options.enable_watching_go_path:
+      go_config.enable_watching_go_path = True
     return go_config
 
   @staticmethod

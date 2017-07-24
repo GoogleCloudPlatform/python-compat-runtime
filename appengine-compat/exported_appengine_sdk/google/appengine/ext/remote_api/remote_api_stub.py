@@ -67,15 +67,16 @@ A few caveats:
 
 
 import Cookie
-import google
+import hashlib
+import httplib
 import os
 import pickle
 import random
 import sys
 import thread
 import threading
+import google
 import yaml
-import hashlib
 
 
 if os.environ.get('APPENGINE_RUNTIME') == 'python27':
@@ -96,8 +97,8 @@ else:
 from google.appengine.tools import appengine_rpc
 
 _REQUEST_ID_HEADER = 'HTTP_X_APPENGINE_REQUEST_ID'
-_TIMEOUT_SECONDS = 10
 _DEVAPPSERVER_LOGIN_COOKIE = 'test@example.com:True:'
+TIMEOUT_SECONDS = 10
 
 
 class Error(Exception):
@@ -110,6 +111,10 @@ class ConfigurationError(Error):
 
 class UnknownJavaServerError(Error):
   """Exception for exceptions returned from a Java remote_api handler."""
+
+
+class MissingGrpcProxyPortError(Error):
+  """Exception for missing grpc proxy port."""
 
 
 def GetUserAgent():
@@ -172,7 +177,12 @@ class RemoteStub(object):
 
   _local = threading.local()
 
-  def __init__(self, server, path, _test_stub_map=None, grpc_apis=None):
+  def __init__(self,
+               server,
+               path,
+               _test_stub_map=None,
+               grpc_apis=(),
+               grpc_proxy_port=None):
     """Constructs a new RemoteStub that communicates with the specified server.
 
     Args:
@@ -181,13 +191,15 @@ class RemoteStub(object):
       path: The path to the handler this stub should send requests to.
       _test_stub_map: If supplied, send RPC calls to stubs in this map instead
         of over the wire.
-       grpc_apis: a list of apis that use grpc.
+      grpc_apis: an iterable of strings representing APIs that use grpc. If
+        'all' is in the list, then every API speaks grpc.
+      grpc_proxy_port: Int, the port on which grpc proxy server listens.
     """
-    self._grpc_port = int(os.environ['GRPC_PORT']) if grpc_apis else None
     self._server = server
     self._path = path
     self._test_stub_map = _test_stub_map
-    self._grpc_apis = grpc_apis or []
+    self._grpc_apis = grpc_apis
+    self._grpc_proxy_port = grpc_proxy_port
 
   def _PreHookHandler(self, service, call, request, response):
     pass
@@ -218,37 +230,7 @@ class RemoteStub(object):
     cls._local.request_id = request_id
 
   def _MakeRealSyncCall(self, service, call, request, response):
-    if service in self._grpc_apis or 'all' in self._grpc_apis:
-      grpc_impl_module = __import__('grpc.beta.implementations', globals(),
-                                    locals(), ['implementations'])
-      grpc_service_pb2 = __import__('google.appengine.tools.devappserver2'
-                                    '.grpc_service_pb2', globals(), locals(),
-                                    ['grpc_service_pb2'])
-      channel = grpc_impl_module.insecure_channel('localhost',
-                                                  self._grpc_port)
-      stub = grpc_service_pb2.beta_create_CallHandler_stub(channel)
-      request_pb = grpc_service_pb2.Request(service_name=service, method=call,
-                                            request=request.Encode())
-      if hasattr(self._local, 'request_id'):
-        request_pb.request_id = self._local.request_id
-      response_pb = stub.HandleCall(request_pb, _TIMEOUT_SECONDS)
-
-
-
-      if response_pb.HasField('application_error'):
-        error_pb = response_pb.application_error
-        raise apiproxy_errors.ApplicationError(error_pb.code,
-                                               error_pb.detail)
-
-      elif response_pb.exception:
-        raise pickle.loads(response_pb.exception)
-      elif response_pb.java_exception:
-        raise UnknownJavaServerError('An unknown error has occured in the '
-                                     'Java remote_api handler for this call.')
-      else:
-        response.ParseFromString(response_pb.response)
-      return
-
+    """Constructs, sends and receives remote_api.proto & grpc_service.proto."""
     request_pb = remote_api_pb.Request()
     request_pb.set_service_name(service)
     request_pb.set_method(call)
@@ -258,7 +240,15 @@ class RemoteStub(object):
 
     response_pb = remote_api_pb.Response()
     encoded_request = request_pb.Encode()
-    encoded_response = self._server.Send(self._path, encoded_request)
+    if service in self._grpc_apis or 'all' in self._grpc_apis:
+      if not self._grpc_proxy_port:
+        raise MissingGrpcProxyPortError()
+      conn = httplib.HTTPConnection('localhost', self._grpc_proxy_port)
+      conn.request('POST', '', encoded_request)
+      encoded_response = conn.getresponse().read()
+    else:
+      encoded_response = self._server.Send(self._path, encoded_request)
+
     response_pb.ParseFromString(encoded_response)
 
     if response_pb.has_application_error():
@@ -268,8 +258,8 @@ class RemoteStub(object):
     elif response_pb.has_exception():
       raise pickle.loads(response_pb.exception())
     elif response_pb.has_java_exception():
-      raise UnknownJavaServerError("An unknown error has occured in the "
-                                   "Java remote_api handler for this call.")
+      raise UnknownJavaServerError('An unknown error has occured in the '
+                                   'Java remote_api handler for this call.')
     else:
       response.ParseFromString(response_pb.response())
 
@@ -614,9 +604,13 @@ def GetRemoteAppIdFromServer(server, path, remote_token=None):
   return app_info['app_id']
 
 
-def ConfigureRemoteApiFromServer(server, path, app_id, services=None,
+def ConfigureRemoteApiFromServer(server,
+                                 path,
+                                 app_id,
+                                 services=None,
                                  default_auth_domain=None,
-                                 use_remote_datastore=True, grpc_apis=None):
+                                 use_remote_datastore=True,
+                                 **kwargs):
   """Does necessary setup to allow easy remote access to App Engine APIs.
 
   Args:
@@ -631,7 +625,7 @@ def ConfigureRemoteApiFromServer(server, path, app_id, services=None,
       through datastore requests. RemoteDatastoreStub batches transactional
       datastore requests since, in production, datastore requires are scoped to
       a single request.
-    grpc_apis: a list of apis that use grpc.
+    **kwargs: Additional kwargs to pass to RemoteStub constructor.
   Raises:
     urllib2.HTTPError: if app_id is not provided and there is an error while
       retrieving it.
@@ -653,7 +647,7 @@ def ConfigureRemoteApiFromServer(server, path, app_id, services=None,
     services.remove('datastore_v3')
     datastore_stub = RemoteDatastoreStub(server, path)
     apiproxy_stub_map.apiproxy.RegisterStub('datastore_v3', datastore_stub)
-  stub = RemoteStub(server, path, grpc_apis=grpc_apis)
+  stub = RemoteStub(server, path, **kwargs)
   for service in services:
     apiproxy_stub_map.apiproxy.RegisterStub(service, stub)
 
@@ -816,7 +810,7 @@ def ConfigureRemoteApi(app_id,
                        save_cookies=False,
                        auth_tries=3,
                        use_remote_datastore=True,
-                       grpc_apis=None):
+                       **kwargs):
   """Does necessary setup to allow easy remote access to App Engine APIs.
 
   Either servername must be provided or app_id must not be None.  If app_id
@@ -853,7 +847,7 @@ def ConfigureRemoteApi(app_id,
       through datastore requests. RemoteDatastoreStub batches transactional
       datastore requests since, in production, datastore requires are scoped to
       a single request.
-    grpc_apis: a list of apis that use grpc.
+    **kwargs: Additional kwargs to pass to ConfigureRemoteApiFromServer.
   Returns:
     server, the server created by rpc_server_factory, which may be useful for
       calling the application directly.
@@ -884,9 +878,11 @@ def ConfigureRemoteApi(app_id,
   if not app_id:
     app_id = GetRemoteAppIdFromServer(server, path, rtok)
 
-  ConfigureRemoteApiFromServer(server, path, app_id, services,
-                               default_auth_domain, use_remote_datastore,
-                               grpc_apis)
+  ConfigureRemoteApiFromServer(
+      server, path, app_id, services=services,
+      default_auth_domain=default_auth_domain,
+      use_remote_datastore=use_remote_datastore,
+      **kwargs)
   return server
 
 

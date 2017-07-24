@@ -41,6 +41,7 @@ __all__ = ['AbstractAdapter',
            'IdentityAdapter',
            'MultiRpc',
            'TransactionalConnection',
+           'TransactionMode',
            'TransactionOptions',
           ]
 
@@ -81,7 +82,7 @@ _MAX_ID_BATCH_SIZE = 1000 * 1000 * 1000
 
 
 _DATASTORE_V3 = 'datastore_v3'
-_CLOUD_DATASTORE_V1 = 'cloud_datastore_v1beta3'
+_CLOUD_DATASTORE_V1 = 'cloud_datastore_v1'
 
 
 
@@ -985,6 +986,19 @@ class MultiRpc(object):
       rpcs: A list of UserRPC and MultiRpc objects.
     """
     apiproxy_stub_map.UserRPC.wait_all(cls.flatten(rpcs))
+
+
+class TransactionMode(object):
+  """The mode of a Datastore transaction.
+
+  Specifying the mode of the transaction can help to improve throughput, as it
+  provides additional information about the intent (or lack of intent, in the
+  case of a read only transaction) to perform a write as part of the
+  transaction.
+  """
+  UNKNOWN = 0
+  READ_ONLY = 1
+  READ_WRITE = 2
 
 
 class BaseConnection(object):
@@ -1989,8 +2003,11 @@ class BaseConnection(object):
 
 
 
-  def begin_transaction(self, app):
-    """Syncnronous BeginTransaction operation.
+  def begin_transaction(self,
+                        app,
+                        previous_transaction=None,
+                        mode=TransactionMode.UNKNOWN):
+    """Synchronous BeginTransaction operation.
 
     NOTE: In most cases the new_transaction() method is preferred,
     since that returns a TransactionalConnection object which will
@@ -1998,19 +2015,28 @@ class BaseConnection(object):
 
     Args:
       app: Application ID.
+      previous_transaction: The transaction to reset.
+      mode: The transaction mode.
 
     Returns:
       An object representing a transaction or None.
     """
-    return self.async_begin_transaction(None, app).get_result()
+    return (self.async_begin_transaction(None, app, previous_transaction, mode)
+            .get_result())
 
-  def async_begin_transaction(self, config, app):
+  def async_begin_transaction(self,
+                              config,
+                              app,
+                              previous_transaction=None,
+                              mode=TransactionMode.UNKNOWN):
     """Asynchronous BeginTransaction operation.
 
     Args:
       config: A configuration object or None.  Defaults are taken from
         the connection's default configuration.
       app: Application ID.
+      previous_transaction: The transaction to reset.
+      mode: The transaction mode.
 
     Returns:
       A MultiRpc object.
@@ -2019,14 +2045,45 @@ class BaseConnection(object):
       raise datastore_errors.BadArgumentError(
           'begin_transaction requires an application id argument (%r)' % (app,))
 
+    if previous_transaction is not None and mode == TransactionMode.READ_ONLY:
+      raise datastore_errors.BadArgumentError(
+          'begin_transaction requires mode != READ_ONLY when '
+          'previous_transaction is not None'
+      )
+
     if self._api_version == _CLOUD_DATASTORE_V1:
       req = googledatastore.BeginTransactionRequest()
       resp = googledatastore.BeginTransactionResponse()
+
+
+      if previous_transaction is not None:
+        mode = TransactionMode.READ_WRITE
+
+      if mode == TransactionMode.UNKNOWN:
+        pass
+      elif mode == TransactionMode.READ_ONLY:
+        req.transaction_options.read_only.SetInParent()
+      elif mode == TransactionMode.READ_WRITE:
+        if previous_transaction is not None:
+          (req.transaction_options.read_write
+           .previous_transaction) = previous_transaction
+        else:
+          req.transaction_options.read_write.SetInParent()
     else:
       req = datastore_pb.BeginTransactionRequest()
       req.set_app(app)
       if (TransactionOptions.xg(config, self.__config)):
         req.set_allow_multiple_eg(True)
+
+      if mode == TransactionMode.UNKNOWN:
+        pass
+      elif mode == TransactionMode.READ_ONLY:
+        req.set_mode(datastore_pb.BeginTransactionRequest.READ_ONLY)
+      elif mode == TransactionMode.READ_WRITE:
+        req.set_mode(datastore_pb.BeginTransactionRequest.READ_WRITE)
+
+      if previous_transaction is not None:
+        req.mutable_previous_transaction().CopyFrom(previous_transaction)
       resp = datastore_pb.Transaction()
 
     return self._make_rpc_call(config, 'BeginTransaction', req, resp,
@@ -2067,7 +2124,8 @@ class Connection(BaseConnection):
 
 
 
-  def new_transaction(self, config=None):
+  def new_transaction(self, config=None, previous_transaction=None,
+                      mode=TransactionMode.UNKNOWN):
     """Create a new transactional connection based on this one.
 
     This is different from, and usually preferred over, the
@@ -2077,10 +2135,14 @@ class Connection(BaseConnection):
     Args:
       config: A configuration object for the new connection, merged
         with this connection's config.
+      previous_transaction: The transaction being reset.
+      mode: The transaction mode.
     """
     config = self.__config.merge(config)
     return TransactionalConnection(adapter=self.__adapter, config=config,
-                                   _api_version=self._api_version)
+                                   _api_version=self._api_version,
+                                   previous_transaction=previous_transaction,
+                                   mode=mode)
 
 
 
@@ -2300,10 +2362,17 @@ class TransactionalConnection(BaseConnection):
   _get_transaction() when the first operation is started.
   """
 
+
+  OPEN = 0
+  COMMIT_IN_FLIGHT = 1
+  FAILED = 2
+  CLOSED = 3
+
   @_positional(1)
   def __init__(self,
                adapter=None, config=None, transaction=None, entity_group=None,
-               _api_version=_DATASTORE_V3):
+               _api_version=_DATASTORE_V3, previous_transaction=None,
+               mode=TransactionMode.UNKNOWN):
     """Constructor.
 
     All arguments should be specified as keyword arguments.
@@ -2314,16 +2383,32 @@ class TransactionalConnection(BaseConnection):
       config: Optional Configuration object.
       transaction: Optional datastore_db.Transaction object.
       entity_group: Deprecated, do not use.
+      previous_transaction: Optional datastore_db.Transaction object
+        representing the transaction being reset.
+      mode: Optional datastore_db.TransactionMode representing the transaction
+        mode.
+
+    Raises:
+      datastore_errors.BadArgumentError: If previous_transaction and transaction
+        are both set.
     """
     super(TransactionalConnection, self).__init__(adapter=adapter,
                                                   config=config,
                                                   _api_version=_api_version)
+
+    self._state = TransactionalConnection.OPEN
+
+    if previous_transaction is not None and transaction is not None:
+      raise datastore_errors.BadArgumentError(
+          'Only one of transaction and previous_transaction should be set')
+
     self.__adapter = self.adapter
     self.__config = self.config
     if transaction is None:
       app = TransactionOptions.app(self.config)
       app = datastore_types.ResolveAppId(TransactionOptions.app(self.config))
-      self.__transaction_rpc = self.async_begin_transaction(None, app)
+      self.__transaction_rpc = self.async_begin_transaction(
+          None, app, previous_transaction, mode)
     else:
       if self._api_version == _CLOUD_DATASTORE_V1:
         txn_class = str
@@ -2334,7 +2419,6 @@ class TransactionalConnection(BaseConnection):
             'Invalid transaction (%r)' % transaction)
       self.__transaction = transaction
       self.__transaction_rpc = None
-    self.__finished = False
 
 
     self.__pending_v1_upserts = {}
@@ -2342,10 +2426,11 @@ class TransactionalConnection(BaseConnection):
 
   @property
   def finished(self):
-    return self.__finished
+    return self._state != TransactionalConnection.OPEN
 
   @property
   def transaction(self):
+    """The current transaction. None when state == FINISHED."""
     if self.__transaction_rpc is not None:
       self.__transaction = self.__transaction_rpc.get_result()
       self.__transaction_rpc = None
@@ -2354,7 +2439,7 @@ class TransactionalConnection(BaseConnection):
   def _set_request_transaction(self, request):
     """Set the current transaction on a request.
 
-    This calls _get_transaction() (see below).  The transaction object
+    This accesses the transaction property.  The transaction object
     returned is both set as the transaction field on the request
     object and returned.
 
@@ -2368,7 +2453,7 @@ class TransactionalConnection(BaseConnection):
       ValueError: if called with a non-Cloud Datastore request when using
           Cloud Datastore.
     """
-    if self.__finished:
+    if self.finished:
       raise datastore_errors.BadRequestError(
           'Cannot start a new operation in a finished transaction.')
     transaction = self.transaction
@@ -2389,32 +2474,6 @@ class TransactionalConnection(BaseConnection):
       request.read_options.transaction = transaction
     else:
       request.mutable_transaction().CopyFrom(transaction)
-    return transaction
-
-  def _end_transaction(self):
-    """Finish the current transaction.
-
-    This blocks waiting for all pending RPCs to complete, and then
-    marks the connection as finished.  After that no more operations
-    can be started using this connection.
-
-    Returns:
-      An object representing a transaction or None.
-
-    Raises:
-      datastore_errors.BadRequestError if the transaction is already
-      finished.
-    """
-    if self.__finished:
-      raise datastore_errors.BadRequestError(
-          'The transaction is already finished.')
-
-
-    self.wait_for_all_pending_rpcs()
-    assert not self.get_pending_rpcs()
-    transaction = self.transaction
-    self.__finished = True
-    self.__transaction = None
     return transaction
 
 
@@ -2574,11 +2633,18 @@ class TransactionalConnection(BaseConnection):
       config: A Configuration object or None.  Defaults are taken from
         the connection's default configuration.
 
-     Returns:
+    Returns:
       A MultiRpc object.
     """
-    transaction = self._end_transaction()
+    self.wait_for_all_pending_rpcs()
+
+    if self._state != TransactionalConnection.OPEN:
+      raise datastore_errors.BadRequestError('Transaction is already finished.')
+    self._state = TransactionalConnection.COMMIT_IN_FLIGHT
+
+    transaction = self.transaction
     if transaction is None:
+      self._state = TransactionalConnection.CLOSED
       return None
 
     if self._api_version == _CLOUD_DATASTORE_V1:
@@ -2612,7 +2678,10 @@ class TransactionalConnection(BaseConnection):
     """Internal method used as get_result_hook for Commit."""
     try:
       rpc.check_success()
+      self._state = TransactionalConnection.CLOSED
+      self.__transaction = None
     except apiproxy_errors.ApplicationError, err:
+      self._state = TransactionalConnection.FAILED
       if err.application_error == datastore_pb.Error.CONCURRENT_TRANSACTION:
         return False
       else:
@@ -2639,9 +2708,19 @@ class TransactionalConnection(BaseConnection):
      Returns:
       A MultiRpc object.
     """
-    transaction = self._end_transaction()
+    self.wait_for_all_pending_rpcs()
+
+    if not (self._state == TransactionalConnection.OPEN
+            or self._state == TransactionalConnection.FAILED):
+      raise datastore_errors.BadRequestError(
+          'Cannot rollback transaction that is neither OPEN or FAILED state.')
+
+    transaction = self.transaction
     if transaction is None:
       return None
+
+    self._state = TransactionalConnection.CLOSED
+    self.__transaction = None
 
     if self._api_version == _CLOUD_DATASTORE_V1:
       req = googledatastore.RollbackRequest()
@@ -2671,8 +2750,8 @@ def _CreateDefaultConnection(connection_fn, **kwargs):
   """Creates a new connection to Datastore.
 
   Uses environment variables to determine if the connection should be made
-  to Cloud Datastore v1beta3 or to Datastore's private App Engine API.
-  If DATASTORE_PROJECT_ID exists, connect to Datastore v1beta3. In this case,
+  to Cloud Datastore v1 or to Datastore's private App Engine API.
+  If DATASTORE_PROJECT_ID exists, connect to Cloud Datastore v1. In this case,
   either DATASTORE_APP_ID or DATASTORE_USE_PROJECT_ID_AS_APP_ID must be set to
   indicate what the environment's application should be.
 

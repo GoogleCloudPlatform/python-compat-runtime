@@ -123,8 +123,8 @@ class MemcacheServiceStub(apiproxy_stub.APIProxyStub):
       gettime: time.time()-like function used for testing.
       service_name: Service name expected for all calls.
     """
-    super(MemcacheServiceStub, self).__init__(service_name,
-                                              max_request_size=MAX_REQUEST_SIZE)
+    super(MemcacheServiceStub, self).__init__(
+        service_name, max_request_size=MAX_REQUEST_SIZE)
     self._next_cas_id = 1
     self._gettime = lambda: int(gettime())
     self._ResetStats()
@@ -235,11 +235,12 @@ class MemcacheServiceStub(apiproxy_stub.APIProxyStub):
       if set_status == MemcacheSetResponse.STORED:
         if namespace not in self._the_cache:
           self._the_cache[namespace] = {}
-        self._the_cache[namespace][key] = CacheEntry(item.value(),
-                                                     item.expiration_time(),
-                                                     item.flags(),
-                                                     self._next_cas_id,
-                                                     gettime=self._gettime)
+        self._the_cache[namespace][key] = CacheEntry(
+            item.value(),
+            item.expiration_time(),
+            item.flags(),
+            self._next_cas_id,
+            gettime=self._gettime)
         self._next_cas_id += 1
 
       response.add_set_status(set_status)

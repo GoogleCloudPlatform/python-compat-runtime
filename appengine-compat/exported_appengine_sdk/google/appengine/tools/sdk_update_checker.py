@@ -74,7 +74,7 @@ def GetVersionObject():
   """Gets the version of the SDK by parsing the VERSION file.
 
   Returns:
-    A Yaml object or None if the VERSION file does not exist.
+    A dict with version information or None if the VERSION file does not exist.
   """
   version_filename = os.path.join(os.path.dirname(google.appengine.__file__),
                                   VERSION_FILE)

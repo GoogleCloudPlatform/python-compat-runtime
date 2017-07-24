@@ -69,12 +69,20 @@ class Dispatcher(request_info.Dispatcher):
   manages their lifetimes.
   """
 
+  # TODO: Make the *_config arguments optional, and clean up associated
+  # tests in module_test, dispatcher_test, and java_config_files_test that
+  # explicitely pass in *_config=None.
   def __init__(self,
                configuration,
                host,
                port,
                auth_domain,
                runtime_stderr_loglevel,
+
+
+
+
+
                php_config,
                python_config,
                java_config,
@@ -84,6 +92,7 @@ class Dispatcher(request_info.Dispatcher):
                vm_config,
                module_to_max_instances,
                use_mtime_file_watcher,
+               watcher_ignore_re,
                automatic_restart,
                allow_skipped_files,
                module_to_threadsafe_override,
@@ -101,6 +110,11 @@ class Dispatcher(request_info.Dispatcher):
       runtime_stderr_loglevel: An int reprenting the minimum logging level at
           which runtime log messages should be written to stderr. See
           devappserver2.py for possible values.
+
+
+
+
+
       php_config: A runtime_config_pb2.PhpConfig instances containing PHP
           runtime-specific configuration. If None then defaults are used.
       python_config: A runtime_config_pb2.PythonConfig instance containing
@@ -125,6 +139,8 @@ class Dispatcher(request_info.Dispatcher):
       use_mtime_file_watcher: A bool containing whether to use mtime polling to
           monitor file changes even if other options are available on the
           current platform.
+      watcher_ignore_re: A RegexObject that optionally defines a pattern for the
+          file watcher to ignore.
       automatic_restart: If True then instances will be restarted when a
           file or configuration change that affects them is detected.
       allow_skipped_files: If True then all files in the application's directory
@@ -139,6 +155,10 @@ class Dispatcher(request_info.Dispatcher):
           ports is more flexible.
     """
     self._configuration = configuration
+
+
+
+
     self._php_config = php_config
     self._python_config = python_config
     self._java_config = java_config
@@ -163,6 +183,7 @@ class Dispatcher(request_info.Dispatcher):
         name='Dispatcher Update Checking')
     self._module_to_max_instances = module_to_max_instances or {}
     self._use_mtime_file_watcher = use_mtime_file_watcher
+    self._watcher_ignore_re = watcher_ignore_re
     self._automatic_restart = automatic_restart
     self._allow_skipped_files = allow_skipped_files
     self._module_to_threadsafe_override = module_to_threadsafe_override
@@ -233,6 +254,17 @@ class Dispatcher(request_info.Dispatcher):
       self._check_for_updates()
       self._quit_event.wait(timeout=1)
 
+  def get_watcher_results(self):
+    """Returns a list of tuples of file watcher results for google analytics."""
+    results = []
+    for _module in self._module_name_to_module.values():
+      result = _module.get_watcher_result()
+      # Make sure the module has file watcher, and file change hisotry
+      # was not empty.
+      if result and result[1]:
+        results.append(result)
+    return results
+
   def quit(self):
     """Quits all modules."""
     self._executor.quit()
@@ -282,6 +314,11 @@ class Dispatcher(request_info.Dispatcher):
         api_port=self._api_port,
         auth_domain=self._auth_domain,
         runtime_stderr_loglevel=self._runtime_stderr_loglevel,
+
+
+
+
+
         php_config=self._php_config,
         python_config=self._python_config,
         custom_config=self._custom_config,
@@ -295,6 +332,7 @@ class Dispatcher(request_info.Dispatcher):
         dispatcher=self,
         max_instances=max_instances,
         use_mtime_file_watcher=self._use_mtime_file_watcher,
+        watcher_ignore_re=self._watcher_ignore_re,
         automatic_restarts=self._automatic_restart,
         allow_skipped_files=self._allow_skipped_files,
         threadsafe_override=threadsafe_override,

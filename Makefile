@@ -7,7 +7,7 @@ build:
 
 .PHONY: push
 push: build
-	gcloud docker push $(DOCKER_IMAGE_NAME)
+	gcloud docker -- push $(DOCKER_IMAGE_NAME)
 
 .PHONY: test-vmruntime
 test-vmruntime:

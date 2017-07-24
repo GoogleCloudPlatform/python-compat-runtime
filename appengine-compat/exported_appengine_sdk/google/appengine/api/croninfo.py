@@ -68,6 +68,8 @@ SERVER_ID_RE_STRING = r'(?!-)[a-z\d\-]{1,63}'
 
 
 SERVER_VERSION_RE_STRING = r'(?!-)[a-z\d\-]{1,100}'
+
+
 _VERSION_REGEX = r'^(?:(?:(%s):)?)(%s)$' % (SERVER_ID_RE_STRING,
                                             SERVER_VERSION_RE_STRING)
 

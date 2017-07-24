@@ -1460,13 +1460,14 @@ class LiveTxn(object):
   _state = ACTIVE
   _commit_time_s = None
 
-  def __init__(self, txn_manager, app, allow_multiple_eg):
+  def __init__(self, txn_manager, app, allow_multiple_eg, mode):
     assert isinstance(txn_manager, BaseTransactionManager)
     assert isinstance(app, basestring)
 
     self._txn_manager = txn_manager
     self._app = app
     self._allow_multiple_eg = allow_multiple_eg
+    self._mode = mode
 
 
     self._entity_groups = {}
@@ -1610,6 +1611,9 @@ class LiveTxn(object):
         exists.
       indexes: The composite indexes that apply to the entity.
     """
+    Check(self._mode != datastore_pb.BeginTransactionRequest.READ_ONLY,
+          'Cannot modify entities in a read-only transaction.')
+
     tracker = self._GetTracker(entity.key())
     key = datastore_types.ReferenceToKeyValue(entity.key())
     tracker._delete.pop(key, None)
@@ -1624,6 +1628,9 @@ class LiveTxn(object):
       reference: The entity_pb.Reference of the entity to delete.
       indexes: The composite indexes that apply to the entity.
     """
+    Check(self._mode != datastore_pb.BeginTransactionRequest.READ_ONLY,
+          'Cannot modify entities in a read-only transaction.')
+
     tracker = self._GetTracker(reference)
     key = datastore_types.ReferenceToKeyValue(reference)
     tracker._put.pop(key, None)
@@ -1641,6 +1648,9 @@ class LiveTxn(object):
     """
     Check(not max_actions or len(self._actions) + len(actions) <= max_actions,
           'Too many messages, maximum allowed %s' % max_actions)
+    Check(self._mode != datastore_pb.BeginTransactionRequest.READ_ONLY,
+          'Cannot add actions in a read-only transaction.')
+
     self._actions.extend(actions)
 
   def Rollback(self):
@@ -2118,13 +2128,15 @@ class BaseTransactionManager(object):
 
     self._txn_map = {}
 
-  def BeginTransaction(self, app, allow_multiple_eg, previous_transaction=None):
+  def BeginTransaction(self, app, allow_multiple_eg, previous_transaction=None,
+                       mode=datastore_pb.BeginTransactionRequest.UNKNOWN):
     """Start a transaction on the given app.
 
     Args:
       app: A string representing the app for which to start the transaction.
       allow_multiple_eg: True if transactions can span multiple entity groups.
       previous_transaction: The transaction to reset.
+      mode: Mode of the transaction.
 
     Returns:
       A datastore_pb.Transaction for the created transaction
@@ -2133,6 +2145,9 @@ class BaseTransactionManager(object):
         self._consistency_policy, MasterSlaveConsistencyPolicy)),
           'transactions on multiple entity groups only allowed with the '
           'High Replication datastore')
+    Check((previous_transaction is None) or
+          mode == datastore_pb.BeginTransactionRequest.READ_WRITE,
+          'previous_transaction can only be set in READ_WRITE mode')
 
     if previous_transaction is not None:
       previous_live_txn = self._txn_map.get(previous_transaction.handle())
@@ -2145,7 +2160,7 @@ class BaseTransactionManager(object):
                 'Transaction should have same options as previous_transaction')
           previous_live_txn.Rollback()
 
-    txn = self._BeginTransaction(app, allow_multiple_eg)
+    txn = self._BeginTransaction(app, allow_multiple_eg, mode)
     self._txn_map[id(txn)] = txn
     transaction = datastore_pb.Transaction()
     transaction.set_app(app)
@@ -2222,9 +2237,10 @@ class BaseTransactionManager(object):
     finally:
       self._meta_data_lock.release()
 
-  def _BeginTransaction(self, app, allow_multiple_eg):
+  def _BeginTransaction(self, app, allow_multiple_eg,
+                        mode=datastore_pb.BeginTransactionRequest.UNKNOWN):
     """Starts a transaction without storing it in the txn_map."""
-    return LiveTxn(self, app, allow_multiple_eg)
+    return LiveTxn(self, app, allow_multiple_eg, mode)
 
   def _GrabSnapshot(self, entity_group):
     """Grabs a consistent snapshot of the given entity group.
@@ -2545,7 +2561,9 @@ class BaseDatastore(BaseTransactionManager, BaseIndexManager):
 
     if raw_query.has_ancestor() and raw_query.kind() not in self._pseudo_kinds:
 
-      txn = self._BeginTransaction(raw_query.app(), False)
+      txn = self._BeginTransaction(
+          raw_query.app(), False,
+          datastore_pb.BeginTransactionRequest.READ_ONLY)
       return txn.GetQueryCursor(raw_query, filters, orders, index_list)
 
 
@@ -3018,7 +3036,9 @@ class EntityGroupPseudoKind(object):
     """
 
     if not txn:
-      txn = self._stub._BeginTransaction(key.app(), False)
+      txn = self._stub._BeginTransaction(
+          key.app(), False,
+          datastore_pb.BeginTransactionRequest.READ_ONLY)
       try:
         return self.Get(txn, key)
       finally:
@@ -3361,7 +3381,9 @@ class DatastoreStub(object):
   def _Dynamic_BeginTransaction(self, req, transaction):
     CheckAppId(self._trusted, self._app_id, req.app())
     transaction.CopyFrom(self._datastore.BeginTransaction(
-        req.app(), req.allow_multiple_eg(), req.previous_transaction()))
+        req.app(), req.allow_multiple_eg(),
+        req.previous_transaction() if req.has_previous_transaction() else None,
+        req.mode()))
 
   def _Dynamic_Commit(self, transaction, res):
     CheckAppId(self._trusted, self._app_id, transaction.app())
@@ -4019,6 +4041,11 @@ class StubServiceConverter(object):
     v3_req = datastore_pb.BeginTransactionRequest()
     v3_req.set_app(app_id)
     v3_req.set_allow_multiple_eg(True)
+    if v1_req.transaction_options.HasField('read_only'):
+      v3_req.set_mode(datastore_pb.BeginTransactionRequest.READ_ONLY)
+    elif v1_req.transaction_options.HasField('read_write'):
+      v3_req.set_mode(datastore_pb.BeginTransactionRequest.READ_WRITE)
+
     return v3_req
 
   def v3_to_v1_begin_transaction_resp(self, v3_resp):

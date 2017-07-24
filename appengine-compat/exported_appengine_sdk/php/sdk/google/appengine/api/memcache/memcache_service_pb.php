@@ -1636,7 +1636,6 @@ namespace google\appengine\MemcacheDeleteResponse {
     const DEADLINE_EXCEEDED = 3;
     const UNREACHABLE = 4;
     const OTHER_ERROR = 5;
-    const CAS_MISMATCH = 6;
   }
 }
 namespace google\appengine {

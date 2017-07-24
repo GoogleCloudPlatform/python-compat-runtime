@@ -21,9 +21,6 @@ from google.net.proto import ProtocolBuffer
 import array
 import dummy_thread as thread
 
-__pychecker__ = """maxreturns=0 maxbranches=0 no-callinit
-                   unusednames=printElemNumber,debug_strs no-special"""
-
 if hasattr(ProtocolBuffer, 'ExtendableProtocolMessage'):
   _extension_runtime = True
   _ExtendableProtocolMessage = ProtocolBuffer.ExtendableProtocolMessage
@@ -33,6 +30,7 @@ else:
 
 from google.appengine.datastore.entity_pb import *
 import google.appengine.datastore.entity_pb
+google_dot_storage_dot_onestore_dot_v3_dot_entity__pb = __import__('google.appengine.datastore.entity_pb', {}, {}, [''])
 class AggregateRpcStatsProto(ProtocolBuffer.ProtocolMessage):
   has_service_call_name_ = 0
   service_call_name_ = ""

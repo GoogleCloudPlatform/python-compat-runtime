@@ -102,6 +102,8 @@ class AppYamlTranslator(object):
     stmnt_list += self.TranslateBetaSettings()
     stmnt_list += self.TranslateVmSettings()
     stmnt_list += self.TranslateHealthCheck()
+    stmnt_list += self.TranslateLivenessCheck()
+    stmnt_list += self.TranslateReadinessCheck()
     stmnt_list += self.TranslateResources()
     stmnt_list += self.TranslateNetwork()
     stmnt_list += self.TranslateErrorHandlers()
@@ -254,6 +256,36 @@ class AppYamlTranslator(object):
                  'unhealthy_threshold', 'healthy_threshold',
                  'restart_threshold', 'host'):
       value = getattr(health_check, attr, None)
+      if value is not None:
+        statements.append('  %s: %s' % (attr, value))
+    return statements
+
+  def TranslateLivenessCheck(self):
+    """Translates <liveness-check> in appengine-web.xml to yaml."""
+    liveness_check = self.app_engine_web_xml.liveness_check
+    if not liveness_check:
+      return []
+
+    statements = ['liveness_check:']
+    for attr in ('check_interval_sec', 'timeout_sec',
+                 'failure_threshold', 'success_threshold',
+                 'initial_delay_sec', 'host', 'path'):
+      value = getattr(liveness_check, attr, None)
+      if value is not None:
+        statements.append('  %s: %s' % (attr, value))
+    return statements
+
+  def TranslateReadinessCheck(self):
+    """Translates <readiness-check> in appengine-web.xml to yaml."""
+    readiness_check = self.app_engine_web_xml.readiness_check
+    if not readiness_check:
+      return []
+
+    statements = ['readiness_check:']
+    for attr in ('check_interval_sec', 'timeout_sec',
+                 'failure_threshold', 'success_threshold',
+                 'host', 'path'):
+      value = getattr(readiness_check, attr, None)
       if value is not None:
         statements.append('  %s: %s' % (attr, value))
     return statements

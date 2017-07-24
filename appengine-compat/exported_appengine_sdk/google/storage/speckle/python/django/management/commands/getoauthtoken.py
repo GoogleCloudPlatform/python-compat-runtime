@@ -16,8 +16,6 @@
 #
 
 
-
-
 """OAuth 2.0 command for Django Google SQL Service backend."""
 
 

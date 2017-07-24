@@ -1348,11 +1348,11 @@ class QueueStatistics(object):
 
   @classmethod
   def _ConstructFromFetchQueueStatsResponse(cls, queue, response):
-    """Helper for converting from a `FetchQeueueStatsResponse_QueueStats` proto.
+    """Helper for converting from a `FetchQueueStatsResponse_QueueStats` proto.
 
     Args:
       queue: A queue instance.
-      response: An instance of `FetchQeueueStatsResponse_QueueStats`.
+      response: An instance of `FetchQueueStatsResponse_QueueStats`.
 
     Returns:
       A new QueueStatistics instance.
@@ -1379,14 +1379,14 @@ class QueueStatistics(object):
     Example::
 
         rpc = taskqueue.create_rpc(deadline=1.0)
-        taskqueue.QueueStaticstics.fetch_async([taskqueue.Queue("foo"),
+        taskqueue.QueueStatistics.fetch_async([taskqueue.Queue("foo"),
                                                 taskqueue.Queue("bar")], rpc)
         statsList = rpc.get_result()
 
 
     Args:
       queue_or_queues: The queue or list of queues for which you are obtaining
-          statistics. If you are retrieving staticstics for a single queue,
+          statistics. If you are retrieving statistics for a single queue,
           you can supply either a queue instance or the name of the queue. If
           you are retrieving a list of queues, you can supply an iterable
           list of queue instances or an iterable list of queue names.

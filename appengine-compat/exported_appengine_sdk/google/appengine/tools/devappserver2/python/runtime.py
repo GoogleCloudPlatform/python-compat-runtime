@@ -55,12 +55,19 @@ _STARTUP_FAILURE_TEMPLATE = """
 
 
 def setup_stubs(config):
-  """Sets up API stubs using remote API."""
+  """Sets up API stubs using remote API.
+
+  Args:
+    config: a runtime_config.Config instance.
+  """
   remote_api_stub.ConfigureRemoteApi(
-      config.app_id, '/', lambda: ('', ''),
+      config.app_id,
+      '/',
+      lambda: ('', ''),
       '%s:%d' % (str(config.api_host), config.api_port),
       use_remote_datastore=False,
-      grpc_apis=config.grpc_apis)
+      grpc_apis=config.grpc_apis,
+      grpc_proxy_port=config.python_config.grpc_proxy_port)
 
   if config.HasField('cloud_sql_config'):
     # Connect the RDBMS API to MySQL.

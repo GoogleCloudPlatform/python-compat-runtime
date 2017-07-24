@@ -78,6 +78,7 @@ from google.appengine.tools import appengine_rpc
 from google.appengine.tools import augment_mimetypes
 from google.appengine.tools import bulkloader
 from google.appengine.tools import context_util
+from google.appengine.tools import goroots
 from google.appengine.tools import sdk_update_checker
 
 
@@ -176,13 +177,6 @@ SERVICE_ACCOUNT_BASE = (
 
 
 APP_YAML_FILENAME = 'app.yaml'
-
-
-
-
-GO_APP_BUILDER = os.path.join('goroot', 'bin', 'go-app-builder')
-if sys.platform.startswith('win'):
-  GO_APP_BUILDER += '.exe'
 
 GCLOUD_ONLY_RUNTIMES = set(['custom', 'nodejs'])
 
@@ -3770,13 +3764,16 @@ class AppCfgApp(object):
 
 
 
-
-      goroot = os.path.join(sdk_base, 'goroot')
+      goroot = os.path.join(sdk_base, goroots.GOROOTS[appyaml.api_version])
       if not os.path.exists(goroot):
 
-        goroot = None
-      gab = os.path.join(sdk_base, GO_APP_BUILDER)
-      if os.path.exists(gab):
+        goroot = os.getenv('GOROOT')
+      gab = None
+      if goroot:
+        gab = os.path.join(sdk_base, goroot, 'bin', 'go-app-builder')
+        if sys.platform.startswith('win'):
+          gab += '.exe'
+      if gab and os.path.exists(gab):
         app_paths = list(paths)
         go_files = [f for f in app_paths
                     if f.endswith('.go') and not appyaml.nobuild_files.match(f)]

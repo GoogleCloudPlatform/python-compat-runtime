@@ -31,12 +31,19 @@ from __future__ import with_statement
 
 
 
+import os
 import random
 import threading
 
-from google.appengine.api import apiproxy_rpc
-from google.appengine.api import request_info
-from google.appengine.runtime import apiproxy_errors
+
+if os.environ.get('APPENGINE_RUNTIME') == 'python27':
+  from google.appengine.api import apiproxy_rpc
+  from google.appengine.api import request_info
+  from google.appengine.runtime import apiproxy_errors
+else:
+  from google.appengine.api import apiproxy_rpc
+  from google.appengine.api import request_info
+  from google.appengine.runtime import apiproxy_errors
 
 
 MAX_REQUEST_SIZE = 1 << 20

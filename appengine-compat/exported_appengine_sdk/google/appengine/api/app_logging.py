@@ -116,8 +116,5 @@ class AppLogsHandler(logging.Handler):
 
   def _AppLogsLocation(self, record):
     """Find the source location responsible for calling the logging API."""
-    if not features.IsEnabled("LogsWriteSourceLocation"):
-      return None
-
     return (getattr(record, "pathname", None), getattr(record, "lineno", None),
             getattr(record, "funcName", None))

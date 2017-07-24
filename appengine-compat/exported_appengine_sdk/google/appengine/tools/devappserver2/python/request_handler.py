@@ -113,6 +113,12 @@ class RequestHandler(object):
   _PYTHON_LIB_DIR = os.path.dirname(os.path.dirname(google.__file__))
 
   def __init__(self, config):
+    """Initializes a RequestHandler.
+
+    Args:
+      config: An instance of runtime_config_pb2.Config containing the
+        configuration for the Python runtime.
+    """
     self.config = config
     if appinfo.MODULE_SEPARATOR not in config.version_id:
       module_id = appinfo.DEFAULT_MODULE
