@@ -1,14 +1,12 @@
-Google App Engine Flexible Environment Python Compat Runtime
+DEPRECATED: Google App Engine Flexible Environment Python Compat Runtime
 ===================================================
 
-This repository contains the source code used for the [App Engine Flexible Environment](https://cloud.google.com/appengine/docs/flexible/) Python Compat runtime.  This runtime provides best effort compatibility with applications written to target the App Engine Standard Environment with Python 2.7. This runtime is currently [*deprecated*](https://cloud.google.com/appengine/docs/flexible/python/upgrading#runtime_deprecations).
-
-This runtime is intended for users migrating applications from App Engine Standard to App Engine Flex. For users building new applications on App Engine with Python, we recommend following the [getting started guide](https://cloud.google.com/python).
+This repository contains the source code used for the [App Engine Flexible Environment](https://cloud.google.com/appengine/docs/flexible/) Python Compat (multicore) runtime, corresponding to `env:flex` + `runtime: python-compat` in your `app.yaml`.  This runtime provides best effort compatibility with applications written to target the App Engine Standard Environment with Python 2.7. This runtime is [**deprecated**](https://cloud.google.com/appengine/docs/flexible/python/upgrading#runtime_deprecations) and incomplete.
 
 
 Using this runtime
 ------------------
-Please refer to [the docs](https://cloud.google.com/appengine/docs/flexible/python/migrating-an-existing-app) on how to use and customize this runtime.
+**Do not use this runtime for new development**.  If you are using this runtime, you should expediently migrate to the [vanilla Python runtime](https://cloud.google.com/appengine/docs/flexible/python/migrating) before **November 2017**.
 
 Gunicorn configuration
 ----------------------
@@ -22,15 +20,14 @@ application's root directory, which will override the default
 
 Caveats
 -------
-This runtime is deprecated.  Only critical bug fixes are planned.
+This runtime is deprecated and incomplete.  Only critical bug fixes are planned.
 
 Notably:
 * Handlers in `app.yaml `that are flagged as `login: required` or `login: admin` are not supported. Attemping to access these handlers will result in a 404 as the handlers will not be registered.
 * `threadsafe: false` in `app.yaml` is ignored. Your application must either be threadsafe or you much change the gunicorn configuration to use sync workers.
+* Deferred TaskQueues are not functional.
 
-There may be other features that work on the current Python runtime and are not
-implemented or not functional in this version. Please open an issue on Github
-for any you encounter.
+There may be other features that are not implemented or not functional in this version.
 
 Contributing changes
 --------------------
