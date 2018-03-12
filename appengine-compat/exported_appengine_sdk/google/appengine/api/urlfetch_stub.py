@@ -42,6 +42,7 @@ import logging
 import os
 import socket
 import StringIO
+import ssl
 import sys
 import urllib
 import urlparse
@@ -416,8 +417,11 @@ class URLFetchServiceStub(apiproxy_stub.APIProxyStub):
 
 
 
-        connection_kwargs = (
-            {'timeout': deadline} if _CONNECTION_SUPPORTS_TIMEOUT else {})
+        connection_kwargs = {}
+        if _CONNECTION_SUPPORTS_TIMEOUT:
+          connection_kwargs['timeout'] = deadline
+        if not validate_certificate:
+          connection_kwargs['context'] = ssl._create_unverified_context()
 
         if proxy_host:
           proxy_address, _, proxy_port = proxy_host.partition(':')
